@@ -1,0 +1,31 @@
+Name:		Iteratee
+Version:        0.1.0
+Cabal-Version:  >= 1.2
+Description:	The IterateeGM monad provides strict, safe, and functional
+                I/O.  In addition to pure Iteratee processors, file IO and 
+                combinator functions are provided.
+License:	BSD3
+License-file:	LICENSE
+Author:		Oleg Kiselyov
+Maintainer:	John W. Lato, jwlato@gmail.com
+Stability:	experimental
+synopsis:       Iteratee-based I/O
+category:       System, Data
+build-type:     Simple
+cabal-version:  >= 1.2
+tested-with:    GHC == 6.10.1
+extra-source-files: README
+
+flag splitBase
+  description: Choose the new split-up base package.
+
+Library
+ Hs-Source-Dirs:        src
+ ghc-options:           -O2 -Wall
+ if flag(splitBase)
+   build-depends:       base >= 3, bytestring >= 0.9
+ else
+   build-depends:       base < 3
+ build-depends:         haskell98
+ exposed-modules:       Data.Iteratee
+ other-modules:         Data.Iteratee.Internal

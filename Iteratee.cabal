@@ -29,6 +29,7 @@ Library
  build-depends:         haskell98, mtl, containers, unix
  exposed-modules:       Data.Iteratee
                         Data.Iteratee.IterateeM
-                        Data.Iteratee.Codecs.Tiff
                         Data.Iteratee.IO.RandomIO
+                        Data.Iteratee.Codecs.Tiff
+                        Data.Iteratee.Codecs.Wave
  other-modules:         Data.Iteratee.IO.LowLevelIO

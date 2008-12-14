@@ -144,13 +144,6 @@ verify_pixel_vals dict pixels = joinI $ pixel_matrix_enum dict ==<<
 -- ========================================================================
 -- TIFF library code
 
--- We need a more general enumerator type: enumerator that maps
--- streams (not necessarily in lock-step). This is
--- a flattened (`joinI-ed') EnumeratorN elfrom elto m a
-type EnumeratorGMM elfrom elto m a =
-    IterateeG elto m a -> IterateeGM elfrom m a
-
-
 -- A TIFF directory is a finite map associating a TIFF tag with
 -- a record TIFFDE
 type TIFFDict = IM.IntMap TIFFDE

@@ -26,6 +26,9 @@ Library
    build-depends:       base >= 3, bytestring >= 0.9
  else
    build-depends:       base < 3
- build-depends:         haskell98
+ build-depends:         haskell98, mtl, containers, unix
  exposed-modules:       Data.Iteratee
- other-modules:         Data.Iteratee.Internal
+                        Data.Iteratee.IterateeM
+                        Data.Iteratee.Codecs.Tiff
+                        Data.Iteratee.IO.RandomIO
+ other-modules:         Data.Iteratee.IO.LowLevelIO

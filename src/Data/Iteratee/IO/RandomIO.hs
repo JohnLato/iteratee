@@ -7,7 +7,6 @@ module Data.Iteratee.IO.RandomIO where
 import Data.Iteratee.IterateeM
 
 import System.Posix
--- import Foreign.C
 import Foreign.Ptr
 import Foreign.Marshal.Alloc
 import Foreign.Marshal.Array
@@ -15,7 +14,6 @@ import Control.Monad.Trans
 import Data.Word
 import Data.Bits
 import Data.IORef
--- import Text.Printf
 
 import System.IO (SeekMode(..))
 import Data.Iteratee.IO.LowLevelIO
@@ -139,6 +137,21 @@ endian_read2 =
       return $ return $ (fromIntegral c1 `shiftL` 8) .|. fromIntegral c2
      else
       return $ return $ (fromIntegral c2 `shiftL` 8) .|. fromIntegral c1
+
+endian_read3 :: IterateeGM Word8 RBIO (Maybe Word32)
+endian_read3 = 
+  bindm snext $ \c1 ->
+  bindm snext $ \c2 ->
+  bindm snext $ \c3 -> do
+  flag <- lift rb_msb_first
+  if flag then
+     return $ return $ (((fromIntegral c1
+                        `shiftL` 8) .|. fromIntegral c2)
+                        `shiftL` 8) .|. fromIntegral c3
+   else
+     return $ return $ (((fromIntegral c3
+                        `shiftL` 8) .|. fromIntegral c2)
+                        `shiftL` 8) .|. fromIntegral c3
 
 endian_read4 :: IterateeGM Word8 RBIO (Maybe Word32)
 endian_read4 =

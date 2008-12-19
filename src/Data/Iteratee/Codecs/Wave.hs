@@ -179,17 +179,24 @@ read_value dict offset WAVE_DATA count = do
     Just fmt -> do
       return . Just . WEN_DUB $ \iter_dub -> do
         sseek (8 + fromIntegral offset)
-        let iter = conv_stream
-                     (bindm (endian_reader fmt)
-                       (return . Just . (:[]) . conv_dub fmt))
-                       iter_dub
+        let iter = conv_stream (s_func fmt) iter_dub
+                     --(bindm (endian_reader fmt)
+                       --(return . Just . (:[]) . conv_dub fmt))
+                       --iter_dub
         joinI $ joinI $ stakeR count ==<< iter
     Nothing -> do
       iter_err $ "No valid format for data chunk at: " ++ show offset
       return Nothing
   where
-  --endian_reader (AudioFormat nc sr bd) = endian_read4
-  --conv_dub (AudioFormat nc sr bd) = fromIntegral
+  --s_func fmt = bindm (endian_reader fmt)
+                 --(return . Just . (:[]) . conv_dub fmt)
+  s_func :: AudioFormat -> IterateeGM Word8 RBIO (Maybe [Double])
+  s_func fmt = (fmap . fmap) (\w -> [conv_dub fmt w]) (endian_reader fmt)
+  endian_reader (AudioFormat nc sr 8) = snext
+  endian_reader (AudioFormat nc sr 16) = endian_read2
+  endian_reader (AudioFormat nc sr 24) = endian_read3
+  endian_reader (AudioFormat nc sr 32) = endian_read4
+  conv_dub (AudioFormat nc sr bd) = fromIntegral
 
 -- return the WaveFormat iteratee
 read_value _dict offset WAVE_FMT count =
@@ -220,13 +227,10 @@ sWaveFormat = do
 -- ---------------------
 -- functions to assist with reading from the dictionary
 
-dict_read_format :: Int -> -- ^Index in the format chunk list to read
-                    WAVEDict -> -- ^Dictionary
-                    IterateeGM Word8 RBIO (Maybe AudioFormat)
-dict_read_format ix dict = case IM.lookup (fromEnum WAVE_FMT) dict of
-  Just xs -> let (WAVEDE _ WAVE_FMT (WEN_BYTE enum)) = (!!) xs ix in do
-    e <- enum ==<< sWaveFormat
-    return e
+dict_read_first_format :: WAVEDict -> IterateeGM Word8 RBIO (Maybe AudioFormat)
+dict_read_first_format dict = case IM.lookup (fromEnum WAVE_FMT) dict of
+  Just [] -> return Nothing
+  Just ((WAVEDE _ WAVE_FMT (WEN_BYTE enum)) : _xs) -> enum ==<< sWaveFormat
   _ -> return Nothing
 
 dict_read_last_format :: WAVEDict -> IterateeGM Word8 RBIO (Maybe AudioFormat)
@@ -234,6 +238,15 @@ dict_read_last_format dict = case IM.lookup (fromEnum WAVE_FMT) dict of
   Just [] -> return Nothing
   Just xs -> let (WAVEDE _ WAVE_FMT (WEN_BYTE enum)) = head $ reverse xs in
     enum ==<< sWaveFormat
+  _ -> return Nothing
+
+dict_read_format :: Int -> -- ^Index in the format chunk list to read
+                    WAVEDict -> -- ^Dictionary
+                    IterateeGM Word8 RBIO (Maybe AudioFormat)
+dict_read_format ix dict = case IM.lookup (fromEnum WAVE_FMT) dict of
+  Just xs -> let (WAVEDE _ WAVE_FMT (WEN_BYTE enum)) = (!!) xs ix in do
+    e <- enum ==<< sWaveFormat
+    return e
   _ -> return Nothing
 
 -- ---------------------

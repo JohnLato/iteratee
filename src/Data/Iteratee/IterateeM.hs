@@ -123,8 +123,16 @@ instance Monad m => Monad (IterateeGM el m) where
 				IE_cont k    -> k stream)
      docase (IE_cont k) = liftI $ IE_cont ((>>= f) . k)
 
-{-# SPECIALIZE instance Monad (IterateeGM el IO) #-}
+instance (Monad m, Functor m) => Functor (IterateeGM el m) where
+    fmap f m = m >>== docase
+      where
+      docase (IE_done a stream) = liftI $ IE_done (f a) stream
+      docase (IE_cont k) = liftI $ IE_cont ((fmap f) . k)
+
 {-# SPECIALIZE instance Monad (IterateeGM Word8 IO) #-}
+{-# SPECIALIZE instance Monad (IterateeGM el IO) #-}
+{-# SPECIALIZE instance Functor (IterateeGM Word8 IO) #-}
+{-# SPECIALIZE instance Functor (IterateeGM el IO) #-}
 
 instance MonadTrans (IterateeGM el) where
     lift m = IM (m >>= unIM . return)

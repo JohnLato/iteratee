@@ -127,7 +127,7 @@ instance (Monad m, Functor m) => Functor (IterateeGM el m) where
     fmap f m = m >>== docase
       where
       docase (IE_done a stream) = liftI $ IE_done (f a) stream
-      docase (IE_cont k) = liftI $ IE_cont ((fmap f) . k)
+      docase (IE_cont k) = liftI $ IE_cont (fmap f . k)
 
 {-# SPECIALIZE instance Monad (IterateeGM Word8 IO) #-}
 {-# SPECIALIZE instance Monad (IterateeGM el IO) #-}
@@ -200,7 +200,7 @@ sdropWhile cpred = liftI $ IE_cont step
 -- Return (Just c) if successful, return Nothing if the stream is
 -- terminated (by EOF or an error)
 snext :: Monad m => IterateeGM el m (Maybe el)
-snext = {-# SCC "snext" #-} liftI $ IE_cont step
+snext = liftI $ IE_cont step
  where
  step (Chunk [])    = snext
  step (Chunk (c:t)) = liftI $ IE_done (Just c) (Chunk t)
@@ -255,7 +255,7 @@ stake :: Monad m =>
 	 Int -> EnumeratorN el el m a
 stake 0 iter = return iter
 stake n iter@IE_done{} = sdrop n >> return iter
-stake n (IE_cont k) = {-# SCC "stake" #-} liftI $ IE_cont step
+stake n (IE_cont k) = liftI $ IE_cont step
  where
  step (Chunk []) = liftI $ IE_cont step
  step chunk@(Chunk str) | length str <= n =

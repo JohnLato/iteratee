@@ -28,7 +28,7 @@ import Data.Iteratee.IO.LowLevelIO
 newtype RBIO a = RBIO{unRBIO:: RBState -> IO a}
 
 instance Functor RBIO where
-    fmap f m = RBIO( \env -> fmap f $ unRBIO m env )
+    fmap f m = RBIO( fmap f . unRBIO m )
 
 instance Monad RBIO where
     return  = RBIO . const . return

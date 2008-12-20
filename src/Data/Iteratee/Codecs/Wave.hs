@@ -139,7 +139,7 @@ find_chunks n = find_chunks' 12 []
           >> return Nothing
         (_, Nothing) -> (iter_err $ "Bad subchunk length") >> return Nothing
         (Just chk, Just count') -> let newpos = offset + 8 + count' in
-          case newpos >= (fromIntegral n) of
+          case newpos >= fromIntegral n of
             True -> return . Just $ reverse acc --end iteration here
             False -> do
               sseek $ fromIntegral newpos
@@ -236,7 +236,7 @@ dict_read_first_format dict = case IM.lookup (fromEnum WAVE_FMT) dict of
 dict_read_last_format :: WAVEDict -> IterateeGM Word8 RBIO (Maybe AudioFormat)
 dict_read_last_format dict = case IM.lookup (fromEnum WAVE_FMT) dict of
   Just [] -> return Nothing
-  Just xs -> let (WAVEDE _ WAVE_FMT (WEN_BYTE enum)) = head $ reverse xs in
+  Just xs -> let (WAVEDE _ WAVE_FMT (WEN_BYTE enum)) = last xs in
     enum ==<< sWaveFormat
   _ -> return Nothing
 

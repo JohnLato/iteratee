@@ -13,6 +13,7 @@ import Foreign.Marshal.Array
 import Control.Monad.Trans
 import Data.Word
 import Data.Bits
+import Data.Int
 import Data.IORef
 
 import System.IO (SeekMode(..))
@@ -141,6 +142,9 @@ endian_read2 =
      else
       return $ return $ (fromIntegral c2 `shiftL` 8) .|. fromIntegral c1
 
+-- |read 3 bytes in an endian manner.  If the first bit is set (negative),
+-- set the entire first byte so the Word32 can be properly set negative as
+-- well.
 endian_read3 :: IterateeGM Word8 RBIO (Maybe Word32)
 endian_read3 = 
   bindm snext $ \c1 ->
@@ -152,9 +156,11 @@ endian_read3 =
                         `shiftL` 8) .|. fromIntegral c2)
                         `shiftL` 8) .|. fromIntegral c3
    else
+     let m :: Int32
+         m = shiftR (shiftL (fromIntegral c3) 24) 8 in
      return $ return $ (((fromIntegral c3
                         `shiftL` 8) .|. fromIntegral c2)
-                        `shiftL` 8) .|. fromIntegral c3
+                        `shiftL` 8) .|. fromIntegral m
 
 endian_read4 :: IterateeGM Word8 RBIO (Maybe Word32)
 endian_read4 =
@@ -187,8 +193,7 @@ enum_fd_random fd iter =
     IM . RBIO $ (\env -> 
 		 allocaBytes (fromIntegral buffer_size) (loop env (0,0) iter))
  where
---  buffer_size = 4096
-  buffer_size = 5 -- for tests; in real life, there should be 1024 or so
+  buffer_size = 4096
   -- the second argument of loop is (off,len), describing which part
   -- of the file is currently in the buffer 'p'
   loop :: RBState -> (FileOffset,Int) -> IterateeG Word8 RBIO a -> 

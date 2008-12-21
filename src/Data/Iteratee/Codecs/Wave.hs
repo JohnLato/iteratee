@@ -8,7 +8,13 @@ module Data.Iteratee.Codecs.Wave (
   wave_reader,
   read_riff,
   wave_chunk,
-  chunk_to_string
+  chunk_to_string,
+  dict_read_format,
+  dict_read_first_format,
+  dict_read_last_format,
+  dict_read_first_data,
+  dict_read_last_data,
+  dict_read_data
 )
 where
 
@@ -18,6 +24,7 @@ import Control.Monad.Trans
 import Data.Char (chr)
 import Data.Int
 import Data.Word
+import Data.Bits (shiftL)
 import qualified Data.IntMap as IM
 
 -- =====================================================
@@ -140,11 +147,12 @@ find_chunks n = find_chunks' 12 []
         (_, Nothing) -> (iter_err $ "Bad subchunk length") >> return Nothing
         (Just chk, Just count') -> let newpos = offset + 8 + count' in
           case newpos >= fromIntegral n of
-            True -> return . Just $ reverse acc --end iteration here
+            True -> return . Just $ reverse $
+                (fromIntegral offset, chk, fromIntegral count') : acc
             False -> do
               sseek $ fromIntegral newpos
               find_chunks' newpos $
-               (fromIntegral newpos, chk, fromIntegral count') : acc
+               (fromIntegral offset, chk, fromIntegral count') : acc
 
 load_dict :: [(Int, WAVE_CHUNK, Int)] ->
                IterateeGM Word8 RBIO (Maybe WAVEDict)
@@ -172,7 +180,6 @@ read_value _dict offset _ 0 = do
   iter_err $ "Zero count in the entry of chunk at: " ++ show offset
   return Nothing
 
--- TODO - endian_reader and conv_dub need to be defined
 read_value dict offset WAVE_DATA count = do
   fmt_m <- dict_read_last_format dict
   case fmt_m of
@@ -180,23 +187,21 @@ read_value dict offset WAVE_DATA count = do
       return . Just . WEN_DUB $ \iter_dub -> do
         sseek (8 + fromIntegral offset)
         let iter = conv_stream (s_func fmt) iter_dub
-                     --(bindm (endian_reader fmt)
-                       --(return . Just . (:[]) . conv_dub fmt))
-                       --iter_dub
         joinI $ joinI $ stakeR count ==<< iter
     Nothing -> do
       iter_err $ "No valid format for data chunk at: " ++ show offset
       return Nothing
   where
-  --s_func fmt = bindm (endian_reader fmt)
-                 --(return . Just . (:[]) . conv_dub fmt)
   s_func :: AudioFormat -> IterateeGM Word8 RBIO (Maybe [Double])
-  s_func fmt = (fmap . fmap) (\w -> [conv_dub fmt w]) (endian_reader fmt)
-  endian_reader (AudioFormat nc sr 8) = snext
-  endian_reader (AudioFormat nc sr 16) = endian_read2
-  endian_reader (AudioFormat nc sr 24) = endian_read3
-  endian_reader (AudioFormat nc sr 32) = endian_read4
-  conv_dub (AudioFormat nc sr bd) = fromIntegral
+  s_func (AudioFormat _nc _sr 8) = (fmap . fmap)
+    (\w -> [normalize 8 (fromIntegral w :: Int8)]) snext
+  s_func (AudioFormat _nc _sr 16) = (fmap . fmap)
+    (\w -> [normalize 16 (fromIntegral w :: Int16)]) endian_read2
+  s_func (AudioFormat _nc _sr 24) = (fmap . fmap)
+    (\w -> [normalize 24 (fromIntegral w :: Int32)]) endian_read3
+  s_func (AudioFormat _nc _sr 32) = (fmap . fmap)
+    (\w -> [normalize 32 (fromIntegral w :: Int32)]) endian_read4
+  s_func _ = iter_err "Invalid wave bit depth" >> return Nothing
 
 -- return the WaveFormat iteratee
 read_value _dict offset WAVE_FMT count =
@@ -249,9 +254,58 @@ dict_read_format ix dict = case IM.lookup (fromEnum WAVE_FMT) dict of
     return e
   _ -> return Nothing
 
+dict_read_first_data :: WAVEDict -> IterateeGM Word8 RBIO (Maybe [Double])
+dict_read_first_data dict = case IM.lookup (fromEnum WAVE_DATA) dict of
+  Just [] -> return Nothing
+  Just ((WAVEDE _ WAVE_DATA (WEN_DUB enum)) : _xs) -> do
+       e <- enum ==<< stream2list
+       return $ Just e
+  _ -> return Nothing
+
+dict_read_last_data :: WAVEDict -> IterateeGM Word8 RBIO (Maybe [Double])
+dict_read_last_data dict = case IM.lookup (fromEnum WAVE_DATA) dict of
+  Just [] -> return Nothing
+  Just xs -> let (WAVEDE _ WAVE_DATA (WEN_DUB enum)) = last xs in do
+    e <- enum ==<< stream2list
+    return $ Just e
+  _ -> return Nothing
+
+dict_read_data :: Int -> -- ^Index in the data chunk list to read
+                  WAVEDict -> -- ^Dictionary
+                  IterateeGM Word8 RBIO (Maybe [Double])
+dict_read_data ix dict = case IM.lookup (fromEnum WAVE_DATA) dict of
+  Just xs -> let (WAVEDE _ WAVE_DATA (WEN_DUB enum)) = (!!) xs ix in do
+    e <- enum ==<< stream2list
+    return $ Just e
+  _ -> return Nothing
+
+{-
+-- TODO: implement this function.
+dict_process_data :: Int -> -- ^Index in the data chunk list to read
+                     WAVEDict -> -- ^Dictionary
+                     IterateeGM Double RBIO a ->
+                     IterateeGM Word8 RBIO a
+dict_process_data ix dict = case IM.lookup (fromEnum WAVE_DATA) dict of
+  Just xs -> let (WAVEDE _ WAVE_DATA (WEN_DUB enum)) = (!!) xs ix in do
+    e <- enum ==<< stream2list
+    return $ Just e
+  _ -> return Nothing
+-}
+
 -- ---------------------
 -- convenience functions
 
 join_m :: Maybe [a] -> [a]
 join_m Nothing = []
 join_m (Just a) = a
+
+normalize :: Integral a => BitDepth -> a -> Double
+normalize 8 a = ((fromIntegral a - 128)) / 128
+normalize _ 0 = 0
+normalize bd a = case (a > 0) of
+        True ->  (fromIntegral a) / divPos
+        False -> (fromIntegral a) / divNeg
+        where
+                divPos = (fromIntegral (1 `shiftL` fromIntegral (bd - 1) :: Int)) - 1
+                divNeg = fromIntegral (1 `shiftL` fromIntegral (bd - 1) :: Int)
+

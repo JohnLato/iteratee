@@ -212,13 +212,11 @@ enum_fd_random fd iter =
   loop' env _pos iter' p (Just off) = do -- Seek outside the buffer
    writeIORef (seek_req env) Nothing
    off' <- myfdSeek fd AbsoluteSeek (fromIntegral off)
-   putStrLn $ "Read buffer, offset " ++ either (const "IO err") show off'
    case off' of
     Left _errno -> runRB env $ enum_err "IO error" iter'
     Right off''  -> loop' env (off'',0) iter' p Nothing
   loop' env (off,len) iter'@(IE_cont step) p Nothing = do
    n <- myfdRead fd (castPtr p) buffer_size
-   putStrLn $ "Read buffer, size " ++ either (const "IO err") show n
    case n of
     Left _errno -> runRB env $ step (Err "IO error")
     Right 0 -> return iter'
@@ -300,16 +298,12 @@ test4 () = do
 test_driver_random iter filepath = do
   fd <- openFd filepath ReadOnly Nothing defaultFileFlags
   rb <- rb_empty
-  putStrLn "About to read file"
   result <- runRB rb $ (enum_fd_random fd >. enum_eof) ==<< iter
   closeFd fd
-  putStrLn "Finished reading file"
   print_res result
  where
   print_res (IE_done a EOF) = print a >> return a
-  print_res (IE_done a (Err err)) = print a >>
-				    putStrLn ("Stream error: " ++ err) >>
-				    return a
+  print_res (IE_done a (Err err)) = print a >> return a
 
 test1r = test_driver_random (test1 ()) "test_full1.txt" >>=
 	 return . (== [104,101,104,13,10,10,101])

@@ -186,22 +186,11 @@ read_value dict offset WAVE_DATA count = do
     Just fmt -> do
       return . Just . WEN_DUB $ \iter_dub -> do
         sseek (8 + fromIntegral offset)
-        let iter = conv_stream (s_func fmt) iter_dub
+        let iter = conv_stream (conv_func fmt) iter_dub
         joinI $ joinI $ stakeR count ==<< iter
     Nothing -> do
       iter_err $ "No valid format for data chunk at: " ++ show offset
       return Nothing
-  where
-  s_func :: AudioFormat -> IterateeGM Word8 RBIO (Maybe [Double])
-  s_func (AudioFormat _nc _sr 8) = (fmap . fmap)
-    (\w -> [normalize 8 (fromIntegral w :: Int8)]) snext
-  s_func (AudioFormat _nc _sr 16) = (fmap . fmap)
-    (\w -> [normalize 16 (fromIntegral w :: Int16)]) endian_read2
-  s_func (AudioFormat _nc _sr 24) = (fmap . fmap)
-    (\w -> [normalize 24 (fromIntegral w :: Int32)]) endian_read3
-  s_func (AudioFormat _nc _sr 32) = (fmap . fmap)
-    (\w -> [normalize 32 (fromIntegral w :: Int32)]) endian_read4
-  s_func _ = iter_err "Invalid wave bit depth" >> return Nothing
 
 -- return the WaveFormat iteratee
 read_value _dict offset WAVE_FMT count =
@@ -214,6 +203,18 @@ read_value _dict offset (WAVE_OTHER _str) count =
   return . Just . WEN_BYTE $ \iter -> do
     sseek (8 + fromIntegral offset)
     joinI $ stakeR count iter
+
+-- |Convert Word8 to doubles
+conv_func :: AudioFormat -> IterateeGM Word8 RBIO (Maybe [Double])
+conv_func (AudioFormat _nc _sr 8) = (fmap . fmap)
+  (\w -> [normalize 8 (fromIntegral w :: Int8)]) snext
+conv_func (AudioFormat _nc _sr 16) = (fmap . fmap)
+  (\w -> [normalize 16 (fromIntegral w :: Int16)]) endian_read2
+conv_func (AudioFormat _nc _sr 24) = (fmap . fmap)
+  (\w -> [normalize 24 (fromIntegral w :: Int32)]) endian_read3
+conv_func (AudioFormat _nc _sr 32) = (fmap . fmap)
+  (\w -> [normalize 32 (fromIntegral w :: Int32)]) endian_read4
+conv_func _ = iter_err "Invalid wave bit depth" >> return Nothing
 
 -- |An Iteratee to read a wave format chunk
 sWaveFormat :: IterateeGM Word8 RBIO (Maybe AudioFormat)

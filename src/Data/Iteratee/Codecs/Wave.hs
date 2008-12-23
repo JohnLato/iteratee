@@ -14,7 +14,8 @@ module Data.Iteratee.Codecs.Wave (
   dict_read_last_format,
   dict_read_first_data,
   dict_read_last_data,
-  dict_read_data
+  dict_read_data,
+  dict_process_data
 )
 where
 
@@ -280,18 +281,15 @@ dict_read_data ix dict = case IM.lookup (fromEnum WAVE_DATA) dict of
     return $ Just e
   _ -> return Nothing
 
-{-
--- TODO: implement this function.
 dict_process_data :: Int -> -- ^Index in the data chunk list to read
                      WAVEDict -> -- ^Dictionary
                      IterateeGM Double RBIO a ->
-                     IterateeGM Word8 RBIO a
-dict_process_data ix dict = case IM.lookup (fromEnum WAVE_DATA) dict of
+                     IterateeGM Word8 RBIO (Maybe a)
+dict_process_data ix dict iter = {-# SCC "dict_process_data" #-} case IM.lookup (fromEnum WAVE_DATA) dict of
   Just xs -> let (WAVEDE _ WAVE_DATA (WEN_DUB enum)) = (!!) xs ix in do
-    e <- enum ==<< stream2list
+    e <- enum ==<< iter
     return $ Just e
   _ -> return Nothing
--}
 
 -- ---------------------
 -- convenience functions

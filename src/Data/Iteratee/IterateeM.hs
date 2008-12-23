@@ -13,7 +13,47 @@
 -- verifies layering of streams, and processing of one stream
 -- embedded (chunk encoded) into another stream.
 
-module Data.Iteratee.IterateeM where
+module Data.Iteratee.IterateeM (
+  StreamG (..),
+  Stream,
+  IterateeG (..),
+  IterateeGM (..),
+  Iteratee,
+  IterateeM,
+  liftI,
+  (>>==),
+  (==<<),
+  joinI,
+  stream2list,
+  iter_report_err,
+  sbreak,
+  sdropWhile,
+  snext,
+  speek,
+  skip_till_eof,
+  sdrop,
+  EnumeratorN,
+  stake,
+  map_stream,
+  conv_stream,
+  Line,
+  line,
+  print_lines,
+  enum_lines,
+  enum_words,
+  EnumeratorGM,
+  EnumeratorM,
+  EnumeratorGMM,
+  enum_eof,
+  enum_err,
+  (>.),
+  enum_pure_1chunk,
+  enum_pure_nchunk,
+  enum_h,
+  enum_file
+)
+
+where
 
 import Foreign.Marshal.Alloc
 import Foreign.Marshal.Array

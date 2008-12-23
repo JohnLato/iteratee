@@ -121,7 +121,7 @@ infixl 1 >>==
 	 IterateeGM el m a ->
 	 (IterateeG el m a -> IterateeGM el' m b) ->
 	 IterateeGM el' m b
-m >>== f = IM (unIM m >>= unIM . f)
+m >>== f = {-# SCC ">>==" #-} IM (unIM m >>= unIM . f)
 
 {-# INLINE (>>==) #-}
 
@@ -131,7 +131,9 @@ infixr 1 ==<<
     (IterateeG el m a -> IterateeGM el' m b)
     -> IterateeGM el m a
     -> IterateeGM el' m b
-f ==<< m = m >>== f
+f ==<< m = {-# SCC "==<<" #-} m >>== f
+
+{-# INLINE (==<<) #-}
 
 -- The following is a `variant' of join in the IterateeGM el m monad
 -- When el' is the same as el, the type of joinI is indeed that of
@@ -144,7 +146,7 @@ f ==<< m = m >>== f
 -- for embedded/nested streams.  In particular, joinI is useful to
 -- process the result of stake, map_stream, or conv_stream below.
 joinI :: Monad m => IterateeGM el m (IterateeG el' m a) -> IterateeGM el m a
-joinI m = m >>= (\iter -> enum_eof iter >>== check)
+joinI m = m >>= (\iter -> {-# SCC "join/outer" #-} enum_eof iter >>== check)
   where
   check (IE_done x (Err str)) = liftI $ IE_done x (Err str)
   check (IE_done x _) = liftI $ IE_done x EOF
@@ -155,10 +157,12 @@ joinI m = m >>= (\iter -> enum_eof iter >>== check)
 
 instance Monad m => Monad (IterateeGM el m) where
     return x = liftI  $ IE_done  x (Chunk [])
-    m >>= f = m >>== docase
+    m >>= f = iter_bind m f
+{-
+    m >>= f = {-# SCC "IterateeGM/>>=" #-} m >>== docase
      where
      docase (IE_done a (Chunk [])) = f a
-     docase (IE_done a stream) = f a >>== (\r -> case r of
+     docase (IE_done a stream) = {-# SCC "IGM/bind/inner" #-} f a >>== (\r -> case r of
 				IE_done x _  -> liftI $ IE_done x stream
 				IE_cont k    -> k stream)
      docase (IE_cont k) = liftI $ IE_cont ((>>= f) . k)
@@ -176,6 +180,8 @@ instance (Monad m, Functor m) => Functor (IterateeGM el m) where
 
 instance MonadTrans (IterateeGM el) where
     lift m = IM (m >>= unIM . return)
+
+{-# SPECIALIZE instance MonadTrans (IterateeGM el IO) #-}
 
 -- ------------------------------------------------------------------------
 -- Primitive iteratees
@@ -332,7 +338,7 @@ map_stream f (IE_cont k) = liftI $ IE_cont step
 conv_stream :: Monad m =>
   IterateeGM el m (Maybe [el']) -> EnumeratorN el el' m a
 conv_stream _fi iter@IE_done{} = return iter
-conv_stream fi (IE_cont k) = 
+conv_stream fi (IE_cont k) = {-# SCC "conv_stream" #-}
   fi >>= (conv_stream fi ==<<) . k . maybe (Err "conv: stream error") Chunk
 
 -- ------------------------------------------------------------------------

@@ -189,7 +189,7 @@ endian_read4 =
 -- The enumerator of a POSIX Fd: a variation of enum_fd that
 -- supports RandomIO (seek requests)
 enum_fd_random :: Fd -> EnumeratorGM Word8 RBIO a
-enum_fd_random fd iter = 
+enum_fd_random fd iter = {-# SCC "enum_fd_random" #-}
     IM . RBIO $ (\env -> 
 		 allocaBytes (fromIntegral buffer_size) (loop env (0,0) iter))
  where

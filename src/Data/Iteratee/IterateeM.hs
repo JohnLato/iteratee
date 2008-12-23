@@ -121,7 +121,7 @@ infixl 1 >>==
 	 IterateeGM el m a ->
 	 (IterateeG el m a -> IterateeGM el' m b) ->
 	 IterateeGM el' m b
-m >>== f = {-# SCC ">>==" #-} IM (unIM m >>= unIM . f)
+m >>== f = IM (unIM m >>= unIM . f)
 
 {-# INLINE (>>==) #-}
 
@@ -131,7 +131,7 @@ infixr 1 ==<<
     (IterateeG el m a -> IterateeGM el' m b)
     -> IterateeGM el m a
     -> IterateeGM el' m b
-f ==<< m = {-# SCC "==<<" #-} m >>== f
+f ==<< m = m >>== f
 
 {-# INLINE (==<<) #-}
 
@@ -158,14 +158,19 @@ joinI m = m >>= (\iter -> {-# SCC "join/outer" #-} enum_eof iter >>== check)
 instance Monad m => Monad (IterateeGM el m) where
     return x = liftI  $ IE_done  x (Chunk [])
     m >>= f = iter_bind m f
-{-
-    m >>= f = {-# SCC "IterateeGM/>>=" #-} m >>== docase
+
+iter_bind :: Monad m => IterateeGM el m a ->
+                        (a -> IterateeGM el m b) ->
+                        IterateeGM el m b
+iter_bind m f = {-# SCC "iter_bind" #-} m >>== docase
      where
      docase (IE_done a (Chunk [])) = f a
-     docase (IE_done a stream) = {-# SCC "IGM/bind/inner" #-} f a >>== (\r -> case r of
+     docase (IE_done a stream) = {-# SCC "iter_bind/inner" #-} f a >>== (\r -> case r of
 				IE_done x _  -> liftI $ IE_done x stream
 				IE_cont k    -> k stream)
-     docase (IE_cont k) = liftI $ IE_cont ((>>= f) . k)
+     docase (IE_cont k) = {-# SCC "iter_bind/cont" #-} liftI $ IE_cont ((>>= f) . k)
+
+{-# INLINE iter_bind #-}
 
 instance (Monad m, Functor m) => Functor (IterateeGM el m) where
     fmap f m = m >>== docase

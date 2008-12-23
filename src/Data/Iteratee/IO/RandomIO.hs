@@ -2,7 +2,25 @@
 
 -- Random and Binary IO with IterateeM
 
-module Data.Iteratee.IO.RandomIO where
+module Data.Iteratee.IO.RandomIO (
+  RBIO (..),
+  rb_empty,
+  rb_seek_set,
+  rb_seek_answered,
+  rb_msb_first,
+  rb_msb_first_set,
+  runRB,
+  bindm,
+  sseek,
+  iter_err,
+  stakeR,
+  endian_read2,
+  endian_read3,
+  endian_read4,
+  enum_fd_random
+)
+
+where
 
 import Data.Iteratee.IterateeM
 
@@ -33,7 +51,12 @@ instance Functor RBIO where
 
 instance Monad RBIO where
     return  = RBIO . const . return
-    m >>= f = RBIO( \env -> unRBIO m env >>= (\x -> unRBIO (f x) env) )
+    m >>= f = rbio_bind m f
+
+rbio_bind :: RBIO a -> (a -> RBIO b) -> RBIO b
+rbio_bind m f = RBIO( \env -> unRBIO m env >>= (\x -> unRBIO (f x) env) )
+
+{-# INLINE rbio_bind #-}
 
 instance MonadIO RBIO where
     liftIO = RBIO . const

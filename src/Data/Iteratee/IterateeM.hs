@@ -65,6 +65,8 @@ import Control.Monad.Identity
 import Control.OldException (try)
 import System.IO
 
+import Data.Iteratee.IO.RBIO
+
 -- A stream is a (continuing) sequence of elements bundled in Chunks.
 -- The first two variants indicate termination of the stream.
 -- Chunk [a] gives the currently available part of the stream.
@@ -113,8 +115,6 @@ type IterateeM m a = IterateeGM Char m a
 liftI :: Monad m => IterateeG el m a -> IterateeGM el m a
 liftI = IM . return
 
-{-# INLINE liftI #-}
-
 -- Just like bind (at run-time, this is indeed exactly bind)
 infixl 1 >>==
 (>>==):: Monad m =>
@@ -123,8 +123,6 @@ infixl 1 >>==
 	 IterateeGM el' m b
 m >>== f = IM (unIM m >>= unIM . f)
 
-{-# INLINE (>>==) #-}
-
 -- Just like an application -- a call-by-value-like application
 infixr 1 ==<<
 (==<<) :: Monad m =>
@@ -132,8 +130,6 @@ infixr 1 ==<<
     -> IterateeGM el m a
     -> IterateeGM el' m b
 f ==<< m = m >>== f
-
-{-# INLINE (==<<) #-}
 
 -- The following is a `variant' of join in the IterateeGM el m monad
 -- When el' is the same as el, the type of joinI is indeed that of
@@ -171,6 +167,7 @@ iter_bind m f = m >>== docase
      docase (IE_cont k) = liftI $ IE_cont ((>>= f) . k)
 
 {-# SPECIALIZE iter_bind :: IterateeGM el IO a -> (a -> IterateeGM el IO b) -> IterateeGM el IO b #-}
+{-# SPECIALIZE iter_bind :: IterateeGM el RBIO a -> (a -> IterateeGM el RBIO b) -> IterateeGM el RBIO b #-}
 
 instance (Monad m, Functor m) => Functor (IterateeGM el m) where
     fmap f m = m >>== docase
@@ -180,13 +177,16 @@ instance (Monad m, Functor m) => Functor (IterateeGM el m) where
 
 {-# SPECIALIZE instance Monad (IterateeGM Word8 IO) #-}
 {-# SPECIALIZE instance Monad (IterateeGM el IO) #-}
+{-# SPECIALIZE instance Monad (IterateeGM el RBIO) #-}
 {-# SPECIALIZE instance Functor (IterateeGM Word8 IO) #-}
 {-# SPECIALIZE instance Functor (IterateeGM el IO) #-}
+{-# SPECIALIZE instance Functor (IterateeGM el RBIO) #-}
 
 instance MonadTrans (IterateeGM el) where
     lift m = IM (m >>= unIM . return)
 
 {-# SPECIALIZE instance MonadTrans (IterateeGM el IO) #-}
+{-# SPECIALIZE instance MonadTrans (IterateeGM el RBIO) #-}
 
 -- ------------------------------------------------------------------------
 -- Primitive iteratees
@@ -345,6 +345,9 @@ conv_stream :: Monad m =>
 conv_stream _fi iter@IE_done{} = return iter
 conv_stream fi (IE_cont k) = {-# SCC "conv_stream" #-}
   fi >>= (conv_stream fi ==<<) . k . maybe (Err "conv: stream error") Chunk
+
+{-# SPECIALIZE conv_stream :: IterateeGM el IO (Maybe [el']) -> EnumeratorN el el' IO a #-}
+{-# SPECIALIZE conv_stream :: IterateeGM el RBIO (Maybe [el']) -> EnumeratorN el el' RBIO a #-}
 
 -- ------------------------------------------------------------------------
 -- Combining the primitive iteratees to solve the running problem:

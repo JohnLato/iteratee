@@ -301,7 +301,7 @@ join_m (Just a) = a
 normalize :: Integral a => BitDepth -> a -> Double
 normalize 8 a = ((fromIntegral a - 128)) / 128
 normalize _ 0 = 0
-normalize bd a = case (a > 0) of
+normalize bd a = {-# SCC "normalize" #-} case (a > 0) of
         True ->  (fromIntegral a) / divPos
         False -> (fromIntegral a) / divNeg
         where

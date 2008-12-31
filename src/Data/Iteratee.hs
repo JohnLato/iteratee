@@ -14,10 +14,10 @@ import Data.Iteratee.IO.RandomIO
 file_driver_rb :: IterateeGM Word8 RBIO a ->
                FilePath ->
                IO (Either (String, a) a)
-file_driver_rb iter filepath = do
+file_driver_rb iter filepath = {-# SCC "file_driver_rb" #-} do
   fd <- openFd filepath ReadOnly Nothing defaultFileFlags
   rb <- rb_empty
-  result <- runRB rb $ (enum_fd_random fd >. enum_eof) ==<< iter
+  result <- {-# SCC "proc_file" #-} runRB rb $ (enum_fd_random fd >. enum_eof) ==<< iter
   closeFd fd
   print_res result
  where

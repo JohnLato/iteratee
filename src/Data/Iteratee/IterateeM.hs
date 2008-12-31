@@ -162,15 +162,15 @@ instance Monad m => Monad (IterateeGM el m) where
 iter_bind :: Monad m => IterateeGM el m a ->
                         (a -> IterateeGM el m b) ->
                         IterateeGM el m b
-iter_bind m f = {-# SCC "iter_bind" #-} m >>== docase
+iter_bind m f = m >>== docase
      where
      docase (IE_done a (Chunk [])) = f a
      docase (IE_done a stream) = {-# SCC "iter_bind/inner" #-} f a >>== (\r -> case r of
 				IE_done x _  -> liftI $ IE_done x stream
 				IE_cont k    -> k stream)
-     docase (IE_cont k) = {-# SCC "iter_bind/cont" #-} liftI $ IE_cont ((>>= f) . k)
+     docase (IE_cont k) = liftI $ IE_cont ((>>= f) . k)
 
-{-# INLINE iter_bind #-}
+{-# SPECIALIZE iter_bind :: IterateeGM el IO a -> (a -> IterateeGM el IO b) -> IterateeGM el IO b #-}
 
 instance (Monad m, Functor m) => Functor (IterateeGM el m) where
     fmap f m = m >>== docase

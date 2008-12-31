@@ -94,7 +94,7 @@ rb_msb_first_set flag = RBIO action
  where action env = writeIORef (msb_first env) flag
 
 runRB:: RBState -> IterateeGM el RBIO a -> IO (IterateeG el RBIO a)
-runRB rbs m = unRBIO (unIM m) rbs
+runRB rbs m = {-# SCC "runRB" #-} unRBIO (unIM m) rbs
 
 -- ------------------------------------------------------------------------
 -- Binary Random IO Iteratees

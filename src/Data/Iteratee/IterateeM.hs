@@ -115,6 +115,8 @@ type IterateeM m a = IterateeGM Char m a
 liftI :: Monad m => IterateeG el m a -> IterateeGM el m a
 liftI = IM . return
 
+{-# INLINE liftI #-}
+
 -- Just like bind (at run-time, this is indeed exactly bind)
 infixl 1 >>==
 (>>==):: Monad m =>
@@ -130,6 +132,7 @@ infixr 1 ==<<
     -> IterateeGM el m a
     -> IterateeGM el' m b
 f ==<< m = m >>== f
+
 
 -- The following is a `variant' of join in the IterateeGM el m monad
 -- When el' is the same as el, the type of joinI is indeed that of

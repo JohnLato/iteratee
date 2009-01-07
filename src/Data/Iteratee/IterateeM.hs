@@ -133,7 +133,6 @@ infixr 1 ==<<
     (IterateeG el m a -> IterateeGM el' m b)
     -> IterateeGM el m a
     -> IterateeGM el' m b
---f ==<< m = m >>== f
 (==<<) = flip (>>==)
 
 

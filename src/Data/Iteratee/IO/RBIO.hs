@@ -33,7 +33,6 @@ instance Monad RBIO where
 rbio_bind :: RBIO a -> (a -> RBIO b) -> RBIO b
 rbio_bind m f = RBIO( \env -> unRBIO m env >>= (\x -> unRBIO (f x) env) )
 
-
 instance MonadIO RBIO where
     liftIO = RBIO . const
 

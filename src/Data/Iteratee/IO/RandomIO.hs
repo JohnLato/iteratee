@@ -5,8 +5,6 @@
 module Data.Iteratee.IO.RandomIO (
   RBIO (..),
   rb_empty,
-  rb_seek_set,
-  rb_seek_answered,
   rb_msb_first,
   rb_msb_first_set,
   runRB,

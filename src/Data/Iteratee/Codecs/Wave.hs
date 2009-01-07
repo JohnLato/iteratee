@@ -26,6 +26,7 @@ import Data.Char (chr)
 import Data.Int
 import Data.Word
 import Data.Bits (shiftL)
+import Data.Maybe (catMaybes)
 import qualified Data.IntMap as IM
 
 -- =====================================================
@@ -205,16 +206,31 @@ read_value _dict offset (WAVE_OTHER _str) count =
     sseek (8 + fromIntegral offset)
     joinI $ stakeR count iter
 
--- |Convert Word8 to doubles
+unroller :: (Integral a, Monad m) => IterateeGM Word8 m (Maybe a)
+            -> IterateeGM Word8 m (Maybe [a])
+unroller iter = do
+  w1 <- iter
+  w2 <- iter
+  w3 <- iter
+  w4 <- iter
+  w5 <- iter
+  w6 <- iter
+  w7 <- iter
+  w8 <- iter
+  case catMaybes [w1, w2, w3, w4, w5, w6, w7, w8] of
+    [] -> return Nothing
+    xs -> return $ Just xs
+
+-- |Convert Word8s to Doubles
 conv_func :: AudioFormat -> IterateeGM Word8 RBIO (Maybe [Double])
-conv_func (AudioFormat _nc _sr 8) = (fmap . fmap)
-  (\w -> [normalize 8 (fromIntegral w :: Int8)]) snext
-conv_func (AudioFormat _nc _sr 16) = (fmap . fmap)
-  (\w -> [normalize 16 (fromIntegral w :: Int16)]) endian_read2
-conv_func (AudioFormat _nc _sr 24) = (fmap . fmap)
-  (\w -> [normalize 24 (fromIntegral w :: Int32)]) endian_read3
-conv_func (AudioFormat _nc _sr 32) = (fmap . fmap)
-  (\w -> [normalize 32 (fromIntegral w :: Int32)]) endian_read4
+conv_func (AudioFormat _nc _sr 8) = (fmap . fmap . fmap)
+  (normalize 8 . (fromIntegral :: Word8 -> Int8)) (unroller snext)
+conv_func (AudioFormat _nc _sr 16) = (fmap . fmap . fmap)
+  (normalize 16 . (fromIntegral :: Word16 -> Int16)) (unroller endian_read2)
+conv_func (AudioFormat _nc _sr 24) = (fmap . fmap . fmap)
+  (normalize 24 . (fromIntegral :: Word32 -> Int32)) (unroller endian_read3)
+conv_func (AudioFormat _nc _sr 32) = (fmap . fmap . fmap)
+  (normalize 32 . (fromIntegral :: Word32 -> Int32)) (unroller endian_read4)
 conv_func _ = iter_err "Invalid wave bit depth" >> return Nothing
 
 -- |An Iteratee to read a wave format chunk
@@ -300,11 +316,10 @@ join_m (Just a) = a
 
 normalize :: Integral a => BitDepth -> a -> Double
 normalize 8 a = ((fromIntegral a - 128)) / 128
-normalize _ 0 = 0
 normalize bd a = {-# SCC "normalize" #-} case (a > 0) of
-        True ->  (fromIntegral a) / divPos
-        False -> (fromIntegral a) / divNeg
-        where
-                divPos = (fromIntegral (1 `shiftL` fromIntegral (bd - 1) :: Int)) - 1
-                divNeg = fromIntegral (1 `shiftL` fromIntegral (bd - 1) :: Int)
+  True ->  (fromIntegral a) / divPos
+  False -> (fromIntegral a) / divNeg
+  where
+    divPos = (fromIntegral (1 `shiftL` fromIntegral (bd - 1) :: Int)) - 1
+    divNeg = fromIntegral (1 `shiftL` fromIntegral (bd - 1) :: Int)
 

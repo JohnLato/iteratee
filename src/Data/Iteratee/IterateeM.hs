@@ -125,13 +125,16 @@ infixl 1 >>==
 	 IterateeGM el' m b
 m >>== f = IM (unIM m >>= unIM . f)
 
+{-# INLINE (>>==) #-}
+
 -- Just like an application -- a call-by-value-like application
 infixr 1 ==<<
 (==<<) :: Monad m =>
     (IterateeG el m a -> IterateeGM el' m b)
     -> IterateeGM el m a
     -> IterateeGM el' m b
-f ==<< m = m >>== f
+--f ==<< m = m >>== f
+(==<<) = flip (>>==)
 
 
 -- The following is a `variant' of join in the IterateeGM el m monad

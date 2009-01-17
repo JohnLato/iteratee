@@ -182,6 +182,9 @@ enum_fd_random fd iter = {-# SCC "enum_fd_random" #-}
    case off' of
     Left _errno -> runRB env $ enum_err "IO error" iter'
     Right off''  -> loop' env (off'',0) iter' p Nothing
+    -- Thanks to John Lato for the strictness annotation
+    -- Otherwise, the `off + fromIntegral len' below accumulates thunks
+  loop' env (off,len) iter' p Nothing | off `seq` len `seq` False = undefined
   loop' env (off,len) iter'@(IE_cont step) p Nothing = do
    n <- myfdRead fd (castPtr p) buffer_size
    case n of

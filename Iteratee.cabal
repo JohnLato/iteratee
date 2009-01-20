@@ -33,4 +33,3 @@ Library
                         Data.Iteratee.Codecs.Tiff
                         Data.Iteratee.Codecs.Wave
  other-modules:         Data.Iteratee.IO.LowLevelIO
-                        Data.Iteratee.IO.RBIO

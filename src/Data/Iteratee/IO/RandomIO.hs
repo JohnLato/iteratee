@@ -3,42 +3,36 @@
 -- Random and Binary IO with IterateeM
 
 module Data.Iteratee.IO.RandomIO (
-  RBIO (..),
-  rb_empty,
-  rb_msb_first,
-  rb_msb_first_set,
-  runRB,
   bindm,
-  sseek,
+  --sseek,
   iter_err,
   stakeR,
   endian_read2,
   endian_read3,
   endian_read4,
-  enum_fd_random
+  enum_fd_random,
+  test1r,
+  test2r,
+  test3r,
+  test4r
 )
 
 where
 
-import Data.Iteratee.IO.RBIO
 import Data.Iteratee.IterateeM
+import Text.Printf
 
 import System.Posix
 import Foreign.Ptr
 import Foreign.Marshal.Alloc
 import Foreign.Marshal.Array
-import Control.Monad.Trans
 import Data.Word
 import Data.Bits
 import Data.Int
-import Data.IORef
 
 import System.IO (SeekMode(..))
 import Data.Iteratee.IO.LowLevelIO
 
-
-runRB:: RBState -> IterateeGM el RBIO a -> IO (IterateeG el RBIO a)
-runRB rbs m = {-# SCC "runRB" #-} unRBIO (unIM m) rbs
 
 -- ------------------------------------------------------------------------
 -- Binary Random IO Iteratees
@@ -54,17 +48,13 @@ bindm m f = m >>= maybe (return Nothing) f
 -- We discard all available input first.
 -- We keep discarding the stream s until we determine that our request 
 -- has been answered:
--- rb_seek_set sets the state seek_req to (Just off). When the
--- request is answered, the state goes back to Nothing.
--- The above features remind one of delimited continuations.
-sseek :: FileOffset -> IterateeGM el RBIO ()
-sseek off = lift (rb_seek_set off) >> liftI (IE_cont step)
+{-
+sseek :: Monad m => FileOffset -> IterateeGM el m ()
+sseek off = liftI (IE_jmp off step)
  where
  step s@(Err _) = liftI $ IE_done () s
- step s   = do
-	    r <- lift rb_seek_answered
-	    if r then liftI $ IE_done () s
-	         else liftI $ IE_cont step
+ step s   = liftI $ IE_done () s
+-}
 
 
 -- An iteratee that reports and propagates an error
@@ -86,6 +76,7 @@ iter_err err = liftI $ IE_cont step
 stakeR :: Monad m => Int -> EnumeratorN el el m a
 stakeR 0 iter = return iter
 stakeR _n iter@IE_done{} = return iter
+stakeR _n iter@IE_jmp{} = return iter
 stakeR n (IE_cont k) = liftI $ IE_cont step
  where
  step (Chunk []) = liftI $ IE_cont step
@@ -99,11 +90,12 @@ stakeR n (IE_cont k) = liftI $ IE_cont step
 
 -- Iteratees to read unsigned integers written in Big- or Little-endian ways
 
-endian_read2 :: IterateeGM Word8 RBIO (Maybe Word16)
+endian_read2 :: Monad m => IterateeGM Word8 m (Maybe Word16)
 endian_read2 =
   bindm snext $ \c1 ->
   bindm snext $ \c2 -> do
-  flag <- lift rb_msb_first
+  -- flag <- lift rb_msb_first
+  let flag = False -- temporary endian-ness
   if flag then
       return $ return $ (fromIntegral c1 `shiftL` 8) .|. fromIntegral c2
      else
@@ -112,12 +104,13 @@ endian_read2 =
 -- |read 3 bytes in an endian manner.  If the first bit is set (negative),
 -- set the entire first byte so the Word32 can be properly set negative as
 -- well.
-endian_read3 :: IterateeGM Word8 RBIO (Maybe Word32)
+endian_read3 :: Monad m => IterateeGM Word8 m (Maybe Word32)
 endian_read3 = 
   bindm snext $ \c1 ->
   bindm snext $ \c2 ->
   bindm snext $ \c3 -> do
-  flag <- lift rb_msb_first
+  --flag <- lift rb_msb_first
+  let flag = False  -- Temporary endian-ness
   if flag then
      return $ return $ (((fromIntegral c1
                         `shiftL` 8) .|. fromIntegral c2)
@@ -129,13 +122,14 @@ endian_read3 =
                         `shiftL` 8) .|. fromIntegral c2)
                         `shiftL` 8) .|. fromIntegral m
 
-endian_read4 :: IterateeGM Word8 RBIO (Maybe Word32)
+endian_read4 :: Monad m => IterateeGM Word8 m (Maybe Word32)
 endian_read4 =
   bindm snext $ \c1 ->
   bindm snext $ \c2 ->
   bindm snext $ \c3 ->
   bindm snext $ \c4 -> do
-  flag <- lift rb_msb_first
+  -- flag <- lift rb_msb_first
+  let flag = False    -- Temporary endian-ness
   if flag then
       return $ return $ 
 	       (((((fromIntegral c1
@@ -155,52 +149,45 @@ endian_read4 =
 
 -- The enumerator of a POSIX Fd: a variation of enum_fd that
 -- supports RandomIO (seek requests)
-enum_fd_random :: Fd -> EnumeratorGM Word8 RBIO a
+enum_fd_random :: Fd -> EnumeratorGM Word8 IO a
 enum_fd_random fd iter = {-# SCC "enum_fd_random" #-}
-    IM . RBIO $ (\env -> 
-		 allocaBytes (fromIntegral buffer_size) (loop env (0,0) iter))
+    IM $ allocaBytes (fromIntegral buffer_size) (loop (0,0) iter)
  where
   buffer_size = 4096
-  -- the second argument of loop is (off,len), describing which part
+  -- the first argument of loop is (off,len), describing which part
   -- of the file is currently in the buffer 'p'
-  loop :: RBState -> (FileOffset,Int) -> IterateeG Word8 RBIO a -> 
-	  Ptr Word8 -> IO (IterateeG Word8 RBIO a)
-  loop _env _pos iter'@IE_done{} _p = return iter'
-  loop env pos iter' p = readIORef (seek_req env) >>= loop' env pos iter' p
-
-  loop' env pos@(off,len) iter' p (Just off') | 
+  loop :: (FileOffset,Int) -> IterateeG Word8 IO a -> 
+	  Ptr Word8 -> IO (IterateeG Word8 IO a)
+  loop _pos iter'@IE_done{} _p = return iter'
+  loop pos@(off,len) (IE_jmp off' c) p | 
     off <= off' && off' < off + fromIntegral len =	-- Seek within buffer p
     do
-    writeIORef (seek_req env) Nothing
     let local_off = fromIntegral $ off' - off
     str <- peekArray (len - local_off) (p `plusPtr` local_off)
-    im  <- runRB env $ enum_pure_1chunk str iter'
-    loop env pos im p
-  loop' env _pos iter' p (Just off) = do -- Seek outside the buffer
-   writeIORef (seek_req env) Nothing
+    im <- unIM $ c (Chunk str)
+    loop pos im p
+  loop _pos iter'@(IE_jmp off c) p = do -- Seek outside the buffer
    off' <- myfdSeek fd AbsoluteSeek (fromIntegral off)
    case off' of
-    Left _errno -> runRB env $ enum_err "IO error" iter'
-    Right off''  -> loop' env (off'',0) iter' p Nothing
+    Left _errno -> unIM $ enum_err "IO error" iter'
+    Right off''  -> loop (off'',0) (IE_cont c) p
     -- Thanks to John Lato for the strictness annotation
     -- Otherwise, the `off + fromIntegral len' below accumulates thunks
-  loop' env (off,len) iter' p Nothing | off `seq` len `seq` False = undefined
-  loop' env (off,len) iter'@(IE_cont step) p Nothing = do
+  loop (off,len) _iter' _p | off `seq` len `seq` False = undefined
+  loop (off,len) iter'@(IE_cont step) p = do
    n <- myfdRead fd (castPtr p) buffer_size
    case n of
-    Left _errno -> runRB env $ step (Err "IO error")
+    Left _errno -> unIM $ step (Err "IO error")
     Right 0 -> return iter'
     Right n' -> do
 	 str <- peekArray (fromIntegral n') p
-	 im  <- runRB env $ step (Chunk str)
-	 loop env (off + fromIntegral len,fromIntegral n') im p
-  loop' _env (_off, _len) IE_done{} _p Nothing = fail "This should never happen"
+	 im  <- unIM $ step (Chunk str)
+	 loop (off + fromIntegral len,fromIntegral n') im p
 
 
 -- ------------------------------------------------------------------------
 -- Tests
 
-{-
 test1 () = do
 	   Just s1 <- snext
 	   Just s2 <- snext
@@ -234,7 +221,6 @@ test2 () = do
 
 test3 () = do
 	   let show_x fmt = map (\x -> (printf fmt x)::String)
-	   lift $ rb_msb_first_set True
 	   Just ns1 <- endian_read2
 	   Just ns2 <- endian_read2
 	   Just ns3 <- endian_read2
@@ -243,7 +229,6 @@ test3 () = do
 	   Just nl1 <- endian_read4
 	   Just nl2 <- endian_read4
 	   sseek 4
-	   lift $ rb_msb_first_set False
 	   Just ns3' <- endian_read2
 	   Just ns4' <- endian_read2
 	   sseek 0
@@ -258,7 +243,6 @@ test3 () = do
 		   show_x "%08x" [nl1',nl2']]
 			    
 test4 () = do
-	   lift $ rb_msb_first_set True
 	   Just ns1 <- endian_read2
 	   Just ns2 <- endian_read2
 	   iter_err "Error"
@@ -267,8 +251,7 @@ test4 () = do
 
 test_driver_random iter filepath = do
   fd <- openFd filepath ReadOnly Nothing defaultFileFlags
-  rb <- rb_empty
-  result <- runRB rb $ (enum_fd_random fd >. enum_eof) ==<< iter
+  result <- unIM $ (enum_fd_random fd >. enum_eof) ==<< iter
   closeFd fd
   print_res result
  where
@@ -290,7 +273,7 @@ test3r = test_driver_random (test3 ()) "test4.txt" >>=
 
 test4r = test_driver_random (test4 ()) "test4.txt" >>=
 	 return . (== (1,515,Nothing))
--}
+
 
 {-
 About to read file

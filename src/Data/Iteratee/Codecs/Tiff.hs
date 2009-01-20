@@ -53,6 +53,7 @@ module Data.Iteratee.Codecs.Tiff where
 import Data.Iteratee.IterateeM
 import Data.Iteratee.IO.RandomIO
 import Control.Monad.Trans
+import Control.Monad.State
 import Data.Char (chr)
 import Data.Int
 import Data.Word
@@ -76,8 +77,8 @@ import qualified Data.IntMap as IM
 -- test_tiff = test_driver_random (tiff_reader >>= process_tiff) "filename.tiff"
 
 -- Sample TIFF processing function
-process_tiff :: Maybe (IM.IntMap TIFFDE) ->
-  IterateeGM Word8 RBIO (Maybe String)
+process_tiff :: MonadIO m => Maybe (IM.IntMap TIFFDE) ->
+  IterateeGM Word8 m (Maybe String)
 process_tiff Nothing = return $ Just "No dictionary"
 process_tiff (Just dict) = do
   note ["dict size: ", show $ IM.size dict]
@@ -110,7 +111,7 @@ process_tiff (Just dict) = do
 -- process_tiff Nothing = return Nothing
 
 -- sample processing of the pixel matrix: computing the histogram
-compute_hist :: TIFFDict -> IterateeGM Word8 RBIO (Int,IM.IntMap Int)
+compute_hist :: MonadIO m => TIFFDict -> IterateeGM Word8 m (Int,IM.IntMap Int)
 compute_hist dict = joinI $ pixel_matrix_enum dict ==<< compute_hist' 0 IM.empty
  where
  compute_hist' count hist = liftI $ IE_cont (step count hist)
@@ -124,7 +125,8 @@ compute_hist dict = joinI $ pixel_matrix_enum dict ==<< compute_hist' 0 IM.empty
 -- some pixels
 -- This processor does not read the whole matrix; it stops as soon
 -- as everything is verified or the error is detected
-verify_pixel_vals :: TIFFDict -> [(IM.Key, Word8)] -> IterateeGM Word8 RBIO ()
+verify_pixel_vals :: MonadIO m =>
+                     TIFFDict -> [(IM.Key, Word8)] -> IterateeGM Word8 m ()
 verify_pixel_vals dict pixels = joinI $ pixel_matrix_enum dict ==<< 
 				verify 0 (IM.fromList pixels)
  where
@@ -152,10 +154,11 @@ data TIFFDE = TIFFDE{tiffde_count :: Int,        -- number of items
 		     tiffde_enum  :: TIFFDE_ENUM -- enumerator to get values
 		    }
 
-data TIFFDE_ENUM = TEN_CHAR (forall a. EnumeratorGMM Word8 Char RBIO a)
-                 | TEN_BYTE (forall a. EnumeratorGMM Word8 Word8 RBIO a)
-                 | TEN_INT  (forall a. EnumeratorGMM Word8 Integer RBIO a)
-                 | TEN_RAT  (forall a. EnumeratorGMM Word8 Rational RBIO a)
+data TIFFDE_ENUM =
+  TEN_CHAR (forall a m. Monad m => EnumeratorGMM Word8 Char m a)
+  | TEN_BYTE (forall a m. Monad m => EnumeratorGMM Word8 Word8 m a)
+  | TEN_INT  (forall a m. Monad m => EnumeratorGMM Word8 Integer m a)
+  | TEN_RAT  (forall a m. Monad m => EnumeratorGMM Word8 Rational m a)
 
 -- Standard TIFF data types
 data TIFF_TYPE = TT_NONE  -- 0
@@ -294,24 +297,23 @@ int_to_tag :: Int -> TIFF_TAG
 int_to_tag x = maybe (TG_other x) id $ IM.lookup x tag_map'
 
 
-
 -- The library function to read the TIFF dictionary
-tiff_reader :: IterateeGM Word8 RBIO (Maybe TIFFDict)
+tiff_reader :: StateT (Maybe Bool) (IterateeGM Word8 IO) (Maybe TIFFDict)
 tiff_reader = do
   read_magic
-  check_version
-  bindm endian_read4 $ \dict_offset -> do
-    sseek (fromIntegral dict_offset)
-    load_dict
+  lift check_version
+  bindm (lift endian_read4) $ \dict_offset -> do
+    lift $ sseek (fromIntegral dict_offset)
+    lift load_dict
  where
    -- Read the magic and set the endianness
    read_magic = do
-     c1 <- snext
-     c2 <- snext
+     c1 <- lift snext
+     c2 <- lift snext
      case (c1,c2) of
-      (Just 0x4d, Just 0x4d) -> lift $ rb_msb_first_set True  -- MM magic
-      (Just 0x49, Just 0x49) -> lift $ rb_msb_first_set False -- II magic
-      _ -> iter_err $ "Bad TIFF magic word: " ++ show [c1,c2]
+      (Just 0x4d, Just 0x4d) -> put $ Just True
+      (Just 0x49, Just 0x49) -> put $ Just False
+      _ -> lift $ iter_err $ "Bad TIFF magic word: " ++ show [c1,c2]
 
    -- Check the version in the header. It is always ...
    tiff_version = 42
@@ -343,12 +345,12 @@ u8_to_s8 = fromIntegral
 -- u8_to_s8 128 == -128
 -- u8_to_s8 255 == -1
 
-note :: [String] -> IterateeGM el RBIO ()
+note :: MonadIO m => [String] -> IterateeGM el m ()
 note = lift . liftIO . putStrLn . concat
 
 -- An internal function to load the dictionary. It assumes that the stream
 -- is positioned to read the dictionary
-load_dict :: IterateeGM Word8 RBIO (Maybe TIFFDict)
+load_dict :: MonadIO m => IterateeGM Word8 m (Maybe TIFFDict)
 load_dict = do
   bindm endian_read2 $ \nentries -> do
    dict <- foldr (const read_entry) (return (Just IM.empty)) [1..nentries]
@@ -386,8 +388,8 @@ load_dict = do
       iter_err $ "Bad type of entry: " ++ show typ
       return Nothing
 
-  read_value :: TIFF_TYPE -> Int -> 
-                IterateeGM Word8 RBIO (Maybe TIFFDE_ENUM)
+  read_value :: MonadIO m => TIFF_TYPE -> Int -> 
+                IterateeGM Word8 m (Maybe TIFFDE_ENUM)
 
   read_value typ 0 = do
     bindm endian_read4 $ \_offset -> do
@@ -517,7 +519,7 @@ load_dict = do
      note ["unhandled type: ", show typ, " with count ", show count]
      return Nothing
 
-  immed_value :: [el] -> EnumeratorGMM Word8 el RBIO a
+  immed_value :: Monad m => [el] -> EnumeratorGMM Word8 el m a
   immed_value item iter =
      (enum_pure_1chunk item >. enum_eof) iter >>== joinI . return
 
@@ -544,7 +546,7 @@ load_dict = do
 
 -- Reading the pixel matrix
 -- For simplicity, we assume no compression and 8-bit pixels
-pixel_matrix_enum :: TIFFDict -> EnumeratorN Word8 Word8 RBIO a
+pixel_matrix_enum :: MonadIO m => TIFFDict -> EnumeratorN Word8 Word8 m a
 pixel_matrix_enum dict iter = validate_dict >>= proceed
  where
    -- Make sure we can handle this particular TIFF image
@@ -586,15 +588,16 @@ pixel_matrix_enum dict iter = validate_dict >>= proceed
 
 -- A few helpers for getting data from TIFF dictionary
 
-dict_read_int :: TIFF_TAG -> TIFFDict -> IterateeGM Word8 RBIO (Maybe Integer)
+dict_read_int :: Monad m => TIFF_TAG -> TIFFDict ->
+                 IterateeGM Word8 m (Maybe Integer)
 dict_read_int tag dict = do
   els <- dict_read_ints tag dict
   case els of
    Just (e:_) -> return $ Just e
    _          -> return Nothing
 
-dict_read_ints :: TIFF_TAG -> TIFFDict -> 
-		  IterateeGM Word8 RBIO (Maybe [Integer])
+dict_read_ints :: Monad m => TIFF_TAG -> TIFFDict -> 
+		  IterateeGM Word8 m (Maybe [Integer])
 dict_read_ints tag dict = 
   case IM.lookup (tag_to_int tag) dict of
       Just (TIFFDE _ (TEN_INT enum)) -> do
@@ -602,7 +605,8 @@ dict_read_ints tag dict =
 	     return (Just e)
       _ -> return Nothing
 
-dict_read_rat :: TIFF_TAG -> TIFFDict -> IterateeGM Word8 RBIO (Maybe Rational)
+dict_read_rat :: Monad m => TIFF_TAG -> TIFFDict ->
+                 IterateeGM Word8 m (Maybe Rational)
 dict_read_rat tag dict = 
   case IM.lookup (tag_to_int tag) dict of
       Just (TIFFDE 1 (TEN_RAT enum)) -> do
@@ -610,7 +614,8 @@ dict_read_rat tag dict =
 	     return (Just e)
       _ -> return Nothing
 
-dict_read_string :: TIFF_TAG -> TIFFDict -> IterateeGM Word8 RBIO (Maybe String)
+dict_read_string :: Monad m => TIFF_TAG -> TIFFDict ->
+                    IterateeGM Word8 m (Maybe String)
 dict_read_string tag dict = 
   case IM.lookup (tag_to_int tag) dict of
       Just (TIFFDE _ (TEN_CHAR enum)) -> do

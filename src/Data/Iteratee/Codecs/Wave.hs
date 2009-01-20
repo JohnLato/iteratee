@@ -42,10 +42,11 @@ data WAVEDE = WAVEDE{
   wavede_enum :: WAVEDE_ENUM -- ^enumerator to get values of chunk
   }
 
-data WAVEDE_ENUM = WEN_CHAR (forall a. EnumeratorGMM Word8 Char RBIO a)
-                 | WEN_BYTE (forall a. EnumeratorGMM Word8 Word8 RBIO a)
-                 | WEN_INT  (forall a. EnumeratorGMM Word8 Integer RBIO a)
-                 | WEN_DUB  (forall a. EnumeratorGMM Word8 Double RBIO a)
+data WAVEDE_ENUM =
+    WEN_CHAR (forall a. EnumeratorGMM Word8 Char IO a)
+  | WEN_BYTE (forall a. EnumeratorGMM Word8 Word8 IO a)
+  | WEN_INT  (forall a. EnumeratorGMM Word8 Integer IO a)
+  | WEN_DUB  (forall a. EnumeratorGMM Word8 Double IO a)
 
 -- |Standard WAVE data types
 data WAVE_TYPE = WAVE_NONE -- ^None
@@ -110,9 +111,8 @@ string_read4 = do
 -- -----------------
 
 -- |The library function to read the WAVE dictionary
-wave_reader :: IterateeGM Word8 RBIO (Maybe WAVEDict)
+wave_reader :: IterateeGM Word8 IO (Maybe WAVEDict)
 wave_reader = do
-  lift $ rb_msb_first_set False
   read_riff
   bindm endian_read4 $ \tot_size -> do
     read_riff_wave
@@ -120,7 +120,7 @@ wave_reader = do
     load_dict $ join_m chunks_m
 
 -- |Read the RIFF header of a file.
-read_riff :: IterateeGM Word8 RBIO ()
+read_riff :: IterateeGM Word8 IO ()
 read_riff = do
   s <- string_read4
   case s == Just "RIFF" of
@@ -128,7 +128,7 @@ read_riff = do
     False -> iter_err $ "Bad RIFF header: " ++ show s
 
 -- | Read the WAVE part of the RIFF header.
-read_riff_wave :: IterateeGM Word8 RBIO ()
+read_riff_wave :: IterateeGM Word8 IO ()
 read_riff_wave = do
   s <- string_read4
   case s == Just "WAVE" of
@@ -137,7 +137,7 @@ read_riff_wave = do
 
 -- | An internal function to find all the chunks.  It assumes that the
 -- stream is positioned to read the first chunk.
-find_chunks :: Int -> IterateeGM Word8 RBIO (Maybe [(Int, WAVE_CHUNK, Int)])
+find_chunks :: Int -> IterateeGM Word8 IO (Maybe [(Int, WAVE_CHUNK, Int)])
 find_chunks n = find_chunks' 12 []
   where
   find_chunks' offset acc = do
@@ -157,7 +157,7 @@ find_chunks n = find_chunks' 12 []
                (fromIntegral offset, chk, fromIntegral count') : acc
 
 load_dict :: [(Int, WAVE_CHUNK, Int)] ->
-               IterateeGM Word8 RBIO (Maybe WAVEDict)
+               IterateeGM Word8 IO (Maybe WAVEDict)
 load_dict = foldl read_entry (return (Just IM.empty))
   where
   read_entry dictM (offset, typ, count) = do
@@ -177,7 +177,7 @@ read_value :: WAVEDict ->
               Int -> -- ^Offset
               WAVE_CHUNK -> -- ^Chunk type
               Int -> -- ^Count
-              IterateeGM Word8 RBIO (Maybe WAVEDE_ENUM)
+              IterateeGM Word8 IO (Maybe WAVEDE_ENUM)
 read_value _dict offset _ 0 = do
   iter_err $ "Zero count in the entry of chunk at: " ++ show offset
   return Nothing
@@ -222,7 +222,7 @@ unroller iter = do
     xs -> return $ Just xs
 
 -- |Convert Word8s to Doubles
-conv_func :: AudioFormat -> IterateeGM Word8 RBIO (Maybe [Double])
+conv_func :: AudioFormat -> IterateeGM Word8 IO (Maybe [Double])
 conv_func (AudioFormat _nc _sr 8) = (fmap . fmap . fmap)
   (normalize 8 . (fromIntegral :: Word8 -> Int8)) (unroller snext)
 conv_func (AudioFormat _nc _sr 16) = (fmap . fmap . fmap)
@@ -234,7 +234,7 @@ conv_func (AudioFormat _nc _sr 32) = (fmap . fmap . fmap)
 conv_func _ = iter_err "Invalid wave bit depth" >> return Nothing
 
 -- |An Iteratee to read a wave format chunk
-sWaveFormat :: IterateeGM Word8 RBIO (Maybe AudioFormat)
+sWaveFormat :: IterateeGM Word8 IO (Maybe AudioFormat)
 sWaveFormat = do
   bindm endian_read2 $ \f' -> --data format, 1==PCM
    bindm endian_read2 $ \nc ->
@@ -250,13 +250,13 @@ sWaveFormat = do
 -- ---------------------
 -- functions to assist with reading from the dictionary
 
-dict_read_first_format :: WAVEDict -> IterateeGM Word8 RBIO (Maybe AudioFormat)
+dict_read_first_format :: WAVEDict -> IterateeGM Word8 IO (Maybe AudioFormat)
 dict_read_first_format dict = case IM.lookup (fromEnum WAVE_FMT) dict of
   Just [] -> return Nothing
   Just ((WAVEDE _ WAVE_FMT (WEN_BYTE enum)) : _xs) -> enum ==<< sWaveFormat
   _ -> return Nothing
 
-dict_read_last_format :: WAVEDict -> IterateeGM Word8 RBIO (Maybe AudioFormat)
+dict_read_last_format :: WAVEDict -> IterateeGM Word8 IO (Maybe AudioFormat)
 dict_read_last_format dict = case IM.lookup (fromEnum WAVE_FMT) dict of
   Just [] -> return Nothing
   Just xs -> let (WAVEDE _ WAVE_FMT (WEN_BYTE enum)) = last xs in
@@ -265,14 +265,14 @@ dict_read_last_format dict = case IM.lookup (fromEnum WAVE_FMT) dict of
 
 dict_read_format :: Int -> -- ^Index in the format chunk list to read
                     WAVEDict -> -- ^Dictionary
-                    IterateeGM Word8 RBIO (Maybe AudioFormat)
+                    IterateeGM Word8 IO (Maybe AudioFormat)
 dict_read_format ix dict = case IM.lookup (fromEnum WAVE_FMT) dict of
   Just xs -> let (WAVEDE _ WAVE_FMT (WEN_BYTE enum)) = (!!) xs ix in do
     e <- enum ==<< sWaveFormat
     return e
   _ -> return Nothing
 
-dict_read_first_data :: WAVEDict -> IterateeGM Word8 RBIO (Maybe [Double])
+dict_read_first_data :: WAVEDict -> IterateeGM Word8 IO (Maybe [Double])
 dict_read_first_data dict = case IM.lookup (fromEnum WAVE_DATA) dict of
   Just [] -> return Nothing
   Just ((WAVEDE _ WAVE_DATA (WEN_DUB enum)) : _xs) -> do
@@ -280,7 +280,7 @@ dict_read_first_data dict = case IM.lookup (fromEnum WAVE_DATA) dict of
        return $ Just e
   _ -> return Nothing
 
-dict_read_last_data :: WAVEDict -> IterateeGM Word8 RBIO (Maybe [Double])
+dict_read_last_data :: WAVEDict -> IterateeGM Word8 IO (Maybe [Double])
 dict_read_last_data dict = case IM.lookup (fromEnum WAVE_DATA) dict of
   Just [] -> return Nothing
   Just xs -> let (WAVEDE _ WAVE_DATA (WEN_DUB enum)) = last xs in do
@@ -290,7 +290,7 @@ dict_read_last_data dict = case IM.lookup (fromEnum WAVE_DATA) dict of
 
 dict_read_data :: Int -> -- ^Index in the data chunk list to read
                   WAVEDict -> -- ^Dictionary
-                  IterateeGM Word8 RBIO (Maybe [Double])
+                  IterateeGM Word8 IO (Maybe [Double])
 dict_read_data ix dict = case IM.lookup (fromEnum WAVE_DATA) dict of
   Just xs -> let (WAVEDE _ WAVE_DATA (WEN_DUB enum)) = (!!) xs ix in do
     e <- enum ==<< stream2list
@@ -299,8 +299,8 @@ dict_read_data ix dict = case IM.lookup (fromEnum WAVE_DATA) dict of
 
 dict_process_data :: Int -> -- ^Index in the data chunk list to read
                      WAVEDict -> -- ^Dictionary
-                     IterateeGM Double RBIO a ->
-                     IterateeGM Word8 RBIO (Maybe a)
+                     IterateeGM Double IO a ->
+                     IterateeGM Word8 IO (Maybe a)
 dict_process_data ix dict iter = {-# SCC "dict_process_data" #-} case IM.lookup (fromEnum WAVE_DATA) dict of
   Just xs -> let (WAVEDE _ WAVE_DATA (WEN_DUB enum)) = (!!) xs ix in do
     e <- enum ==<< iter

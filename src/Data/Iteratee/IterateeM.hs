@@ -32,6 +32,7 @@ module Data.Iteratee.IterateeM (
   speek,
   skip_till_eof,
   sdrop,
+  sseek,
   EnumeratorN,
   stake,
   map_stream,
@@ -55,6 +56,7 @@ module Data.Iteratee.IterateeM (
 
 where
 
+import System.Posix (FileOffset)
 import Foreign.Marshal.Alloc
 import Foreign.Marshal.Array
 import Data.List (splitAt)
@@ -104,6 +106,7 @@ type Stream = StreamG Char
 
 data IterateeG el m a = IE_done a (StreamG el)
 		      | IE_cont (StreamG el -> IterateeGM el m a)
+		      | IE_jmp FileOffset (StreamG el -> IterateeGM el m a)
 newtype IterateeGM el m a = IM{unIM:: m (IterateeG el m a)}
 
 type Iteratee  m a = IterateeG  Char m a
@@ -152,6 +155,7 @@ joinI m = m >>= (\iter -> {-# SCC "join/outer" #-} enum_eof iter >>== check)
   check (IE_done x (Err str)) = liftI $ IE_done x (Err str)
   check (IE_done x _) = liftI $ IE_done x EOF
   check (IE_cont _) = error "joinI: can't happen: EOF didn't terminate"
+  check (IE_jmp _ _) = error "joinI: can't happen: EOF didn't terminate"
 
 -- It turns out, IterateeGM form a monad. We can use the familiar do
 -- notation for composing Iteratees
@@ -166,32 +170,31 @@ iter_bind :: Monad m => IterateeGM el m a ->
 iter_bind m f = m >>== docase
      where
      docase (IE_done a (Chunk [])) = f a
-     docase (IE_done a stream) = {-# SCC "iter_bind/inner" #-} f a >>== (\r -> case r of
+     docase (IE_done a stream) = f a >>== (\r -> case r of
 				IE_done x _  -> liftI $ IE_done x stream
-				IE_cont k    -> k stream)
+				IE_cont k    -> k stream
+                                iter         -> liftI iter)
      docase (IE_cont k) = liftI $ IE_cont ((>>= f) . k)
+     docase (IE_jmp off k) = liftI $ IE_jmp off ((>>= f) . k)
 
 {-# SPECIALIZE iter_bind :: IterateeGM el IO a -> (a -> IterateeGM el IO b) -> IterateeGM el IO b #-}
-{-# SPECIALIZE iter_bind :: IterateeGM el RBIO a -> (a -> IterateeGM el RBIO b) -> IterateeGM el RBIO b #-}
 
 instance (Monad m, Functor m) => Functor (IterateeGM el m) where
     fmap f m = m >>== docase
       where
       docase (IE_done a stream) = liftI $ IE_done (f a) stream
       docase (IE_cont k) = liftI $ IE_cont (fmap f . k)
+      docase (IE_jmp off k) = liftI $ IE_jmp off (fmap f . k)
 
 {-# SPECIALIZE instance Monad (IterateeGM Word8 IO) #-}
 {-# SPECIALIZE instance Monad (IterateeGM el IO) #-}
-{-# SPECIALIZE instance Monad (IterateeGM el RBIO) #-}
 {-# SPECIALIZE instance Functor (IterateeGM Word8 IO) #-}
 {-# SPECIALIZE instance Functor (IterateeGM el IO) #-}
-{-# SPECIALIZE instance Functor (IterateeGM el RBIO) #-}
 
 instance MonadTrans (IterateeGM el) where
     lift m = IM (m >>= unIM . return)
 
 {-# SPECIALIZE instance MonadTrans (IterateeGM el IO) #-}
-{-# SPECIALIZE instance MonadTrans (IterateeGM el RBIO) #-}
 
 -- ------------------------------------------------------------------------
 -- Primitive iteratees
@@ -293,6 +296,11 @@ sdrop n = liftI $ IE_cont step
   where (_s1,s2) = splitAt n str
  step stream = liftI $ IE_done () stream
 
+sseek :: Monad m => FileOffset -> IterateeGM el m ()
+sseek off = liftI (IE_jmp off step)
+ where
+ step s = liftI $ IE_done () s
+
 -- ---------------------------------------------------
 -- The converters show a different way of composing two iteratees:
 -- `vertical' rather than `horizontal'
@@ -311,6 +319,15 @@ stake :: Monad m =>
 	 Int -> EnumeratorN el el m a
 stake 0 iter = return iter
 stake n iter@IE_done{} = sdrop n >> return iter
+stake n (IE_jmp _off k) = liftI $ IE_cont step
+ where
+ step (Chunk []) = liftI $ IE_cont step
+ step chunk@(Chunk str) | length str <= n =
+			     stake (n - length str) ==<< k chunk
+ step (Chunk str) = done (Chunk s1) (Chunk s2)
+   where (s1,s2) = splitAt n str
+ step stream = done stream stream
+ done s1 s2 = k s1 >>== \r -> liftI $ IE_done r s2
 stake n (IE_cont k) = liftI $ IE_cont step
  where
  step (Chunk []) = liftI $ IE_cont step
@@ -336,6 +353,12 @@ map_stream f (IE_cont k) = liftI $ IE_cont step
  step (Chunk str) = k (Chunk (map f str)) >>== map_stream f
  step EOF         = k EOF       >>== \r -> liftI $ IE_done r EOF
  step (Err err)   = k (Err err) >>== \r -> liftI $ IE_done r (Err err)
+map_stream f (IE_jmp off k) = liftI $ IE_jmp off step
+  where
+ step (Chunk [])  = liftI $ IE_cont step
+ step (Chunk str) = k (Chunk (map f str)) >>== map_stream f
+ step EOF         = k EOF       >>== \r -> liftI $ IE_done r EOF
+ step (Err err)   = k (Err err) >>== \r -> liftI $ IE_done r (Err err)
 
 -- Convert one stream into another, not necessarily in `lockstep'
 -- The transformer map_stream maps one element of the outer stream
@@ -350,9 +373,10 @@ conv_stream :: Monad m =>
 conv_stream _fi iter@IE_done{} = return iter
 conv_stream fi (IE_cont k) = {-# SCC "conv_stream" #-}
   fi >>= (conv_stream fi ==<<) . k . maybe (Err "conv: stream error") Chunk
+conv_stream fi (IE_jmp _off k) =
+  fi >>= (conv_stream fi ==<<) . k . maybe (Err "conv: stream error") Chunk
 
 {-# SPECIALIZE conv_stream :: IterateeGM el IO (Maybe [el']) -> EnumeratorN el el' IO a #-}
-{-# SPECIALIZE conv_stream :: IterateeGM el RBIO (Maybe [el']) -> EnumeratorN el el' RBIO a #-}
 
 -- ------------------------------------------------------------------------
 -- Combining the primitive iteratees to solve the running problem:
@@ -470,13 +494,15 @@ type EnumeratorGMM elfrom elto m a =
 -- The most primitive enumerator: applies the iteratee to the terminated
 -- stream. The result is the iteratee usually in the done state.
 enum_eof :: Monad m => EnumeratorGM el m a
-enum_eof (IE_done x _) = liftI $ IE_done x EOF
-enum_eof (IE_cont k)   = k EOF
+enum_eof (IE_done x _)   = liftI $ IE_done x EOF
+enum_eof (IE_cont k)     = k EOF
+enum_eof (IE_jmp _off k) = k EOF
 
 -- Another primitive enumerator: report an error
 enum_err :: Monad m => String -> EnumeratorGM el m a
 enum_err str (IE_done x _) = liftI $ IE_done x (Err str)
 enum_err str (IE_cont k)   = k (Err str)
+enum_err str (IE_jmp _off k) = k (Err str)
 
 -- The composition of two enumerators: essentially the functional composition
 -- It is convenient to flip the order of the arguments of the composition
@@ -492,6 +518,7 @@ e1 >. e2 = (e2 ==<<) . e1
 enum_pure_1chunk :: Monad m => [el] -> EnumeratorGM el m a
 enum_pure_1chunk _str iter@IE_done{} = liftI $ iter
 enum_pure_1chunk str (IE_cont k) = k (Chunk str)
+enum_pure_1chunk _str (IE_jmp _off _k) = fail "enum_pure_1chunk cannot handle random IO"
 
 -- The pure n-chunk enumerator
 -- It passes a given lift of elements to the iteratee in n chunks
@@ -502,6 +529,7 @@ enum_pure_nchunk _str _n iter@IE_done{} = liftI $ iter
 enum_pure_nchunk []  _n iter           = liftI $ iter
 enum_pure_nchunk str n (IE_cont k)    = enum_pure_nchunk s2 n ==<< k (Chunk s1)
  where (s1,s2) = splitAt n str
+enum_pure_nchunk _str _n (IE_jmp _off _k) = fail "enum_pure_nchunk cannot handle ranom IO"
 
 -- enumerator of a filehandle.
 -- POSIX descriptors, alas, are not portable to Windows
@@ -510,6 +538,7 @@ enum_h h iter' = IM $ allocaBytes (fromIntegral buffer_size) $ loop iter'
  where
   buffer_size = 4096
   loop iter@IE_done{} _p = return iter
+  loop _iter@IE_jmp{} _p = fail "enum_h cannot work with Random IO"
   loop iter@(IE_cont step) p = do
    n <- try $ hGetBuf h p buffer_size
    case n of
@@ -559,6 +588,7 @@ enum_file filepath iter = IM $ do
 -- processing. Flushing the remainder of the input is reasonable then.
 -- One can make a different choice...
 
+{-
 enum_chunk_decoded :: Monad m => Iteratee m a -> IterateeM m a
 enum_chunk_decoded = docase
  where
@@ -668,3 +698,4 @@ print_headers_print_body = do
      lift $ putStrLn "\nLines of the body follow"
      enum_chunk_decoded ==<< line_printer
 
+-}

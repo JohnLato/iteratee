@@ -298,27 +298,30 @@ int_to_tag x = maybe (TG_other x) id $ IM.lookup x tag_map'
 
 
 -- The library function to read the TIFF dictionary
-tiff_reader :: StateT (Maybe Bool) (IterateeGM Word8 IO) (Maybe TIFFDict)
+tiff_reader :: IterateeGM Word8 IO (Maybe TIFFDict)
 tiff_reader = do
-  read_magic
-  lift check_version
-  bindm (lift endian_read4) $ \dict_offset -> do
-    lift $ sseek (fromIntegral dict_offset)
-    lift load_dict
+  endian <- read_magic
+  check_version
+  case endian of
+    Just e -> bindm (endian_read4 e) $ \dict_offset -> do
+              sseek (fromIntegral dict_offset)
+              load_dict e
+    Nothing -> return Nothing
  where
    -- Read the magic and set the endianness
    read_magic = do
-     c1 <- lift snext
-     c2 <- lift snext
+     c1 <- snext
+     c2 <- snext
      case (c1,c2) of
-      (Just 0x4d, Just 0x4d) -> put $ Just True
-      (Just 0x49, Just 0x49) -> put $ Just False
-      _ -> lift $ iter_err $ "Bad TIFF magic word: " ++ show [c1,c2]
+      (Just 0x4d, Just 0x4d) -> return $ Just MSB
+      (Just 0x49, Just 0x49) -> return $ Just LSB
+      _ -> (iter_err $ "Bad TIFF magic word: " ++ show [c1,c2])
+           >> return Nothing
 
    -- Check the version in the header. It is always ...
    tiff_version = 42
    check_version = do
-     v <- endian_read2
+     v <- endian_read2 MSB
      case v of
       Just v' | v' == tiff_version -> return ()
       _ -> iter_err $ "Bad TIFF version: " ++ show v
@@ -350,11 +353,11 @@ note = lift . liftIO . putStrLn . concat
 
 -- An internal function to load the dictionary. It assumes that the stream
 -- is positioned to read the dictionary
-load_dict :: MonadIO m => IterateeGM Word8 m (Maybe TIFFDict)
-load_dict = do
-  bindm endian_read2 $ \nentries -> do
+load_dict :: MonadIO m => Endian -> IterateeGM Word8 m (Maybe TIFFDict)
+load_dict e = do
+  bindm (endian_read2 e) $ \nentries -> do
    dict <- foldr (const read_entry) (return (Just IM.empty)) [1..nentries]
-   bindm endian_read4 $ \next_dict -> do
+   bindm (endian_read4 e) $ \next_dict -> do
    if next_dict > 0 
       then note ["The TIFF file contains several images, ",
 	         "only the first one will be considered"]
@@ -363,10 +366,10 @@ load_dict = do
  where
   read_entry dictM = do
     bindm dictM $ \dict ->
-     bindm endian_read2 $ \tag ->    
-     bindm endian_read2 $ \typ' ->    
+     bindm (endian_read2 e) $ \tag ->    
+     bindm (endian_read2 e) $ \typ' ->    
      bindm (convert_type (fromIntegral typ')) $ \typ ->    
-     bindm endian_read4 $ \count -> do
+     bindm (endian_read4 e) $ \count -> do
       -- we read the val-offset later. We need to check the size and the type
       -- of the datum, because val-offset may contain the value itself,
       -- in its lower-numbered bytes, regardless of the big/little endian
@@ -374,7 +377,7 @@ load_dict = do
 
      note ["TIFFEntry: tag ",show . int_to_tag . fromIntegral $ tag, 
 	   " type ", show typ, " count ", show count]
-     enum_m <- read_value typ (fromIntegral count)
+     enum_m <- read_value typ e (fromIntegral count)
      case enum_m of
       Just enum ->
        return . Just $ IM.insert (fromIntegral tag) 
@@ -388,11 +391,11 @@ load_dict = do
       iter_err $ "Bad type of entry: " ++ show typ
       return Nothing
 
-  read_value :: MonadIO m => TIFF_TYPE -> Int -> 
+  read_value :: MonadIO m => TIFF_TYPE -> Endian -> Int -> 
                 IterateeGM Word8 m (Maybe TIFFDE_ENUM)
 
-  read_value typ 0 = do
-    bindm endian_read4 $ \_offset -> do
+  read_value typ e 0 = do
+    bindm (endian_read4 e) $ \_offset -> do
       iter_err $ "Zero count in the entry of type: " ++ show typ
       return Nothing
 
@@ -400,8 +403,8 @@ load_dict = do
 			-- dictionary. The last byte of
             		-- an ascii string is always zero, which is
             		-- included in 'count' but we don't need to read it
-  read_value TT_ascii count | count > 4 = do -- for sure, val-offset is offset
-    bindm endian_read4 $ \offset ->
+  read_value TT_ascii e count | count > 4 = do -- for sure, val-offset is offset
+    bindm (endian_read4 e) $ \offset ->
       return . Just . TEN_CHAR $ \iter_char -> do
             sseek (fromIntegral offset)
             let iter = conv_stream 
@@ -412,7 +415,7 @@ load_dict = do
 			-- Read the string of 0 to 3 characters long
                         -- The zero terminator is included in count, but
 			-- we don't need to read it
-  read_value TT_ascii count = do	-- count is within 1..4
+  read_value TT_ascii e count = do	-- count is within 1..4
     let len = pred count		-- string length
     let loop acc 0 = return . Just . reverse $ acc
         loop acc n = bindm snext (\v -> loop ((chr . fromIntegral $ v):acc)
@@ -422,8 +425,8 @@ load_dict = do
       return . Just . TEN_CHAR $ immed_value str
 
 			-- Read the array of signed or unsigned bytes
-  read_value typ count | count > 4 && typ == TT_byte || typ == TT_sbyte = do 
-    bindm endian_read4 $ \offset ->
+  read_value typ e count | count > 4 && typ == TT_byte || typ == TT_sbyte = do 
+    bindm (endian_read4 e) $ \offset ->
       return . Just . TEN_INT $ \iter_int -> do
             sseek (fromIntegral offset)
             let iter = conv_stream 
@@ -432,7 +435,7 @@ load_dict = do
             joinI $ joinI $ stakeR count ==<< iter
 
 			-- Read the array of 1 to 4 bytes
-  read_value typ count | typ == TT_byte || typ == TT_sbyte = do
+  read_value typ e count | typ == TT_byte || typ == TT_sbyte = do
     let loop acc 0 = return . Just . reverse $ acc
         loop acc n = bindm snext (\v -> loop ((conv_byte typ $ v):acc)
                                              (pred n))
@@ -441,15 +444,15 @@ load_dict = do
       return . Just . TEN_INT $ immed_value str
 
 			-- Read the array of Word8
-  read_value TT_undefined count | count > 4 = do 
-    bindm endian_read4 $ \offset ->
+  read_value TT_undefined e count | count > 4 = do 
+    bindm (endian_read4 e) $ \offset ->
       return . Just . TEN_BYTE $ \iter -> do
             sseek (fromIntegral offset)
             joinI $ stakeR count iter
 
 			-- Read the array of Word8 of 1..4 elements,
 			-- packed in the offset field
-  read_value TT_undefined count = do 
+  read_value TT_undefined e count = do 
     let loop acc 0 = return . Just . reverse $ acc
         loop acc n = bindm snext (\v -> loop (v:acc) (pred n))
     bindm (loop [] count) $ \str -> do
@@ -459,25 +462,25 @@ load_dict = do
 			-- Read the array of short integers
 
 			-- of 1 element: the offset field contains the value
-  read_value typ 1 | typ == TT_short || typ == TT_sshort = do 
-    bindm endian_read2 $ \item -> do
+  read_value typ e 1 | typ == TT_short || typ == TT_sshort = do 
+    bindm (endian_read2 e) $ \item -> do
       sdrop 2				-- skip the padding
       return . Just . TEN_INT $ immed_value [conv_short typ item]
 
 			-- of 2 elements: the offset field contains the value
-  read_value typ 2 | typ == TT_short || typ == TT_sshort = do 
-    bindm endian_read2 $ \i1 -> 
-     bindm endian_read2 $ \i2 -> do
+  read_value typ e 2 | typ == TT_short || typ == TT_sshort = do 
+    bindm (endian_read2 e) $ \i1 -> 
+     bindm (endian_read2 e) $ \i2 -> do
       return . Just . TEN_INT $ 
 	     immed_value [conv_short typ i1, conv_short typ i2]
 
 			-- of n elements
-  read_value typ count | typ == TT_short || typ == TT_sshort = do 
-    bindm endian_read4 $ \offset ->
+  read_value typ e count | typ == TT_short || typ == TT_sshort = do 
+    bindm (endian_read4 e) $ \offset ->
       return . Just . TEN_INT $ \iter_int -> do
             sseek (fromIntegral offset)
             let iter = conv_stream 
-                         (bindm endian_read2 
+                         (bindm (endian_read2 e) 
 			  (return . Just . (:[]) . conv_short typ))
                          iter_int
             joinI $ joinI $ stakeR (2*count) ==<< iter
@@ -485,37 +488,37 @@ load_dict = do
 
 			-- Read the array of long integers
 			-- of 1 element: the offset field contains the value
-  read_value typ 1 | typ == TT_long || typ == TT_slong = do 
-    bindm endian_read4 $ \item ->
+  read_value typ e 1 | typ == TT_long || typ == TT_slong = do 
+    bindm (endian_read4 e) $ \item ->
       return . Just . TEN_INT $ immed_value [conv_long typ item]
 
 			-- of n elements
-  read_value typ count | typ == TT_long || typ == TT_slong = do 
-    bindm endian_read4 $ \offset ->
+  read_value typ e count | typ == TT_long || typ == TT_slong = do 
+    bindm (endian_read4 e) $ \offset ->
       return . Just . TEN_INT $ \iter_int -> do
             sseek (fromIntegral offset)
             let iter = conv_stream 
-                         (bindm endian_read4 
+                         (bindm (endian_read4 e)  
 			  (return . Just . (:[]) . conv_long typ))
                          iter_int
             joinI $ joinI $ stakeR (4*count) ==<< iter
 
 			-- Read the array of rationals. A rational can't
 			-- be packed into the offset field
-  read_value typ count | typ == TT_rational || typ == TT_srational = do 
-    bindm endian_read4 $ \offset ->
+  read_value typ e count | typ == TT_rational || typ == TT_srational = do 
+    bindm (endian_read4 e) $ \offset ->
       return . Just . TEN_RAT $ \iter_rat -> do
             sseek (fromIntegral offset)
             let iter = conv_stream 
-                         (bindm endian_read4 $ \i1 ->
-			   bindm endian_read4 $ \i2 ->
+                         (bindm (endian_read4 e) $ \i1 ->
+			   bindm (endian_read4 e) $ \i2 ->
 			    (return . Just . (:[]) $ conv_rat typ i1 i2))
                          iter_rat
             joinI $ joinI $ stakeR (8*count) ==<< iter
 
 
-  read_value typ count = do -- stub
-    bindm endian_read4 $ \_offset -> do
+  read_value typ e count = do -- stub
+    bindm (endian_read4 e) $ \_offset -> do
      note ["unhandled type: ", show typ, " with count ", show count]
      return Nothing
 

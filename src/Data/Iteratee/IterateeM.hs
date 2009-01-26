@@ -67,8 +67,6 @@ import Control.Monad.Identity
 import Control.OldException (try)
 import System.IO
 
-import Data.Iteratee.IO.RBIO
-
 -- A stream is a (continuing) sequence of elements bundled in Chunks.
 -- The first two variants indicate termination of the stream.
 -- Chunk [a] gives the currently available part of the stream.

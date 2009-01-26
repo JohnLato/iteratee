@@ -4,9 +4,9 @@
 
 module Data.Iteratee.IO.RandomIO (
   bindm,
-  --sseek,
   iter_err,
   stakeR,
+  Endian (..),
   endian_read2,
   endian_read3,
   endian_read4,
@@ -45,18 +45,6 @@ bindm :: Monad m => m (Maybe a) -> (a -> m (Maybe b)) -> m (Maybe b)
 bindm m f = m >>= maybe (return Nothing) f
 
 
--- We discard all available input first.
--- We keep discarding the stream s until we determine that our request 
--- has been answered:
-{-
-sseek :: Monad m => FileOffset -> IterateeGM el m ()
-sseek off = liftI (IE_jmp off step)
- where
- step s@(Err _) = liftI $ IE_done () s
- step s   = liftI $ IE_done () s
--}
-
-
 -- An iteratee that reports and propagates an error
 -- We disregard the input first and then propagate error.
 -- It is reminiscent of `abort'
@@ -90,54 +78,51 @@ stakeR n (IE_cont k) = liftI $ IE_cont step
 
 -- Iteratees to read unsigned integers written in Big- or Little-endian ways
 
-endian_read2 :: Monad m => IterateeGM Word8 m (Maybe Word16)
-endian_read2 =
+-- |Indicate endian-ness.
+data Endian = MSB -- ^ Most Significant Byte is first (big-endian)
+  | LSB           -- ^ Least Significan Byte is first (little-endian)
+  deriving (Eq, Ord, Show, Enum)
+
+endian_read2 :: Monad m => Endian -> IterateeGM Word8 m (Maybe Word16)
+endian_read2 e =
   bindm snext $ \c1 ->
-  bindm snext $ \c2 -> do
-  -- flag <- lift rb_msb_first
-  let flag = False -- temporary endian-ness
-  if flag then
-      return $ return $ (fromIntegral c1 `shiftL` 8) .|. fromIntegral c2
-     else
-      return $ return $ (fromIntegral c2 `shiftL` 8) .|. fromIntegral c1
+  bindm snext $ \c2 ->
+  case e of
+    MSB -> return $ return $ (fromIntegral c1 `shiftL` 8) .|. fromIntegral c2
+    LSB -> return $ return $ (fromIntegral c2 `shiftL` 8) .|. fromIntegral c1
 
 -- |read 3 bytes in an endian manner.  If the first bit is set (negative),
 -- set the entire first byte so the Word32 can be properly set negative as
 -- well.
-endian_read3 :: Monad m => IterateeGM Word8 m (Maybe Word32)
-endian_read3 = 
+endian_read3 :: Monad m => Endian -> IterateeGM Word8 m (Maybe Word32)
+endian_read3 e = 
   bindm snext $ \c1 ->
   bindm snext $ \c2 ->
-  bindm snext $ \c3 -> do
-  --flag <- lift rb_msb_first
-  let flag = False  -- Temporary endian-ness
-  if flag then
-     return $ return $ (((fromIntegral c1
+  bindm snext $ \c3 ->
+  case e of
+    MSB -> return $ return $ (((fromIntegral c1
                         `shiftL` 8) .|. fromIntegral c2)
                         `shiftL` 8) .|. fromIntegral c3
-   else
+    LSB ->
      let m :: Int32
          m = shiftR (shiftL (fromIntegral c3) 24) 8 in
      return $ return $ (((fromIntegral c3
                         `shiftL` 8) .|. fromIntegral c2)
                         `shiftL` 8) .|. fromIntegral m
 
-endian_read4 :: Monad m => IterateeGM Word8 m (Maybe Word32)
-endian_read4 =
+endian_read4 :: Monad m => Endian -> IterateeGM Word8 m (Maybe Word32)
+endian_read4 e =
   bindm snext $ \c1 ->
   bindm snext $ \c2 ->
   bindm snext $ \c3 ->
-  bindm snext $ \c4 -> do
-  -- flag <- lift rb_msb_first
-  let flag = False    -- Temporary endian-ness
-  if flag then
-      return $ return $ 
+  bindm snext $ \c4 ->
+  case e of
+    MSB -> return $ return $ 
 	       (((((fromIntegral c1
 		`shiftL` 8) .|. fromIntegral c2)
 	        `shiftL` 8) .|. fromIntegral c3)
 	        `shiftL` 8) .|. fromIntegral c4
-     else
-      return $ return $ 
+    LSB -> return $ return $ 
 	       (((((fromIntegral c4
 		`shiftL` 8) .|. fromIntegral c3)
 	        `shiftL` 8) .|. fromIntegral c2)
@@ -153,7 +138,9 @@ enum_fd_random :: Fd -> EnumeratorGM Word8 IO a
 enum_fd_random fd iter = {-# SCC "enum_fd_random" #-}
     IM $ allocaBytes (fromIntegral buffer_size) (loop (0,0) iter)
  where
-  buffer_size = 4096
+  -- this can be usefully varied.  Values between 512 and 4096 seem
+  -- to provide the best performance for most cases.
+  buffer_size = 512
   -- the first argument of loop is (off,len), describing which part
   -- of the file is currently in the buffer 'p'
   loop :: (FileOffset,Int) -> IterateeG Word8 IO a -> 
@@ -221,32 +208,32 @@ test2 () = do
 
 test3 () = do
 	   let show_x fmt = map (\x -> (printf fmt x)::String)
-	   Just ns1 <- endian_read2
-	   Just ns2 <- endian_read2
-	   Just ns3 <- endian_read2
-	   Just ns4 <- endian_read2
+	   Just ns1 <- endian_read2 MSB
+	   Just ns2 <- endian_read2 MSB
+	   Just ns3 <- endian_read2 MSB
+	   Just ns4 <- endian_read2 MSB
 	   sseek 0
-	   Just nl1 <- endian_read4
-	   Just nl2 <- endian_read4
+	   Just nl1 <- endian_read4 MSB
+	   Just nl2 <- endian_read4 MSB
 	   sseek 4
-	   Just ns3' <- endian_read2
-	   Just ns4' <- endian_read2
+	   Just ns3' <- endian_read2 MSB
+	   Just ns4' <- endian_read2 MSB
 	   sseek 0
-	   Just ns1' <- endian_read2
-	   Just ns2' <- endian_read2
+	   Just ns1' <- endian_read2 MSB
+	   Just ns2' <- endian_read2 MSB
 	   sseek 0
-	   Just nl1' <- endian_read4
-	   Just nl2' <- endian_read4
+	   Just nl1' <- endian_read4 MSB
+	   Just nl2' <- endian_read4 MSB
 	   return [show_x "%04x" [ns1,ns2,ns3,ns4],
 		   show_x "%08x" [nl1,nl2],
 		   show_x "%04x" [ns1',ns2',ns3',ns4'],
 		   show_x "%08x" [nl1',nl2']]
 			    
 test4 () = do
-	   Just ns1 <- endian_read2
-	   Just ns2 <- endian_read2
+	   Just ns1 <- endian_read2 MSB
+	   Just ns2 <- endian_read2 MSB
 	   iter_err "Error"
-	   ns3 <- endian_read2
+	   ns3 <- endian_read2 MSB
 	   return (ns1,ns2,ns3)
 
 test_driver_random iter filepath = do

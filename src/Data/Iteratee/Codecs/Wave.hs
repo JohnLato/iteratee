@@ -114,7 +114,7 @@ string_read4 = do
 wave_reader :: IterateeGM Word8 IO (Maybe WAVEDict)
 wave_reader = do
   read_riff
-  bindm endian_read4 $ \tot_size -> do
+  bindm (endian_read4 LSB) $ \tot_size -> do
     read_riff_wave
     chunks_m <- find_chunks $ fromIntegral tot_size
     load_dict $ join_m chunks_m
@@ -142,7 +142,7 @@ find_chunks n = find_chunks' 12 []
   where
   find_chunks' offset acc = do
     bindm string_read4 $ \typ -> do
-      count <- endian_read4
+      count <- endian_read4 LSB
       case (wave_chunk typ, count) of
         (Nothing, _) -> (iter_err $ "Bad subchunk descriptor: " ++ show typ)
           >> return Nothing
@@ -226,21 +226,24 @@ conv_func :: AudioFormat -> IterateeGM Word8 IO (Maybe [Double])
 conv_func (AudioFormat _nc _sr 8) = (fmap . fmap . fmap)
   (normalize 8 . (fromIntegral :: Word8 -> Int8)) (unroller snext)
 conv_func (AudioFormat _nc _sr 16) = (fmap . fmap . fmap)
-  (normalize 16 . (fromIntegral :: Word16 -> Int16)) (unroller endian_read2)
+  (normalize 16 . (fromIntegral :: Word16 -> Int16))
+    (unroller (endian_read2 LSB))
 conv_func (AudioFormat _nc _sr 24) = (fmap . fmap . fmap)
-  (normalize 24 . (fromIntegral :: Word32 -> Int32)) (unroller endian_read3)
+  (normalize 24 . (fromIntegral :: Word32 -> Int32))
+    (unroller (endian_read3 LSB))
 conv_func (AudioFormat _nc _sr 32) = (fmap . fmap . fmap)
-  (normalize 32 . (fromIntegral :: Word32 -> Int32)) (unroller endian_read4)
+  (normalize 32 . (fromIntegral :: Word32 -> Int32))
+    (unroller (endian_read4 LSB))
 conv_func _ = iter_err "Invalid wave bit depth" >> return Nothing
 
 -- |An Iteratee to read a wave format chunk
 sWaveFormat :: IterateeGM Word8 IO (Maybe AudioFormat)
 sWaveFormat = do
-  bindm endian_read2 $ \f' -> --data format, 1==PCM
-   bindm endian_read2 $ \nc ->
-   bindm endian_read4 $ \sr -> do
+  bindm (endian_read2 LSB) $ \f' -> --data format, 1==PCM
+   bindm (endian_read2 LSB) $ \nc ->
+   bindm (endian_read4 LSB) $ \sr -> do
      sdrop 6
-     bindm endian_read2 $ \bd ->
+     bindm (endian_read2 LSB) $ \bd ->
        case f' == 1 of
          True -> return . Just $ AudioFormat (fromIntegral nc)
                                              (fromIntegral sr)

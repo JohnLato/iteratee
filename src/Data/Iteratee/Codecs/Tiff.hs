@@ -52,6 +52,7 @@ module Data.Iteratee.Codecs.Tiff where
 
 import Data.Iteratee.IterateeM
 import Data.Iteratee.IO.RandomIO
+import Data.Array.Vector
 import Control.Monad.Trans
 import Control.Monad.State
 import Data.Char (chr)
@@ -115,9 +116,9 @@ compute_hist :: MonadIO m => TIFFDict -> IterateeGM Word8 m (Int,IM.IntMap Int)
 compute_hist dict = joinI $ pixel_matrix_enum dict ==<< compute_hist' 0 IM.empty
  where
  compute_hist' count hist = liftI $ IE_cont (step count hist)
- step count hist (Chunk []) = compute_hist' count hist
- step count hist (Chunk ch) = compute_hist' (count + length ch) 
-			                    (foldr accum hist ch)
+ step count hist (Chunk ch)
+   | nullU ch  = compute_hist' count hist
+   | otherwise = compute_hist' (count + lengthU ch) (foldr accum hist $ fromU ch)
  step count hist s        = liftI $ IE_done (count,hist) s
  accum e h = IM.insertWith (+) (fromIntegral e) 1 h
 
@@ -132,8 +133,9 @@ verify_pixel_vals dict pixels = joinI $ pixel_matrix_enum dict ==<<
  where
  verify _ m | IM.null m = return ()
  verify n m = liftI $ IE_cont (step n m)
- step n m (Chunk []) = verify n m
- step n m (Chunk (h:t)) = 
+ step n m (Chunk xs)
+   | nullU xs = verify n m
+   | otherwise = let (h, t) = (headU xs, tailU xs) in
    case IM.updateLookupWithKey (\_k _e -> Nothing) n m of
     (Just v,m') -> if v == h then step (succ n) m' (Chunk t)
 		     else iter_err $ unwords ["Pixel #",show n,
@@ -157,8 +159,8 @@ data TIFFDE = TIFFDE{tiffde_count :: Int,        -- number of items
 data TIFFDE_ENUM =
   TEN_CHAR (forall a m. Monad m => EnumeratorGMM Word8 Char m a)
   | TEN_BYTE (forall a m. Monad m => EnumeratorGMM Word8 Word8 m a)
-  | TEN_INT  (forall a m. Monad m => EnumeratorGMM Word8 Integer m a)
-  | TEN_RAT  (forall a m. Monad m => EnumeratorGMM Word8 Rational m a)
+  | TEN_INT  (forall a m. Monad m => EnumeratorGMM Word8 Int m a)
+  | TEN_RAT  (forall a m. Monad m => EnumeratorGMM Word8 (Ratio Int) m a)
 
 -- Standard TIFF data types
 data TIFF_TYPE = TT_NONE  -- 0
@@ -348,7 +350,7 @@ u8_to_s8 = fromIntegral
 -- u8_to_s8 128 == -128
 -- u8_to_s8 255 == -1
 
-note :: MonadIO m => [String] -> IterateeGM el m ()
+note :: (MonadIO m, UA el) => [String] -> IterateeGM el m ()
 note = lift . liftIO . putStrLn . concat
 
 -- An internal function to load the dictionary. It assumes that the stream
@@ -384,7 +386,7 @@ load_dict e = do
 		                 (TIFFDE (fromIntegral count) enum) dict
       _ -> return (Just dict)
 
-  convert_type :: Monad m => Int -> IterateeGM el m (Maybe TIFF_TYPE)
+  convert_type :: (Monad m, UA el) => Int -> IterateeGM el m (Maybe TIFF_TYPE)
   convert_type typ | typ > 0 && typ <= fromEnum (maxBound::TIFF_TYPE)
       = return . Just . toEnum $ typ
   convert_type typ = do
@@ -505,6 +507,7 @@ load_dict e = do
 
 			-- Read the array of rationals. A rational can't
 			-- be packed into the offset field
+{-
   read_value typ e count | typ == TT_rational || typ == TT_srational = do 
     bindm (endian_read4 e) $ \offset ->
       return . Just . TEN_RAT $ \iter_rat -> do
@@ -515,6 +518,7 @@ load_dict e = do
 			    (return . Just . (:[]) $ conv_rat typ i1 i2))
                          iter_rat
             joinI $ joinI $ stakeR (8*count) ==<< iter
+-}
 
 
   read_value typ e count = do -- stub
@@ -522,21 +526,21 @@ load_dict e = do
      note ["unhandled type: ", show typ, " with count ", show count]
      return Nothing
 
-  immed_value :: Monad m => [el] -> EnumeratorGMM Word8 el m a
+  immed_value :: (Monad m, UA el) => [el] -> EnumeratorGMM Word8 el m a
   immed_value item iter =
      (enum_pure_1chunk item >. enum_eof) iter >>== joinI . return
 
-  conv_byte :: TIFF_TYPE -> Word8 -> Integer
+  conv_byte :: TIFF_TYPE -> Word8 -> Int
   conv_byte TT_byte  = fromIntegral
   conv_byte TT_sbyte = fromIntegral . u8_to_s8
   conv_byte _ = error "This should never happen"
 
-  conv_short :: TIFF_TYPE -> Word16 -> Integer
+  conv_short :: TIFF_TYPE -> Word16 -> Int
   conv_short TT_short  = fromIntegral
   conv_short TT_sshort = fromIntegral . u16_to_s16
   conv_short _ = error "This should never happen"
 
-  conv_long :: TIFF_TYPE -> Word32 -> Integer
+  conv_long :: TIFF_TYPE -> Word32 -> Int
   conv_long TT_long  = fromIntegral
   conv_long TT_slong = fromIntegral . u32_to_s32
   conv_long _ = error "This should never happen"
@@ -592,7 +596,7 @@ pixel_matrix_enum dict iter = validate_dict >>= proceed
 -- A few helpers for getting data from TIFF dictionary
 
 dict_read_int :: Monad m => TIFF_TAG -> TIFFDict ->
-                 IterateeGM Word8 m (Maybe Integer)
+                 IterateeGM Word8 m (Maybe Int)
 dict_read_int tag dict = do
   els <- dict_read_ints tag dict
   case els of
@@ -600,7 +604,7 @@ dict_read_int tag dict = do
    _          -> return Nothing
 
 dict_read_ints :: Monad m => TIFF_TAG -> TIFFDict -> 
-		  IterateeGM Word8 m (Maybe [Integer])
+		  IterateeGM Word8 m (Maybe [Int])
 dict_read_ints tag dict = 
   case IM.lookup (tag_to_int tag) dict of
       Just (TIFFDE _ (TEN_INT enum)) -> do
@@ -609,7 +613,7 @@ dict_read_ints tag dict =
       _ -> return Nothing
 
 dict_read_rat :: Monad m => TIFF_TAG -> TIFFDict ->
-                 IterateeGM Word8 m (Maybe Rational)
+                 IterateeGM Word8 m (Maybe (Ratio Int))
 dict_read_rat tag dict = 
   case IM.lookup (tag_to_int tag) dict of
       Just (TIFFDE 1 (TEN_RAT enum)) -> do

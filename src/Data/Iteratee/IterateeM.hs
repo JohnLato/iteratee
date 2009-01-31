@@ -40,8 +40,6 @@ module Data.Iteratee.IterateeM (
   Line,
   line,
   print_lines,
-  enum_lines,
-  enum_words,
   EnumeratorGM,
   EnumeratorM,
   EnumeratorGMM,
@@ -60,6 +58,7 @@ import System.Posix (FileOffset)
 import Foreign.Marshal.Alloc
 import Foreign.Marshal.Array
 import Data.List (splitAt)
+import qualified Data.Array.Vector as Vec
 import Data.Char (isHexDigit, digitToInt, isSpace)
 import Data.Word (Word8)
 import Control.Monad.Trans
@@ -77,7 +76,7 @@ import System.IO
 -- to arrive.
 -- Later on, we can add another variant: IE_block (Ptr CChar) CSize
 -- so we could parse right from the buffer.
-data StreamG a = EOF | Err String | Chunk [a] deriving Show
+data StreamG a = EOF | Err String | Chunk (Vec.UArr a) deriving Show
 
 -- A particular instance of StreamG: the stream of characters.
 -- This stream is used by many input parsers.
@@ -147,7 +146,9 @@ infixr 1 ==<<
 -- This join function is useful when dealing with `derived iteratees'
 -- for embedded/nested streams.  In particular, joinI is useful to
 -- process the result of stake, map_stream, or conv_stream below.
-joinI :: Monad m => IterateeGM el m (IterateeG el' m a) -> IterateeGM el m a
+joinI :: (Monad m, Vec.UA el, Vec.UA el') =>
+         IterateeGM el m (IterateeG el' m a) ->
+         IterateeGM el m a
 joinI m = m >>= (\iter -> {-# SCC "join/outer" #-} enum_eof iter >>== check)
   where
   check (IE_done x (Err str)) = liftI $ IE_done x (Err str)
@@ -158,16 +159,16 @@ joinI m = m >>= (\iter -> {-# SCC "join/outer" #-} enum_eof iter >>== check)
 -- It turns out, IterateeGM form a monad. We can use the familiar do
 -- notation for composing Iteratees
 
-instance Monad m => Monad (IterateeGM el m) where
-    return x = liftI  $ IE_done  x (Chunk [])
+instance (Monad m, Vec.UA el) => Monad (IterateeGM el m) where
+    return x = liftI  $ IE_done  x (Chunk Vec.emptyU)
     m >>= f = iter_bind m f
 
-iter_bind :: Monad m => IterateeGM el m a ->
+iter_bind :: (Monad m, Vec.UA el) => IterateeGM el m a ->
                         (a -> IterateeGM el m b) ->
                         IterateeGM el m b
 iter_bind m f = m >>== docase
      where
-     docase (IE_done a (Chunk [])) = f a
+     docase (IE_done a (Chunk vec)) | Vec.nullU vec = f a
      docase (IE_done a stream) = f a >>== (\r -> case r of
 				IE_done x _  -> liftI $ IE_done x stream
 				IE_cont k    -> k stream
@@ -175,7 +176,7 @@ iter_bind m f = m >>== docase
      docase (IE_cont k) = liftI $ IE_cont ((>>= f) . k)
      docase (IE_jmp off k) = liftI $ IE_jmp off ((>>= f) . k)
 
-{-# SPECIALIZE iter_bind :: IterateeGM el IO a -> (a -> IterateeGM el IO b) -> IterateeGM el IO b #-}
+{-# SPECIALIZE iter_bind :: Vec.UA el => IterateeGM el IO a -> (a -> IterateeGM el IO b) -> IterateeGM el IO b #-}
 
 instance (Monad m, Functor m) => Functor (IterateeGM el m) where
     fmap f m = m >>== docase
@@ -189,7 +190,7 @@ instance (Monad m, Functor m) => Functor (IterateeGM el m) where
 {-# SPECIALIZE instance Functor (IterateeGM Word8 IO) #-}
 {-# SPECIALIZE instance Functor (IterateeGM el IO) #-}
 
-instance MonadTrans (IterateeGM el) where
+instance (Vec.UA el) => MonadTrans (IterateeGM el) where
     lift m = IM (m >>= unIM . return)
 
 {-# SPECIALIZE instance MonadTrans (IterateeGM el IO) #-}
@@ -198,12 +199,12 @@ instance MonadTrans (IterateeGM el) where
 -- Primitive iteratees
 
 -- Read a stream to the end and return all of its elements as a list
-stream2list :: Monad m => IterateeGM el m [el]
-stream2list = liftI $ IE_cont (step [])
+stream2list :: (Monad m, Vec.UA el) => IterateeGM el m [el]
+stream2list = liftI $ IE_cont (step Vec.emptyU)
  where
- step acc (Chunk []) = liftI $ IE_cont (step acc)
- step acc (Chunk ls) = liftI $ IE_cont (step $ acc ++ ls)
- step acc stream     = liftI $ IE_done acc stream
+ step acc (Chunk ls) | Vec.nullU ls = liftI $ IE_cont (step acc)
+                     | otherwise    = liftI $ IE_cont (step $ acc `Vec.appendU` ls)
+ step acc stream                    = liftI $ IE_done (Vec.fromU acc) stream
 
 -- Check to see if the stream is in error
 iter_report_err :: Monad m => IterateeGM el m (Maybe String)
@@ -226,15 +227,17 @@ iter_report_err = liftI $ IE_cont step
 --                   str is the scanned part of the stream.
 -- None of the element in str satisfy the break predicate.
 
-sbreak :: Monad m => (el -> Bool) -> IterateeGM el m ([el],Maybe el)
-sbreak cpred = liftI $ IE_cont (liftI . step [])
+sbreak :: (Monad m, Vec.UA el) => (el -> Bool) -> IterateeGM el m ([el],Maybe el)
+sbreak cpred = liftI $ IE_cont (liftI . step Vec.emptyU)
  where
- step before (Chunk []) = IE_cont (liftI . step before)
- step before (Chunk str) =
-     case break cpred str of
-       (_,[])       -> IE_cont (liftI . step (before ++ str))
-       (str',c:tail') -> done (before ++ str') (Just c) (Chunk tail')
- step before stream = done before Nothing stream
+ step before (Chunk str)
+   | Vec.nullU str = IE_cont (liftI . step before)
+   | otherwise = case Vec.findIndexU cpred str of
+       Nothing      -> IE_cont (liftI . step (before `Vec.appendU` str))
+       Just ix      -> let (str', tail') = Vec.splitAtU ix str
+                       in
+                       done (Vec.fromU $ before `Vec.appendU` str') (Just $ Vec.headU tail') (Chunk $ Vec.tailU tail')
+ step before stream = done (Vec.fromU before) Nothing stream
  done line' char stream = IE_done (line',char) stream
 
 
@@ -242,25 +245,29 @@ sbreak cpred = liftI $ IE_cont (liftI . step [])
 -- satisfying the given predicate -- until the first element
 -- that does not satisfy the predicate, or the end of the stream.
 -- This is the analogue of List.dropWhile
-sdropWhile :: Monad m => (el -> Bool) -> IterateeGM el m ()
+sdropWhile :: (Monad m, Vec.UA el) => (el -> Bool) -> IterateeGM el m ()
 sdropWhile cpred = liftI $ IE_cont step
  where
- step (Chunk []) = sdropWhile cpred
- step (Chunk str) =
-     case dropWhile cpred str of
-       []  -> sdropWhile cpred
-       str' ->  liftI $ IE_done () (Chunk str')
+ step (Chunk str)
+   | Vec.nullU str = sdropWhile cpred
+   | otherwise = let rem = Vec.dropWhileU cpred str
+                 in
+                 case Vec.nullU rem of
+                   True -> sdropWhile cpred
+                   False -> liftI $ IE_done () (Chunk rem)
  step stream = liftI $ IE_done () stream
 
 
 -- Attempt to read the next element of the stream
 -- Return (Just c) if successful, return Nothing if the stream is
 -- terminated (by EOF or an error)
-snext :: Monad m => IterateeGM el m (Maybe el)
+snext :: (Monad m, Vec.UA el) => IterateeGM el m (Maybe el)
 snext = liftI $ IE_cont step
  where
- step (Chunk [])    = snext
- step (Chunk (c:t)) = liftI $ IE_done (Just c) (Chunk t)
+ step (Chunk vec)
+   | Vec.nullU vec  = snext
+   | otherwise      = liftI $ IE_done (Just $ Vec.headU vec)
+                      (Chunk $ Vec.tailU vec)
  step stream        = liftI $ IE_done Nothing stream
 
 
@@ -268,16 +275,17 @@ snext = liftI $ IE_cont step
 -- it from the stream.
 -- Return (Just c) if successful, return Nothing if the stream is
 -- terminated (by EOF or an error)
-speek :: Monad m => IterateeGM el m (Maybe el)
+speek :: (Monad m, Vec.UA el) => IterateeGM el m (Maybe el)
 speek = liftI $ IE_cont step
  where
- step (Chunk [])      = speek
- step s@(Chunk (c:_)) = liftI $ IE_done (Just c) s
+ step s@(Chunk vec)
+   | Vec.nullU vec    = speek
+   | otherwise        = liftI $ IE_done (Just $ Vec.headU vec) s
  step stream          = liftI $ IE_done Nothing stream
 
 
 -- Skip the rest of the stream
-skip_till_eof :: Monad m => IterateeGM el m ()
+skip_till_eof :: (Monad m, Vec.UA el) => IterateeGM el m ()
 skip_till_eof = liftI $ IE_cont step
  where
  step (Chunk _) = skip_till_eof
@@ -285,13 +293,13 @@ skip_till_eof = liftI $ IE_cont step
 
 -- Skip n elements of the stream, if there are that many
 -- This is the analogue of List.drop
-sdrop :: Monad m => Int -> IterateeGM el m ()
+sdrop :: (Monad m, Vec.UA el) => Int -> IterateeGM el m ()
 sdrop 0 = return ()
 sdrop n = liftI $ IE_cont step
  where
- step (Chunk str) | length str <= n = sdrop (n - length str)
+ step (Chunk str) | Vec.lengthU str <= n = sdrop (n - Vec.lengthU str)
  step (Chunk str) = liftI $ IE_done () (Chunk s2)
-  where (_s1,s2) = splitAt n str
+  where (_s1,s2) = Vec.splitAtU n str
  step stream = liftI $ IE_done () stream
 
 sseek :: Monad m => FileOffset -> IterateeGM el m ()
@@ -313,26 +321,26 @@ type EnumeratorN el_outer el_inner m a =
 -- Read n elements from a stream and apply the given iteratee to the
 -- stream of the read elements. Unless the stream is terminated early, we
 -- read exactly n elements (even if the iteratee has accepted fewer).
-stake :: Monad m =>
+stake :: (Monad m, Vec.UA el) =>
 	 Int -> EnumeratorN el el m a
 stake 0 iter = return iter
 stake n iter@IE_done{} = sdrop n >> return iter
 stake n (IE_jmp _off k) = liftI $ IE_cont step
  where
- step (Chunk []) = liftI $ IE_cont step
- step chunk@(Chunk str) | length str <= n =
-			     stake (n - length str) ==<< k chunk
+ step chunk@(Chunk str)
+   | Vec.nullU str   = liftI $ IE_cont step
+   | Vec.lengthU str <= n = stake (n - Vec.lengthU str) ==<< k chunk
  step (Chunk str) = done (Chunk s1) (Chunk s2)
-   where (s1,s2) = splitAt n str
+   where (s1,s2) = Vec.splitAtU n str
  step stream = done stream stream
  done s1 s2 = k s1 >>== \r -> liftI $ IE_done r s2
 stake n (IE_cont k) = liftI $ IE_cont step
  where
- step (Chunk []) = liftI $ IE_cont step
- step chunk@(Chunk str) | length str <= n =
-			     stake (n - length str) ==<< k chunk
+ step chunk@(Chunk str)
+   | Vec.nullU str   = liftI $ IE_cont step
+   | Vec.lengthU str <= n = stake (n - Vec.lengthU str) ==<< k chunk
  step (Chunk str) = done (Chunk s1) (Chunk s2)
-   where (s1,s2) = splitAt n str
+   where (s1,s2) = Vec.splitAtU n str
  step stream = done stream stream
  done s1 s2 = k s1 >>== \r -> liftI $ IE_done r s2
 
@@ -342,19 +350,19 @@ stake n (IE_cont k) = liftI $ IE_cont step
 -- given iteratee to it.
 -- Note the contravariance
 
-map_stream :: Monad m =>
+map_stream :: (Monad m, Vec.UA el, Vec.UA el') =>
    (el -> el') -> EnumeratorN el el' m a
 map_stream _f iter@IE_done{} = return iter
 map_stream f (IE_cont k) = liftI $ IE_cont step
  where
- step (Chunk [])  = liftI $ IE_cont step
- step (Chunk str) = k (Chunk (map f str)) >>== map_stream f
+ step (Chunk str) | Vec.nullU str = liftI $ IE_cont step
+ step (Chunk str) = k (Chunk (Vec.mapU f str)) >>== map_stream f
  step EOF         = k EOF       >>== \r -> liftI $ IE_done r EOF
  step (Err err)   = k (Err err) >>== \r -> liftI $ IE_done r (Err err)
 map_stream f (IE_jmp off k) = liftI $ IE_jmp off step
   where
- step (Chunk [])  = liftI $ IE_cont step
- step (Chunk str) = k (Chunk (map f str)) >>== map_stream f
+ step (Chunk str) | Vec.nullU str = liftI $ IE_cont step
+ step (Chunk str) = k (Chunk (Vec.mapU f str)) >>== map_stream f
  step EOF         = k EOF       >>== \r -> liftI $ IE_done r EOF
  step (Err err)   = k (Err err) >>== \r -> liftI $ IE_done r (Err err)
 
@@ -366,15 +374,15 @@ map_stream f (IE_jmp off k) = liftI $ IE_jmp off step
 -- The transformation from one stream to the other is specified as
 -- IterateeGM el m (Maybe [el']).  The `Maybe' type reflects the
 -- possibility of the conversion error.
-conv_stream :: Monad m =>
+conv_stream :: (Vec.UA el, Vec.UA el', Monad m) =>
   IterateeGM el m (Maybe [el']) -> EnumeratorN el el' m a
 conv_stream _fi iter@IE_done{} = return iter
 conv_stream fi (IE_cont k) = {-# SCC "conv_stream" #-}
-  fi >>= (conv_stream fi ==<<) . k . maybe (Err "conv: stream error") Chunk
+  fi >>= (conv_stream fi ==<<) . k . maybe (Err "conv: stream error") (Chunk . Vec.toU)
 conv_stream fi (IE_jmp _off k) =
-  fi >>= (conv_stream fi ==<<) . k . maybe (Err "conv: stream error") Chunk
+  fi >>= (conv_stream fi ==<<) . k . maybe (Err "conv: stream error") (Chunk . Vec.toU)
 
-{-# SPECIALIZE conv_stream :: IterateeGM el IO (Maybe [el']) -> EnumeratorN el el' IO a #-}
+{-# SPECIALIZE conv_stream :: (Vec.UA el, Vec.UA el') => IterateeGM el IO (Maybe [el']) -> EnumeratorN el el' IO a #-}
 
 -- ------------------------------------------------------------------------
 -- Combining the primitive iteratees to solve the running problem:
@@ -413,11 +421,11 @@ line = sbreak (\c -> c == '\r' || c == '\n') >>= check_next
 
 -- Print lines as they are received. This is the first `impure' iteratee
 -- with non-trivial actions during chunk processing
-print_lines :: IterateeGM Line IO ()
+print_lines :: IterateeGM Char IO ()
 print_lines = liftI $ IE_cont step
  where
- step (Chunk []) = print_lines
- step (Chunk ls) = lift (mapM_ pr_line ls) >> print_lines
+ step (Chunk ls) | Vec.nullU ls = print_lines
+ step (Chunk ls) = lift (mapM_ pr_line [Vec.fromU ls]) >> print_lines
  step EOF        = lift (putStrLn ">> natural end") >> liftI (IE_done () EOF)
  step stream     = lift (putStrLn ">> unnatural end") >>
 		   liftI (IE_done () stream)
@@ -431,16 +439,6 @@ print_lines = liftI $ IE_cont step
 -- is also terminated, abnormally.
 -- This is the first proper iteratee-enumerator: it is the iteratee of the
 -- character stream and the enumerator of the line stream.
-
-enum_lines :: Monad m =>
-	      IterateeG Line m a -> IterateeGM Char m (IterateeG Line m a)
-enum_lines iter@IE_done{} = return iter
-enum_lines (IE_cont k) = line >>= check_line k
- where
- check_line k' (Right "") =
-   enum_lines ==<< k' EOF      -- empty line, normal term
- check_line k' (Right l)  = enum_lines ==<< k' (Chunk [l])
- check_line k' _          = enum_lines ==<< k' (Err "EOF") -- abnormal termin
 
 
 -- Convert the stream of characters to the stream of words, and
@@ -457,15 +455,6 @@ enum_lines (IE_cont k) = line >>= check_line k
 --                                              break isSpace s'
 -- One should keep in mind that enum_words is a more general, monadic
 -- function.
-
-enum_words :: Monad m =>
-	      IterateeG String m a -> IterateeGM Char m (IterateeG String m a)
-enum_words iter@IE_done{} = return iter
-enum_words (IE_cont k) = sdropWhile isSpace >> sbreak isSpace >>= check_word k
- where
- check_word k' ("",_)  = enum_words ==<< k' EOF
- check_word k' (str,_) = enum_words ==<< k' (Chunk [str])
-
 
 -- ------------------------------------------------------------------------
 -- Enumerators
@@ -513,19 +502,19 @@ e1 >. e2 = (e2 ==<<) . e1
 -- The pure 1-chunk enumerator
 -- It passes a given list of elements to the iteratee in one chunk
 -- This enumerator does no IO and is useful for testing of base parsing
-enum_pure_1chunk :: Monad m => [el] -> EnumeratorGM el m a
+enum_pure_1chunk :: (Monad m, Vec.UA el) => [el] -> EnumeratorGM el m a
 enum_pure_1chunk _str iter@IE_done{} = liftI $ iter
-enum_pure_1chunk str (IE_cont k) = k (Chunk str)
+enum_pure_1chunk str (IE_cont k) = k (Chunk $ Vec.toU str)
 enum_pure_1chunk _str (IE_jmp _off _k) = fail "enum_pure_1chunk cannot handle random IO"
 
 -- The pure n-chunk enumerator
 -- It passes a given lift of elements to the iteratee in n chunks
 -- This enumerator does no IO and is useful for testing of base parsing
 -- and handling of chunk boundaries
-enum_pure_nchunk :: Monad m => [el] -> Int -> EnumeratorGM el m a
+enum_pure_nchunk :: (Monad m, Vec.UA el) => [el] -> Int -> EnumeratorGM el m a
 enum_pure_nchunk _str _n iter@IE_done{} = liftI $ iter
 enum_pure_nchunk []  _n iter           = liftI $ iter
-enum_pure_nchunk str n (IE_cont k)    = enum_pure_nchunk s2 n ==<< k (Chunk s1)
+enum_pure_nchunk str n (IE_cont k)    = enum_pure_nchunk s2 n ==<< k (Chunk $ Vec.toU s1)
  where (s1,s2) = splitAt n str
 enum_pure_nchunk _str _n (IE_jmp _off _k) = fail "enum_pure_nchunk cannot handle ranom IO"
 
@@ -544,7 +533,7 @@ enum_h h iter' = IM $ allocaBytes (fromIntegral buffer_size) $ loop iter'
     Right 0 -> return iter
     Right j -> do
          str <- peekArray (fromIntegral j) p
-         im  <- unIM $ step (Chunk str)
+         im  <- unIM $ step (Chunk $ Vec.toU str)
          loop im p
 
 
@@ -659,6 +648,7 @@ testw1 =
     in
     and [run_test test_str == expected,
 	 run_test (test_str ++ " ") == expected]
+
 
 -- Run the complete test, reading the headers and the body
 

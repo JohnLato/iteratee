@@ -29,6 +29,7 @@ import Foreign.Marshal.Array
 import Data.Word
 import Data.Bits
 import Data.Int
+import Data.Array.Vector
 
 import System.IO (SeekMode(..))
 import Data.Iteratee.IO.LowLevelIO
@@ -61,17 +62,17 @@ iter_err err = liftI $ IE_cont step
 -- of processing of the outer stream once the processing of the inner stream
 -- finished early. This variation is particularly useful for randomIO,
 -- where we do not have to care to `drain the input stream'.
-stakeR :: Monad m => Int -> EnumeratorN el el m a
+stakeR :: (Monad m, UA el) => Int -> EnumeratorN el el m a
 stakeR 0 iter = return iter
 stakeR _n iter@IE_done{} = return iter
 stakeR _n iter@IE_jmp{} = return iter
 stakeR n (IE_cont k) = liftI $ IE_cont step
  where
- step (Chunk []) = liftI $ IE_cont step
- step chunk@(Chunk str) | length str <= n =
-			     stakeR (n - length str) ==<< k chunk
+ step chunk@(Chunk str)
+   | nullU str        = liftI $ IE_cont step
+   | lengthU str <= n = stakeR (n - lengthU str) ==<< k chunk
  step (Chunk str) = done (Chunk s1) (Chunk s2)
-   where (s1,s2) = splitAt n str
+   where (s1,s2) = splitAtU n str
  step stream = done stream stream
  done s1 s2 = k s1 >>== \r -> liftI $ IE_done r s2
 
@@ -140,7 +141,7 @@ enum_fd_random fd iter = {-# SCC "enum_fd_random" #-}
  where
   -- this can be usefully varied.  Values between 512 and 4096 seem
   -- to provide the best performance for most cases.
-  buffer_size = 512
+  buffer_size = 4096
   -- the first argument of loop is (off,len), describing which part
   -- of the file is currently in the buffer 'p'
   loop :: (FileOffset,Int) -> IterateeG Word8 IO a -> 
@@ -151,7 +152,7 @@ enum_fd_random fd iter = {-# SCC "enum_fd_random" #-}
     do
     let local_off = fromIntegral $ off' - off
     str <- peekArray (len - local_off) (p `plusPtr` local_off)
-    im <- unIM $ c (Chunk str)
+    im <- unIM $ c (Chunk $ toU str)
     loop pos im p
   loop _pos iter'@(IE_jmp off c) p = do -- Seek outside the buffer
    off' <- myfdSeek fd AbsoluteSeek (fromIntegral off)
@@ -168,7 +169,7 @@ enum_fd_random fd iter = {-# SCC "enum_fd_random" #-}
     Right 0 -> return iter'
     Right n' -> do
 	 str <- peekArray (fromIntegral n') p
-	 im  <- unIM $ step (Chunk str)
+	 im  <- unIM $ step (Chunk $ toU str)
 	 loop (off + fromIntegral len,fromIntegral n') im p
 
 

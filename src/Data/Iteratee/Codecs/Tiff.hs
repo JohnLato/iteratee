@@ -52,7 +52,7 @@ module Data.Iteratee.Codecs.Tiff where
 
 import Data.Iteratee.IterateeM
 import Data.Iteratee.IO.RandomIO
-import Data.Array.Vector
+import Data.StorableVector
 import Control.Monad.Trans
 import Control.Monad.State
 import Data.Char (chr)

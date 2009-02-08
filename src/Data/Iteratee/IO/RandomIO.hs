@@ -20,6 +20,9 @@ module Data.Iteratee.IO.RandomIO (
 where
 
 import Data.Iteratee.IterateeM
+import Foreign.Storable (Storable)
+import Foreign.ForeignPtr (newForeignPtr_)
+import qualified Data.StorableVector.Base as VB
 import Text.Printf
 
 import System.Posix
@@ -29,7 +32,7 @@ import Foreign.Marshal.Array
 import Data.Word
 import Data.Bits
 import Data.Int
-import Data.Array.Vector
+import qualified Data.StorableVector as Vec
 
 import System.IO (SeekMode(..))
 import Data.Iteratee.IO.LowLevelIO
@@ -62,17 +65,17 @@ iter_err err = liftI $ IE_cont step
 -- of processing of the outer stream once the processing of the inner stream
 -- finished early. This variation is particularly useful for randomIO,
 -- where we do not have to care to `drain the input stream'.
-stakeR :: (Monad m, UA el) => Int -> EnumeratorN el el m a
+stakeR :: (Monad m, Storable el) => Int -> EnumeratorN el el m a
 stakeR 0 iter = return iter
 stakeR _n iter@IE_done{} = return iter
 stakeR _n iter@IE_jmp{} = return iter
 stakeR n (IE_cont k) = liftI $ IE_cont step
  where
  step chunk@(Chunk str)
-   | nullU str        = liftI $ IE_cont step
-   | lengthU str <= n = stakeR (n - lengthU str) ==<< k chunk
+   | Vec.null str        = liftI $ IE_cont step
+   | Vec.length str <= n = stakeR (n - Vec.length str) ==<< k chunk
  step (Chunk str) = done (Chunk s1) (Chunk s2)
-   where (s1,s2) = splitAtU n str
+   where (s1,s2) = Vec.splitAt n str
  step stream = done stream stream
  done s1 s2 = k s1 >>== \r -> liftI $ IE_done r s2
 
@@ -151,8 +154,10 @@ enum_fd_random fd iter = {-# SCC "enum_fd_random" #-}
     off <= off' && off' < off + fromIntegral len =	-- Seek within buffer p
     do
     let local_off = fromIntegral $ off' - off
-    str <- peekArray (len - local_off) (p `plusPtr` local_off)
-    im <- unIM $ c (Chunk $ toU str)
+    --str <- peekArray (len - local_off) (p `plusPtr` local_off)
+    --im <- unIM $ c (Chunk $ Vec.pack str)
+    fptr <- newForeignPtr_ (p `plusPtr` local_off)
+    im <- unIM $ c (Chunk $ VB.fromForeignPtr (fptr) (len - local_off))
     loop pos im p
   loop _pos iter'@(IE_jmp off c) p = do -- Seek outside the buffer
    off' <- myfdSeek fd AbsoluteSeek (fromIntegral off)
@@ -168,8 +173,10 @@ enum_fd_random fd iter = {-# SCC "enum_fd_random" #-}
     Left _errno -> unIM $ step (Err "IO error")
     Right 0 -> return iter'
     Right n' -> do
-	 str <- peekArray (fromIntegral n') p
-	 im  <- unIM $ step (Chunk $ toU str)
+	 --str <- peekArray (fromIntegral n') p
+	 --im  <- unIM $ step (Chunk $ Vec.pack str)
+         fptr <- newForeignPtr_ p
+         im <- unIM $ step (Chunk $ VB.fromForeignPtr fptr (fromIntegral n'))
 	 loop (off + fromIntegral len,fromIntegral n') im p
 
 

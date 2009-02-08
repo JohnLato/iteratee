@@ -217,21 +217,6 @@ read_value _dict offset (WAVE_OTHER _str) count =
     sseek (8 + fromIntegral offset)
     joinI $ stakeR count iter
 
-unroller :: (Integral a, Storable a, Monad m) => IterateeGM Word8 m (Maybe a)
-            -> IterateeGM Word8 m (Maybe (Vec.Vector a))
-unroller iter = do
-  w1 <- iter
-  w2 <- iter
-  w3 <- iter
-  w4 <- iter
-  w5 <- iter
-  w6 <- iter
-  w7 <- iter
-  w8 <- iter
-  case catMaybes [w1, w2, w3, w4, w5, w6, w7, w8] of
-    [] -> return Nothing
-    xs -> return $ Just $ Vec.pack xs
-
 unroll_8 :: (Monad m) => IterateeGM Word8 m (Maybe (Vec.Vector Word8))
 unroll_8 = liftI $ IE_cont step
   where
@@ -240,54 +225,53 @@ unroll_8 = liftI $ IE_cont step
     | True         = liftI $ IE_done (Just vec) (Chunk $ Vec.empty)
   step stream      = liftI $ IE_done Nothing stream
 
--- this asumes that the system is little-endian, otherwise it will fail
--- could check for this at build-time with CPP
-unroll_16 :: IterateeGM Word8 IO (Maybe (Vec.Vector Word16))
-unroll_16 = liftI $ IE_cont step
+-- TODO :: Use a rewrite rule to use unroll_8 when the return of
+-- unroll_n is Word8
+-- first parameter is sizeOf a
+unroll_n :: Storable a => Int -> IterateeGM Word8 IO (Maybe (Vec.Vector a))
+unroll_n wSize = liftI $ IE_cont step
   where
   step (Chunk vec)
-    | Vec.null vec                = unroll_16
-    | Vec.length vec == 1         = liftI $ IE_cont $ step' vec
-    | Vec.length vec `rem` 2 == 0 = lift (convert_vec vec) >>= \v ->
-                                      liftI $ IE_done v (Chunk $ Vec.empty)
-    | True                        = let (h, t) = Vec.splitAt (Vec.length vec - 1) vec
-                                    in
-                                    lift (convert_vec h) >>= \v ->
-                                      liftI $ IE_done v (Chunk t)
-  step stream                     = liftI $ IE_done Nothing stream
+    | Vec.null vec                    = unroll_n wSize
+    | Vec.length vec < wSize          = liftI $ IE_cont $ step' vec
+    | Vec.length vec `rem` wSize == 0 = lift (convert_vec vec) >>= \v ->
+                                        liftI $ IE_done v (Chunk $ Vec.empty)
+    | True    = let newLen = (Vec.length vec `div` wSize) * wSize
+                    (h, t) = Vec.splitAt newLen vec
+                in
+                lift (convert_vec h) >>= \v -> liftI $ IE_done v (Chunk t)
+  step stream = liftI $ IE_done Nothing stream
   step' i (Chunk vec)
-    | Vec.null vec                = liftI $ IE_cont $ step' i
-    | Vec.length vec `rem` 2 == 1 = let vec' = Vec.append i vec
-                                    in
-                                    lift (convert_vec vec') >>= \v ->
-                                      liftI $ IE_done v (Chunk $ Vec.empty)
-    | True                        = let (h, t) = Vec.splitAt
-                                                 (Vec.length vec - 1) vec
-                                    in
-                                    lift (convert_vec $ Vec.append i h) >>=
-                                      \v -> liftI $ IE_done v (Chunk t)
-  step' _i stream                   = liftI $ IE_done Nothing stream
-  --convert_vec :: Vec.Vector Word8 -> IO (Maybe (Vec.Vector Word16))
+    | Vec.null vec                          = liftI $ IE_cont $ step' i
+    | Vec.length vec + Vec.length i < wSize = liftI $ IE_cont $ step'
+                                              (Vec.append i vec)
+    | True        = let vec' = Vec.append i vec
+                        newLen = (Vec.length vec' `div` wSize) * wSize
+                        (h, t) = Vec.splitAt newLen vec'
+                    in
+                    lift (convert_vec $ Vec.append i h) >>= \v ->
+                      liftI $ IE_done v (Chunk t)
+  step' _i stream = liftI $ IE_done Nothing stream
   convert_vec vec = let (fp, off, len) = VB.toForeignPtr vec
                         f = FP.plusPtr (FFP.unsafeForeignPtrToPtr fp) off
                     in
                     do
                     newFp <- FFP.newForeignPtr_ f
-                    let newV = (VB.fromForeignPtr (FFP.castForeignPtr newFp)
-                               (len `div` 2)) :: Vec.Vector Word16
-                    host_to_le newV
-                    return $ Just newV
+                    let newV = VB.fromForeignPtr (FFP.castForeignPtr newFp)
+                               (len `div` wSize)
+                    v' <- host_to_le newV
+                    return $ Just v'
 
-host_to_le :: Storable a => Vec.Vector a -> IO ()
+host_to_le :: Storable a => Vec.Vector a -> IO (Vec.Vector a)
 host_to_le vec = case be of
   True -> let
-            (fp, len, off) = VB.toForeignPtr vec
+            (fp, off, len) = VB.toForeignPtr vec
             wSize = sizeOf $ Vec.head vec
           in
           loop wSize fp len off
-  False -> return ()
+  False -> return vec
   where
-    loop _wSize _fp 0 _off = return ()
+    loop _wSize _fp 0 _off = return vec
     loop wSize fp len off  = do
       FFP.withForeignPtr fp (\p -> swap_bytes wSize (p `FP.plusPtr` off))
       loop wSize fp (len - 1) (off + 1)
@@ -326,14 +310,14 @@ conv_func :: AudioFormat -> IterateeGM Word8 IO (Maybe (Vec.Vector Double))
 conv_func (AudioFormat _nc _sr 8) = (fmap . fmap . Vec.map)
   (normalize 8 . (fromIntegral :: Word8 -> Int8)) unroll_8
 conv_func (AudioFormat _nc _sr 16) = (fmap . fmap . Vec.map)
-  (normalize 16 . (fromIntegral :: Word16 -> Int16)) unroll_16
-    -- (unroller (endian_read2 LSB))
+  (normalize 16 . (fromIntegral :: Word16 -> Int16))
+  (unroll_n $ sizeOf (undefined :: Word16))
 conv_func (AudioFormat _nc _sr 24) = (fmap . fmap . Vec.map)
   (normalize 24 . (fromIntegral :: Word32 -> Int32))
-    (unroller (endian_read3 LSB))
+  (unroll_n 3)
 conv_func (AudioFormat _nc _sr 32) = (fmap . fmap . Vec.map)
   (normalize 32 . (fromIntegral :: Word32 -> Int32))
-    (unroller (endian_read4 LSB))
+  (unroll_n $ sizeOf (undefined :: Word32))
 conv_func _ = iter_err "Invalid wave bit depth" >> return Nothing
 
 -- |An Iteratee to read a wave format chunk

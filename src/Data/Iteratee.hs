@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleContexts #-}
+
 module Data.Iteratee (
   module Data.Iteratee.Base,
   file_driver_rb
@@ -5,13 +7,13 @@ module Data.Iteratee (
 
 where
 
-import System.Posix
-import Data.Word (Word8)
 import Data.Iteratee.Base
 import Data.Iteratee.IO.RandomIO
+import Data.Word (Word8)
+import System.Posix
 
 -- |Process a file using the given IterateeGM
-file_driver_rb :: StreamChunk s => IterateeGM s Word8 IO a ->
+file_driver_rb :: ReadableChunk s Word8 => IterateeGM s Word8 IO a ->
                FilePath ->
                IO (Either (String, a) a)
 file_driver_rb iter filepath = do

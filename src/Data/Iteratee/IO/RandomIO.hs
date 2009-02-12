@@ -1,4 +1,4 @@
--- Haskell98!
+{-# LANGUAGE FlexibleContexts #-}
 
 -- Random and Binary IO with IterateeM
 
@@ -9,18 +9,13 @@ module Data.Iteratee.IO.RandomIO (
   endian_read2,
   endian_read3,
   endian_read4,
-  enum_fd_random,
-  test1r,
-  test2r,
-  test3r,
-  test4r
+  enum_fd_random
 )
 
 where
 
 import Data.Iteratee.IO.LowLevelIO
 import Data.Iteratee.Base
-import Text.Printf
 import Data.Word
 import Data.Bits
 import Data.Int
@@ -28,7 +23,6 @@ import Data.Int
 import System.Posix hiding (FileOffset)
 import Foreign.Ptr
 import Foreign.Marshal.Alloc
-import Foreign.Marshal.Array
 
 import System.IO (SeekMode(..))
 
@@ -43,7 +37,7 @@ data Endian = MSB -- ^ Most Significant Byte is first (big-endian)
   | LSB           -- ^ Least Significan Byte is first (little-endian)
   deriving (Eq, Ord, Show, Enum)
 
-endian_read2 :: (StreamChunk s, Monad m) => Endian -> IterateeGM s Word8 m (Maybe Word16)
+endian_read2 :: (StreamChunk s Word8, Monad m) => Endian -> IterateeGM s Word8 m (Maybe Word16)
 endian_read2 e =
   bindm snext $ \c1 ->
   bindm snext $ \c2 ->
@@ -54,7 +48,7 @@ endian_read2 e =
 -- |read 3 bytes in an endian manner.  If the first bit is set (negative),
 -- set the entire first byte so the Word32 can be properly set negative as
 -- well.
-endian_read3 :: (StreamChunk s, Monad m) => Endian -> IterateeGM s Word8 m (Maybe Word32)
+endian_read3 :: (StreamChunk s Word8, Monad m) => Endian -> IterateeGM s Word8 m (Maybe Word32)
 endian_read3 e = 
   bindm snext $ \c1 ->
   bindm snext $ \c2 ->
@@ -70,7 +64,7 @@ endian_read3 e =
                         `shiftL` 8) .|. fromIntegral c2)
                         `shiftL` 8) .|. fromIntegral m
 
-endian_read4 :: (StreamChunk s, Monad m) => Endian -> IterateeGM s Word8 m (Maybe Word32)
+endian_read4 :: (StreamChunk s Word8, Monad m) => Endian -> IterateeGM s Word8 m (Maybe Word32)
 endian_read4 e =
   bindm snext $ \c1 ->
   bindm snext $ \c2 ->
@@ -94,7 +88,7 @@ endian_read4 e =
 
 -- The enumerator of a POSIX Fd: a variation of enum_fd that
 -- supports RandomIO (seek requests)
-enum_fd_random :: ReadableChunk s => Fd -> EnumeratorGM s Word8 IO a
+enum_fd_random :: ReadableChunk s Word8 => Fd -> EnumeratorGM s Word8 IO a
 enum_fd_random fd iter = {-# SCC "enum_fd_random" #-}
     IM $ allocaBytes (fromIntegral buffer_size) (loop (0,0) iter)
  where
@@ -103,7 +97,7 @@ enum_fd_random fd iter = {-# SCC "enum_fd_random" #-}
   buffer_size = 4096
   -- the first argument of loop is (off,len), describing which part
   -- of the file is currently in the buffer 'p'
-  loop :: (ReadableChunk s) =>
+  loop :: (ReadableChunk s Word8) =>
           (FileOffset,Int) ->
           IterateeG s Word8 IO a -> 
 	  Ptr Word8 ->
@@ -113,7 +107,7 @@ enum_fd_random fd iter = {-# SCC "enum_fd_random" #-}
     off <= off' && off' < off + fromIntegral len =	-- Seek within buffer p
     do
     let local_off = fromIntegral $ off' - off
-    s <- readFromPointer (p `plusPtr` local_off) (len - local_off)
+    s <- readFromPtr (p `plusPtr` local_off) (len - local_off)
     im <- unIM $ c (Chunk s)
     loop pos im p
   loop _pos iter'@(IE_jmp off c) p = do -- Seek outside the buffer
@@ -130,7 +124,7 @@ enum_fd_random fd iter = {-# SCC "enum_fd_random" #-}
     Left _errno -> unIM $ step (Err "IO error")
     Right 0 -> return iter'
     Right n' -> do
-         s <- readFromPointer p (fromIntegral n')
+         s <- readFromPtr p (fromIntegral n')
          im <- unIM $ step (Chunk s)
 	 loop (off + fromIntegral len,fromIntegral n') im p
 

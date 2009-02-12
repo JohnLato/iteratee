@@ -1,5 +1,5 @@
 module Data.Iteratee (
-  module Data.Iteratee.IterateeM,
+  module Data.Iteratee.Base,
   file_driver_rb
 )
 
@@ -7,16 +7,16 @@ where
 
 import System.Posix
 import Data.Word (Word8)
-import Data.Iteratee.IterateeM
+import Data.Iteratee.Base
 import Data.Iteratee.IO.RandomIO
 
 -- |Process a file using the given IterateeGM
-file_driver_rb :: IterateeGM Word8 IO a ->
+file_driver_rb :: StreamChunk s => IterateeGM s Word8 IO a ->
                FilePath ->
                IO (Either (String, a) a)
-file_driver_rb iter filepath = {-# SCC "file_driver_rb" #-} do
+file_driver_rb iter filepath = do
   fd <- openFd filepath ReadOnly Nothing defaultFileFlags
-  result <- {-# SCC "proc_file" #-} unIM $ (enum_fd_random fd >. enum_eof) ==<< iter
+  result <- unIM $ (enum_fd_random fd >. enum_eof) ==<< iter
   closeFd fd
   print_res result
  where

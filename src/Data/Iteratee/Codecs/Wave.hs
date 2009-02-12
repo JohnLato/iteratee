@@ -22,7 +22,7 @@ where
 import System.IO.Unsafe (unsafePerformIO)
 import qualified Foreign.Ptr as FP
 import qualified Foreign.ForeignPtr as FFP
-import Data.Iteratee.IterateeM
+import Data.Iteratee.Base
 import Data.Iteratee.IO.RandomIO
 import qualified Data.StorableVector as Vec
 import qualified Data.StorableVector.Base as VB

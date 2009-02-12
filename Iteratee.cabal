@@ -28,7 +28,8 @@ Library
    build-depends:       base < 3
  build-depends:         haskell98, mtl, containers, unix, storablevector
  exposed-modules:       Data.Iteratee
-                        Data.Iteratee.IterateeM
+                        Data.Iteratee.Base
                         Data.Iteratee.IO.RandomIO
                         Data.Iteratee.Codecs.Wave
- other-modules:         Data.Iteratee.IO.LowLevelIO
+ other-modules:         Data.Iteratee.IO.Base
+                        Data.Iteratee.IO.LowLevelIO

@@ -11,9 +11,9 @@ module Data.Iteratee.IO.RandomIO (
 
 where
 
-import Data.Iteratee.IO.LowLevelIO
 import Data.Iteratee.Base
 import Data.Iteratee.Binary()
+import Data.Iteratee.IO.Base
 import Data.Word
 import Data.Int
 

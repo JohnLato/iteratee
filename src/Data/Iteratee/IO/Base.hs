@@ -1,9 +1,20 @@
+{-# LANGUAGE CPP #-}
+
 module Data.Iteratee.IO.Base (
-  FileOffset
+#if defined(USE_WINDOWS)
+  module Data.Iterate.IO.Windows
+#endif
+#if defined(USE_POSIX)
+  module Data.Iteratee.IO.Posix
+#endif
 )
 where
 
-import qualified System.Posix as Posix
+#if defined(USE_WINDOWS)
+import Data.Iteratee.IO.Windows
+#endif
 
-type FileOffset = Posix.FileOffset
+#if defined(USE_POSIX)
+import Data.Iteratee.IO.Posix
+#endif
 

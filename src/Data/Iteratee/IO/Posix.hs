@@ -1,11 +1,22 @@
-{-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE CPP, ForeignFunctionInterface #-}
 
 -- Low-level IO operations 
 -- These operations are either missing from the GHC run-time library,
 -- or implemented suboptimally or heavy-handedly
 
-module Data.Iteratee.IO.LowLevelIO (myfdRead, myfdSeek, Errno(..), select'read'pending)
-    where
+module Data.Iteratee.IO.Posix (
+#if defined(USE_POSIX)
+  FileOffset,
+  myfdRead,
+  myfdSeek,
+  Errno(..),
+  select'read'pending
+#endif
+)
+
+where
+
+#if defined(USE_POSIX)
 
 import Foreign.C
 import Foreign.Ptr
@@ -93,3 +104,4 @@ select'read'pending mfd =
     ormax x [] = x
     ormax (a:ar) (b:br) = (a .|. b) : ormax ar br
 
+#endif

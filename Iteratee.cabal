@@ -31,5 +31,6 @@ Library
                         Data.Iteratee.Base
                         Data.Iteratee.IO.RandomIO
                         Data.Iteratee.Codecs.Wave
+                        Data.Iteratee.Codecs.Tiff
  other-modules:         Data.Iteratee.IO.Base
                         Data.Iteratee.IO.LowLevelIO

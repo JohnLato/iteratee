@@ -19,13 +19,13 @@ module Data.Iteratee.Codecs.Wave (
 )
 where
 
-import System.IO.Unsafe (unsafePerformIO)
-import qualified Foreign.Ptr as FP
-import qualified Foreign.ForeignPtr as FFP
 import Data.Iteratee.Base
 import Data.Iteratee.IO.RandomIO
+import Data.Iteratee.Binary
 import qualified Data.StorableVector as Vec
 import qualified Data.StorableVector.Base as VB
+import qualified Foreign.Ptr as FP
+import qualified Foreign.ForeignPtr as FFP
 import Foreign.Storable
 import qualified Foreign.Marshal.Utils as FMU
 import Control.Monad.Trans
@@ -34,6 +34,7 @@ import Data.Int
 import Data.Word
 import Data.Bits (shiftL)
 import qualified Data.IntMap as IM
+import System.IO.Unsafe (unsafePerformIO)
 
 -- =====================================================
 -- WAVE libary code

@@ -29,6 +29,7 @@ Library
  build-depends:         haskell98, mtl, containers, unix, storablevector
  exposed-modules:       Data.Iteratee
                         Data.Iteratee.Base
+                        Data.Iteratee.Binary
                         Data.Iteratee.IO.RandomIO
                         Data.Iteratee.Codecs.Wave
                         Data.Iteratee.Codecs.Tiff

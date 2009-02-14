@@ -52,7 +52,7 @@ module Data.Iteratee.Codecs.Tiff where
 
 import Data.Iteratee.Base
 import Data.Iteratee.IO.RandomIO
---import Control.Monad.Trans
+import Data.Iteratee.Binary
 import Control.Monad.State
 import Data.Char (chr)
 import Data.Int

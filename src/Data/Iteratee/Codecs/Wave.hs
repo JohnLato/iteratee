@@ -186,9 +186,9 @@ load_dict = foldl read_entry (return (Just IM.empty))
         (Nothing, _) -> return (Just dict)
 
 read_value :: WAVEDict ->
-              Int -> -- ^Offset
-              WAVE_CHUNK -> -- ^Chunk type
-              Int -> -- ^Count
+              Int -> -- Offset
+              WAVE_CHUNK -> -- Chunk type
+              Int -> -- Count
               IterateeGM V Word8 IO (Maybe WAVEDE_ENUM)
 read_value _dict offset _ 0 = do
   iter_err $ "Zero count in the entry of chunk at: " ++ show offset
@@ -338,12 +338,15 @@ sWaveFormat = do
 -- ---------------------
 -- functions to assist with reading from the dictionary
 
+-- |Read the first format chunk in the WAVE dictionary.
 dict_read_first_format :: WAVEDict -> IterateeGM V Word8 IO (Maybe AudioFormat)
 dict_read_first_format dict = case IM.lookup (fromEnum WAVE_FMT) dict of
   Just [] -> return Nothing
   Just ((WAVEDE _ WAVE_FMT (WEN_BYTE enum)) : _xs) -> enum ==<< sWaveFormat
   _ -> return Nothing
 
+-- |Read the last fromat chunk from the WAVE dictionary.  This is useful
+-- when parsing all chunks in the dictionary.
 dict_read_last_format :: WAVEDict -> IterateeGM V Word8 IO (Maybe AudioFormat)
 dict_read_last_format dict = case IM.lookup (fromEnum WAVE_FMT) dict of
   Just [] -> return Nothing
@@ -351,8 +354,9 @@ dict_read_last_format dict = case IM.lookup (fromEnum WAVE_FMT) dict of
     enum ==<< sWaveFormat
   _ -> return Nothing
 
-dict_read_format :: Int -> -- ^Index in the format chunk list to read
-                    WAVEDict -> -- ^Dictionary
+-- |Read the specified format chunk from the WAVE dictionary
+dict_read_format :: Int -> --Index in the format chunk list to read
+                    WAVEDict -> --Dictionary
                     IterateeGM V Word8 IO (Maybe AudioFormat)
 dict_read_format ix dict = case IM.lookup (fromEnum WAVE_FMT) dict of
   Just xs -> let (WAVEDE _ WAVE_FMT (WEN_BYTE enum)) = (!!) xs ix in do
@@ -360,6 +364,7 @@ dict_read_format ix dict = case IM.lookup (fromEnum WAVE_FMT) dict of
     return e
   _ -> return Nothing
 
+-- |Read the first data chunk in the WAVE dictionary.
 dict_read_first_data :: WAVEDict -> IterateeGM V Word8 IO (Maybe [Double])
 dict_read_first_data dict = case IM.lookup (fromEnum WAVE_DATA) dict of
   Just [] -> return Nothing
@@ -368,6 +373,7 @@ dict_read_first_data dict = case IM.lookup (fromEnum WAVE_DATA) dict of
        return $ Just e
   _ -> return Nothing
 
+-- |Read the last data chunk in the WAVE dictionary.
 dict_read_last_data :: WAVEDict -> IterateeGM V Word8 IO (Maybe [Double])
 dict_read_last_data dict = case IM.lookup (fromEnum WAVE_DATA) dict of
   Just [] -> return Nothing
@@ -376,8 +382,9 @@ dict_read_last_data dict = case IM.lookup (fromEnum WAVE_DATA) dict of
     return $ Just e
   _ -> return Nothing
 
-dict_read_data :: Int -> -- ^Index in the data chunk list to read
-                  WAVEDict -> -- ^Dictionary
+-- |Read the specified data chunk from the WAVE dictionary.
+dict_read_data :: Int -> --Index in the data chunk list to read
+                  WAVEDict -> --Dictionary
                   IterateeGM V Word8 IO (Maybe [Double])
 dict_read_data ix dict = case IM.lookup (fromEnum WAVE_DATA) dict of
   Just xs -> let (WAVEDE _ WAVE_DATA (WEN_DUB enum)) = (!!) xs ix in do
@@ -385,8 +392,10 @@ dict_read_data ix dict = case IM.lookup (fromEnum WAVE_DATA) dict of
     return $ Just e
   _ -> return Nothing
 
-dict_process_data :: Int -> -- ^Index in the data chunk list to read
-                     WAVEDict -> -- ^Dictionary
+-- |Read the specified data chunk from the dictionary, applying the
+-- data to the specified IterateeGM.
+dict_process_data :: Int -> -- Index in the data chunk list to read
+                     WAVEDict -> -- Dictionary
                      IterateeGM V Double IO a ->
                      IterateeGM V Word8 IO (Maybe a)
 dict_process_data ix dict iter = {-# SCC "dict_process_data" #-} case IM.lookup (fromEnum WAVE_DATA) dict of
@@ -398,10 +407,12 @@ dict_process_data ix dict iter = {-# SCC "dict_process_data" #-} case IM.lookup 
 -- ---------------------
 -- convenience functions
 
+-- |Convert (Maybe []) to [].  Nothing maps to an empty list.
 join_m :: Maybe [a] -> [a]
 join_m Nothing = []
 join_m (Just a) = a
 
+-- |Normalize a given value for the provided bit depth.
 normalize :: Integral a => BitDepth -> a -> Double
 normalize 8 a = ((fromIntegral a - 128)) / 128
 normalize bd a = {-# SCC "normalize" #-} case (a > 0) of

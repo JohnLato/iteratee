@@ -43,7 +43,6 @@ where
 
 import Data.Iteratee.IO.Base
 import Data.List (splitAt, findIndex)
-import Data.Word (Word8)
 import Control.Monad.Trans
 import Control.Monad.Identity
 import Foreign.Ptr

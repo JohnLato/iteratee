@@ -28,7 +28,7 @@ module Data.Iteratee.Base (
   EnumeratorN,
   stake,
   stakeR,
-  --map_stream,
+  map_stream,
   conv_stream,
   EnumeratorGM,
   EnumeratorGMM,
@@ -67,6 +67,7 @@ class StreamChunk c el where
   cLength :: c el -> Int
   cEmpty :: c el
   cNull :: c el -> Bool
+  cCons :: el -> c el -> c el
   cHead :: c el -> el
   cTail :: c el -> c el
   cFindIndex :: (el -> Bool) -> c el -> Maybe Int
@@ -75,26 +76,29 @@ class StreamChunk c el where
   cAppend :: c el -> c el -> c el
   fromList :: [el] -> c el
   toList :: c el -> [el]
-  --cMap :: (el -> el') -> c el -> c el'
+  cMap :: (StreamChunk c' el') => (el -> el') -> c el -> c' el'
 
 instance StreamChunk [] el where
-  cLength           = length
-  cEmpty            = []
-  cNull []          = True
-  cNull _           = False
-  cHead             = head
-  cTail             = tail
-  cFindIndex        = findIndex
-  cSplitAt          = splitAt
-  cDropWhile        = dropWhile
-  cAppend           = (++)
-  fromList          = id
-  toList            = id
+  cLength    = length
+  cEmpty     = []
+  cNull []   = True
+  cNull _    = False
+  cCons      = (:)
+  cHead      = head
+  cTail      = tail
+  cFindIndex = findIndex
+  cSplitAt   = splitAt
+  cDropWhile = dropWhile
+  cAppend    = (++)
+  fromList   = id
+  toList     = id
+  cMap       = listmap
 
 instance (Storable el) => StreamChunk Vec.Vector el where
   cLength    = Vec.length
   cEmpty     = Vec.empty
   cNull      = Vec.null
+  cCons      = Vec.cons
   cHead      = Vec.head
   cTail      = Vec.tail
   cFindIndex = Vec.findIndex
@@ -103,6 +107,27 @@ instance (Storable el) => StreamChunk Vec.Vector el where
   cAppend    = Vec.append
   fromList   = Vec.pack
   toList     = Vec.unpack
+  cMap       = vecmap
+
+listmap :: (StreamChunk s' el') => (el -> el') -> [el] -> s' el'
+listmap f xs = step xs
+  where
+  step []      = cEmpty
+  step (x:xs') = f x `cCons` step xs'
+
+{-# RULES "listmap/map" listmap = map #-}
+
+vecmap :: (Storable el, StreamChunk s' el') =>
+          (el -> el') ->
+          Vec.Vector el ->
+          s' el'
+vecmap f xs = step xs
+  where
+  step vec
+    | Vec.null vec = cEmpty
+    | True         = f (Vec.head vec) `cCons` step (Vec.tail vec)
+
+{-# RULES "vecmap/map" forall s (f :: forall el el'.(Storable el') => el -> el'). vecmap f s = Vec.map f s #-}
 
 class StreamChunk s el => ReadableChunk s el where
   readFromPtr :: Ptr (el) -> Int -> IO (s el)
@@ -427,7 +452,6 @@ stakeR n (IE_cont k) = liftI $ IE_cont step
 -- given iteratee to it.
 -- Note the contravariance
 
-{-
 map_stream :: (StreamChunk s el, StreamChunk s el', Monad m) =>
    (el -> el') ->
    EnumeratorN s el s el' m a
@@ -444,7 +468,6 @@ map_stream f (IE_jmp off k) = liftI $ IE_jmp off step
  step (Chunk str) = k (Chunk (cMap f str)) >>== map_stream f
  step EOF         = k EOF       >>== \r -> liftI $ IE_done r EOF
  step (Err err)   = k (Err err) >>== \r -> liftI $ IE_done r (Err err)
--}
 
 -- |Convert one stream into another, not necessarily in `lockstep'
 -- The transformer map_stream maps one element of the outer stream

@@ -250,6 +250,9 @@ instance (Monad m, Functor m) => Functor (IterateeGM s el m) where
 instance (StreamChunk s el) => MonadTrans (IterateeGM s el) where
     lift m = IM (m >>= unIM . return)
 
+instance (StreamChunk s el, MonadIO m) => MonadIO (IterateeGM s el m) where
+    liftIO = lift . liftIO
+
 -- ------------------------------------------------------------------------
 -- Primitive iteratees
 

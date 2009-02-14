@@ -181,7 +181,7 @@ liftI = IM . return
 
 -- Just like bind (at run-time, this is indeed exactly bind)
 infixl 1 >>==
-(>>==):: Monad m =>
+(>>==) :: Monad m =>
 	 IterateeGM s el m a ->
 	 (IterateeG s el m a -> IterateeGM s' el' m b) ->
 	 IterateeGM s' el' m b

@@ -248,15 +248,8 @@ instance (Monad m, Functor m) => Functor (IterateeGM s el m) where
       docase (IE_cont k) = liftI $ IE_cont (fmap f . k)
       docase (IE_jmp off k) = liftI $ IE_jmp off (fmap f . k)
 
-{-# SPECIALIZE instance Monad (IterateeGM Word8 IO) #-}
-{-# SPECIALIZE instance Monad (IterateeGM s el IO) #-}
-{-# SPECIALIZE instance Functor (IterateeGM Word8 IO) #-}
-{-# SPECIALIZE instance Functor (IterateeGM s el IO) #-}
-
 instance (StreamChunk s el) => MonadTrans (IterateeGM s el) where
     lift m = IM (m >>= unIM . return)
-
-{-# SPECIALIZE instance MonadTrans (IterateeGM s el IO) #-}
 
 -- ------------------------------------------------------------------------
 -- Primitive iteratees

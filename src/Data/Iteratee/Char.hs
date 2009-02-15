@@ -101,19 +101,10 @@ enum_lines (IE_cont k) = line >>= check_line k
  check_line k' (Right l)  = enum_lines ==<< k' (Chunk [l])
  check_line k' _          = enum_lines ==<< k' (Err "EOF") -- abnormal termin
 
-
 -- |Convert the stream of characters to the stream of words, and
 -- apply the given iteratee to enumerate the latter.
 -- Words are delimited by white space.
 -- This is the analogue of List.words
--- It is instructive to compare the code below with the code of
--- List.words, which is:
--- words                   :: String -> [String]
--- words s                 =  case dropWhile isSpace s of
---                                 "" -> []
---                                 s' -> w : words s''
---                                       where (w, s'') =
---                                              break isSpace s'
 -- One should keep in mind that enum_words is a more general, monadic
 -- function.
 

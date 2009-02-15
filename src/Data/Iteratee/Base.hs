@@ -56,7 +56,7 @@ import Control.Monad.Identity
 import Foreign.Ptr
 import System.IO
 
--- temporary for the StorableVector instance
+-- for the StorableVector instance
 import qualified Data.StorableVector as Vec
 import qualified Data.StorableVector.Base as VB
 import Foreign.ForeignPtr

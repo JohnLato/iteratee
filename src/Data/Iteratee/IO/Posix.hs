@@ -25,7 +25,7 @@ import System.IO (SeekMode(..))
 import Data.Bits			-- for select
 import Foreign.Marshal.Array		-- for select
 
--- Alas, GHC provides no function to read from Fd to an allocated buffer.
+-- |Alas, GHC provides no function to read from Fd to an allocated buffer.
 -- The library function fdRead is not appropriate as it returns a string
 -- already. I'd rather get data from a buffer.
 -- Furthermore, fdRead (at least in GHC) allocates a new buffer each
@@ -39,11 +39,10 @@ myfdRead (Fd fd) ptr n = do
   if n' == -1 then getErrno >>= return . Left 
      else return . Right . fromIntegral $ n'
 
-
 foreign import ccall unsafe "unistd.h read" cRead
   :: CInt -> Ptr CChar -> CSize -> IO CInt
 
--- The following fseek procedure throws no exceptions.
+-- |The following fseek procedure throws no exceptions.
 myfdSeek:: Fd -> SeekMode -> FileOffset -> IO (Either Errno FileOffset)
 myfdSeek (Fd fd) mode off = do
   n' <- cLSeek fd off (mode2Int mode)
@@ -82,7 +81,7 @@ fds2mfd fds = [fromIntegral (j+i*bitsize) |
 unFd :: Fd -> CInt
 unFd (Fd x) = x
 
--- poll if file descriptors have something to read
+-- |poll if file descriptors have something to read
 -- Return the list of read-pending descriptors
 select'read'pending :: [Fd] -> IO (Either Errno [Fd])
 select'read'pending mfd =

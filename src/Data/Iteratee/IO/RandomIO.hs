@@ -1,11 +1,13 @@
 {-# LANGUAGE FlexibleContexts #-}
 
--- Random and Binary IO with IterateeM
+-- |Random and Binary IO with generic Iteratees.
 
 module Data.Iteratee.IO.RandomIO (
+  -- * Iteratee drivers
+  file_driver_rb,
+  -- * File enumerators
   enum_fd,
-  enum_fd_random,
-  file_driver_rb
+  enum_fd_random
 )
 
 where

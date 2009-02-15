@@ -1,7 +1,10 @@
 {-# LANGUAGE FlexibleContexts #-}
 
+-- |Iteratees for parsing binary data.
 module Data.Iteratee.Binary (
+  -- * Types
   Endian (..),
+  -- * Endian multi-byte iteratees
   endian_read2,
   endian_read3,
   endian_read4

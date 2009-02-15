@@ -2,7 +2,6 @@
 module Data.Iteratee.Codecs.Wave (
   WAVEDE (..),
   WAVEDE_ENUM (..),
-  WAVE_TYPE (..),
   WAVE_CHUNK (..),
   AudioFormat (..),
   wave_reader,
@@ -59,14 +58,6 @@ data WAVEDE = WAVEDE{
 data WAVEDE_ENUM =
   WEN_BYTE  (forall a. EnumeratorGMM V Word8 V Word8 IO a)
   | WEN_DUB (forall a. EnumeratorGMM V Word8 V Double IO a)
-
--- |Standard WAVE data types
-data WAVE_TYPE = WAVE_NONE -- ^None
-  | WAVE_BYTE              -- ^8-bit signed integer
-  | WAVE_SSHORT            -- ^16-bit signed integer
-  | WAVE_S24               -- ^24-bit signed integer
-  | WAVE_SLONG             -- ^32-bit signed integer
-  deriving (Eq, Enum, Ord, Bounded, Show)
 
 -- |Standard WAVE Chunks
 data WAVE_CHUNK = WAVE_FMT -- ^Format

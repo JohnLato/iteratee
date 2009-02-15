@@ -1,3 +1,5 @@
+-- Read a wave file and return some information about it.
+
 {-# LANGUAGE BangPatterns #-}
 module Main where
 
@@ -21,6 +23,12 @@ main = do
 
 type V = Vec.Vector
 
+-- Use the collection of [WAVEDE] returned from wave_reader to
+-- do further processing.  The IntMap has an entry for each type of chunk
+-- in the wave file.  Read the first format chunk and disply the 
+-- format information, then use the dict_process_data function
+-- to enumerate over the max_iter iteratee to find the maximum value
+-- (peak amplitude) in the file.
 test :: Maybe (IM.IntMap [WAVEDE]) -> IterateeGM V Word8 IO ()
 test Nothing = lift $ putStrLn "No dictionary"
 test (Just dict) = do
@@ -30,6 +38,9 @@ test (Just dict) = do
   lift . putStrLn $ show maxm
   return ()
 
+-- an iteratee that calculates the maximum value found so far.
+-- this could be written with snext as well, however it is more
+-- efficient to operate on an entire chunk at once.
 max_iter :: IterateeGM V Double IO Double
 max_iter = m' 0
   where

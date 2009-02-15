@@ -2,7 +2,7 @@
 
 -- |Random and Binary IO with generic Iteratees.
 
-module Data.Iteratee.IO.RandomIO (
+module Data.Iteratee.IO(
   -- * Iteratee drivers
   file_driver_rb,
   -- * File enumerators

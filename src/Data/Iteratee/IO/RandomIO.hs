@@ -3,8 +3,7 @@
 -- Random and Binary IO with IterateeM
 
 module Data.Iteratee.IO.RandomIO (
-  bindm,
-  stakeR,
+  enum_fd,
   enum_fd_random,
   file_driver_rb
 )
@@ -27,7 +26,26 @@ import System.IO (SeekMode(..))
 -- ------------------------------------------------------------------------
 -- Binary Random IO enumerators
 
--- The enumerator of a POSIX Fd: a variation of enum_fd that
+-- |The enumerator of a POSIX File Descriptor.  This version enumerates
+-- over the entire contents of a file, in order, unless stopped by
+-- the iteratee.  In particular, seeking is not supported.
+enum_fd :: ReadableChunk s Word8 => Fd -> EnumeratorGM s Word8 IO a
+enum_fd fd iter' = IM $ allocaBytes (fromIntegral buffer_size) $ loop iter'
+  where
+    buffer_size = 4096
+    loop iter@IE_done{} _p = return iter
+    loop _iter@IE_jmp{} _p = error "enum_fd is not compatabile with seek IO"
+    loop (IE_cont step) p = do
+      n <- myfdRead fd (castPtr p) buffer_size
+      case n of
+        Left _errno -> unIM $ step (Err "IO error")
+        Right 0 -> return iter'
+        Right n' -> do
+          s <- readFromPtr p (fromIntegral n')
+          im <- unIM $ step (Chunk s)
+	  loop im p
+
+-- |The enumerator of a POSIX File Descriptor: a variation of enum_fd that
 -- supports RandomIO (seek requests)
 enum_fd_random :: ReadableChunk s Word8 => Fd -> EnumeratorGM s Word8 IO a
 enum_fd_random fd iter = {-# SCC "enum_fd_random" #-}
@@ -69,7 +87,8 @@ enum_fd_random fd iter = {-# SCC "enum_fd_random" #-}
          im <- unIM $ step (Chunk s)
 	 loop (off + fromIntegral len,fromIntegral n') im p
 
--- |Process a file using the given IterateeGM
+-- |Process a file using the given IterateeGM.  This function wraps
+-- enum_fd_random as a convenience.
 file_driver_rb :: ReadableChunk s Word8 => IterateeGM s Word8 IO a ->
                FilePath ->
                IO (Either (String, a) a)

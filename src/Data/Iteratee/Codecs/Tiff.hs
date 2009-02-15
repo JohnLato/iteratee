@@ -51,7 +51,6 @@
 module Data.Iteratee.Codecs.Tiff where
 
 import Data.Iteratee.Base
-import Data.Iteratee.IO.RandomIO
 import Data.Iteratee.Binary
 import Control.Monad.State
 import Data.Char (chr)
@@ -546,11 +545,13 @@ load_dict e = do
   conv_long TT_slong = fromIntegral . u32_to_s32
   conv_long _ = error "This should never happen"
 
+{- this code is never used...
   conv_rat :: TIFF_TYPE -> Word32 -> Word32 -> Rational
   conv_rat TT_rational v1 v2 = (fromIntegral v1) % (fromIntegral v2)
   conv_rat TT_srational v1 v2 = (fromIntegral (u32_to_s32 v1)) % 
 				(fromIntegral (u32_to_s32 v2))
   conv_rat _tt _ _ = error "This should never happen"
+-}
 
 -- Reading the pixel matrix
 -- For simplicity, we assume no compression and 8-bit pixels

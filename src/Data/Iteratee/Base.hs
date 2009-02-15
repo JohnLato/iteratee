@@ -1,23 +1,29 @@
 {-# LANGUAGE MultiParamTypeClasses, FlexibleInstances #-}
 
--- Monadic and General Iteratees:
+-- |Monadic and General Iteratees:
 -- incremental input parsers, processors and transformers
 
 module Data.Iteratee.Base (
-  FileOffset,
-  bindm,
+  -- * Types
   StreamChunk (..),
   ReadableChunk (..),
   StreamG (..),
   IterateeG (..),
   IterateeGM (..),
+  EnumeratorN,
+  EnumeratorGM,
+  EnumeratorGMM,
+  -- * Iteratees
+  -- ** Iteratee Combinators
   liftI,
   (>>==),
   (==<<),
   joinI,
   stream2list,
+  -- ** Error handling
   iter_err,
   iter_report_err,
+  -- ** Basic Iteratees
   sbreak,
   sdropWhile,
   snext,
@@ -25,18 +31,20 @@ module Data.Iteratee.Base (
   skip_till_eof,
   sdrop,
   sseek,
-  EnumeratorN,
+  -- ** Advanced iteratee combinators
   stake,
   stakeR,
   map_stream,
   conv_stream,
-  EnumeratorGM,
-  EnumeratorGMM,
+  -- * Enumerators
   enum_eof,
   enum_err,
   (>.),
   enum_pure_1chunk,
   enum_pure_nchunk,
+  -- * Misc.
+  FileOffset,
+  bindm
 )
 
 where
@@ -63,18 +71,31 @@ bindm m f = m >>= maybe (return Nothing) f
 -- |Class of types that can be used to hold chunks of data within Iteratee
 -- streams.
 class StreamChunk c el where
-  cLength :: c el -> Int
-  cEmpty :: c el
-  cNull :: c el -> Bool
+  -- |Length of currently available data.
+  cLength :: c el -> Int 
+  -- |Create an empty chunk of data.
+  cEmpty :: c el 
+  -- |Test if the current stream is null.
+  cNull :: c el -> Bool 
+  -- |Prepend an element to the front of the data.
   cCons :: el -> c el -> c el
+  -- |Return the first element of the stream.
   cHead :: c el -> el
+  -- |Return the tail of the stream.
   cTail :: c el -> c el
+  -- |First index matching the predicate.
   cFindIndex :: (el -> Bool) -> c el -> Maybe Int
+  -- |Split the data at the specified index.
   cSplitAt :: Int -> c el -> (c el, c el)
+  -- |Drop data matching the predicate.
   cDropWhile :: (el -> Bool) -> c el -> c el
+  -- |Append to chunks of data into one.
   cAppend :: c el -> c el -> c el
+  -- |Create a stream from a list.
   fromList :: [el] -> c el
+  -- |Create a list from the stream.
   toList :: c el -> [el]
+  -- |Map a computation over the stream.
   cMap :: (StreamChunk c' el') => (el -> el') -> c el -> c' el'
 
 instance StreamChunk [] el where
@@ -128,6 +149,8 @@ vecmap f xs = step xs
 
 {-# RULES "vecmap/map" forall s (f :: forall el el'.(Storable el') => el -> el'). vecmap f s = Vec.map f s #-}
 
+-- |Class of streams which can be filled from a 'Ptr'.  Typically these
+-- are streams which can be read from a file.
 class StreamChunk s el => ReadableChunk s el where
   readFromPtr :: Ptr (el) -> Int -> IO (s el)
 
@@ -173,12 +196,13 @@ newtype IterateeGM s el m a = IM{unIM:: m (IterateeG s el m a)}
 
 -- Useful combinators for implementing iteratees and enumerators
 
+-- |Lift an 'IterateeG' into an 'IterateeGM'.
 liftI :: Monad m => IterateeG s el m a -> IterateeGM s el m a
 liftI = IM . return
 
 {-# INLINE liftI #-}
 
--- Just like bind (at run-time, this is indeed exactly bind)
+-- |Just like bind (at run-time, this is indeed exactly bind)
 infixl 1 >>==
 (>>==) :: Monad m =>
 	 IterateeGM s el m a ->
@@ -188,7 +212,7 @@ m >>== f = IM (unIM m >>= unIM . f)
 
 {-# INLINE (>>==) #-}
 
--- Just like an application -- a call-by-value-like application
+-- |Just like an application -- a call-by-value-like application
 infixr 1 ==<<
 (==<<) :: Monad m =>
     (IterateeG s el m a -> IterateeGM s' el' m b)
@@ -197,7 +221,7 @@ infixr 1 ==<<
 (==<<) = flip (>>==)
 
 
--- The following is a `variant' of join in the IterateeGM s el m monad
+-- |The following is a `variant' of join in the IterateeGM s el m monad
 -- When el' is the same as el, the type of joinI is indeed that of
 -- true monadic join.  However, joinI is subtly different: since
 -- generally el' is different from el, it makes no sense to
@@ -309,8 +333,8 @@ sbreak cpred = liftI $ IE_cont (liftI . step cEmpty)
  done line' char stream = IE_done (line',char) stream
 
 
--- A particular optimized case of the above: skip all elements of the stream
--- satisfying the given predicate -- until the first element
+-- |A particular optimized case of 'sdrop': skip all elements of the stream
+-- satisfying the given predicate - until the first element
 -- that does not satisfy the predicate, or the end of the stream.
 -- This is the analogue of List.dropWhile
 sdropWhile :: (StreamChunk s el, Monad m) =>
@@ -328,7 +352,7 @@ sdropWhile cpred = liftI $ IE_cont step
  step stream   = liftI $ IE_done () stream
 
 
--- Attempt to read the next element of the stream
+-- |Attempt to read the next element of the stream
 -- Return (Just c) if successful, return Nothing if the stream is
 -- terminated (by EOF or an error)
 snext :: (StreamChunk s el, Monad m) =>
@@ -342,7 +366,7 @@ snext = liftI $ IE_cont step
  step stream        = liftI $ IE_done Nothing stream
 
 
--- Look ahead at the next element of the stream, without removing
+-- |Look ahead at the next element of the stream, without removing
 -- it from the stream.
 -- Return (Just c) if successful, return Nothing if the stream is
 -- terminated (by EOF or an error)
@@ -356,14 +380,14 @@ speek = liftI $ IE_cont step
  step stream          = liftI $ IE_done Nothing stream
 
 
--- Skip the rest of the stream
+-- |Skip the rest of the stream
 skip_till_eof :: (StreamChunk s el, Monad m) => IterateeGM s el m ()
 skip_till_eof = liftI $ IE_cont step
  where
  step (Chunk _) = skip_till_eof
  step _         = return ()
 
--- Skip n elements of the stream, if there are that many
+-- |Skip n elements of the stream, if there are that many
 -- This is the analogue of List.drop
 sdrop :: (StreamChunk s el, Monad m) => Int -> IterateeGM s el m ()
 sdrop 0 = return ()
@@ -374,6 +398,8 @@ sdrop n = liftI $ IE_cont step
   where (_s1,s2) = cSplitAt n str
  step stream = liftI $ IE_done () stream
 
+-- |Create a request to seek within an input stream.  This will result in
+-- an error if the enumerator is not capable of responding to a seek request.
 sseek :: (StreamChunk s el, Monad m) => FileOffset -> IterateeGM s el m ()
 sseek off = liftI (IE_jmp off step)
  where
@@ -418,7 +444,7 @@ stake n (IE_cont k) = liftI $ IE_cont step
  done s1 s2 = k s1 >>== \r -> liftI $ IE_done r s2
 
 
--- Read n elements from a stream and apply the given iteratee to the
+-- |Read n elements from a stream and apply the given iteratee to the
 -- stream of the read elements. If the given iteratee accepted fewer
 -- elements, we stop.
 -- This is the variation of `stake' with the early termination

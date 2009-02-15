@@ -20,7 +20,6 @@ module Data.Iteratee.Codecs.Wave (
 where
 
 import Data.Iteratee.Base
-import Data.Iteratee.IO.RandomIO
 import Data.Iteratee.Binary
 import qualified Data.StorableVector as Vec
 import qualified Data.StorableVector.Base as VB

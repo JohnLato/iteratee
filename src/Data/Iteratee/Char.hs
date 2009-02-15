@@ -1,6 +1,6 @@
 -- Haskell98!
 
--- Utilties for Char-based iteratee processing
+-- |Utilties for Char-based iteratee processing.
 
 -- The running example, parts 1 and 2
 -- Part 1 is reading the headers, the sequence of lines terminated by an
@@ -13,15 +13,18 @@
 -- embedded (chunk encoded) into another stream.
 
 module Data.Iteratee.Char (
+  -- * Type synonyms
   Stream,
   Iteratee,
   IterateeM,
   EnumeratorM,
   Line,
+  -- * Word and Line processors
   line,
   print_lines,
   enum_lines,
   enum_words,
+
   module Data.Iteratee.Base
 )
 

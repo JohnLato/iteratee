@@ -35,11 +35,13 @@ Library
  else
    cpp-options:         -DUSE_POSIX
    other-modules:       Data.Iteratee.IO.Posix
- build-depends:         haskell98, mtl, containers, unix, storablevector
+ build-depends:         haskell98, mtl, containers, unix, storablevector, bytestring
  exposed-modules:       Data.Iteratee
                         Data.Iteratee.Base
                         Data.Iteratee.Binary
                         Data.Iteratee.Char
+                        Data.Iteratee.WrappedByteString
+                        Data.Iteratee.WrappedByteStringChar8
                         Data.Iteratee.IO
                         Data.Iteratee.IO.Base
                         Data.Iteratee.Codecs.Wave

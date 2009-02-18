@@ -50,8 +50,8 @@ enum_fd fd iter' = IM $ allocaBytes (fromIntegral buffer_size) $ loop iter'
 -- |The enumerator of a POSIX File Descriptor: a variation of enum_fd that
 -- supports RandomIO (seek requests)
 enum_fd_random :: ReadableChunk s Word8 => Fd -> EnumeratorGM s Word8 IO a
-enum_fd_random fd iter = {-# SCC "enum_fd_random" #-}
-    IM $ allocaBytes (fromIntegral buffer_size) (loop (0,0) iter)
+enum_fd_random fd iter =
+ IM $ allocaBytes (fromIntegral buffer_size) (loop (0,0) iter)
  where
   -- this can be usefully varied.  Values between 512 and 4096 seem
   -- to provide the best performance for most cases.

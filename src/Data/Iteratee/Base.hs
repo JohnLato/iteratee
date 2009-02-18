@@ -130,10 +130,7 @@ instance (Storable el) => StreamChunk Vec.Vector el where
   cMap       = vecmap
 
 listmap :: (StreamChunk s' el') => (el -> el') -> [el] -> s' el'
-listmap f xs = step xs
-  where
-  step []      = cEmpty
-  step (x:xs') = f x `cCons` step xs'
+listmap f = foldr (cCons . f) cEmpty
 
 {-# RULES "listmap/map" listmap = map #-}
 
@@ -234,7 +231,7 @@ infixr 1 ==<<
 joinI :: (StreamChunk s el, StreamChunk s' el', Monad m) =>
          IterateeGM s el m (IterateeG s' el' m a) ->
          IterateeGM s el m a
-joinI m = m >>= (\iter -> {-# SCC "join/outer" #-} enum_eof iter >>== check)
+joinI m = m >>= (\iter -> enum_eof iter >>== check)
   where
   check (IE_done x (Err str)) = liftI $ IE_done x (Err str)
   check (IE_done x _) = liftI $ IE_done x EOF
@@ -330,7 +327,7 @@ sbreak cpred = liftI $ IE_cont (liftI . step cEmpty)
                        in
                        done (before `cAppend` str') (Just $ cHead tail') (Chunk $ cTail tail')
  step before stream = done before Nothing stream
- done line' char stream = IE_done (line',char) stream
+ done line' char = IE_done (line', char)
 
 
 -- |A particular optimized case of 'sdrop': skip all elements of the stream
@@ -403,7 +400,7 @@ sdrop n = liftI $ IE_cont step
 sseek :: (StreamChunk s el, Monad m) => FileOffset -> IterateeGM s el m ()
 sseek off = liftI (IE_jmp off step)
  where
- step s = liftI $ IE_done () s
+ step = liftI . IE_done ()
 
 -- ---------------------------------------------------
 -- The converters show a different way of composing two iteratees:
@@ -556,7 +553,7 @@ e1 >. e2 = (e2 ==<<) . e1
 enum_pure_1chunk :: (StreamChunk s el, Monad m) =>
                     s el ->
                     EnumeratorGM s el m a
-enum_pure_1chunk _str iter@IE_done{} = liftI $ iter
+enum_pure_1chunk _str iter@IE_done{} = liftI iter
 enum_pure_1chunk str (IE_cont k) = k (Chunk str)
 enum_pure_1chunk _str (IE_jmp _off _k) = fail "enum_pure_1chunk cannot handle random IO"
 
@@ -568,8 +565,8 @@ enum_pure_nchunk :: (StreamChunk s el, Monad m) =>
                     s el ->
                     Int ->
                     EnumeratorGM s el m a
-enum_pure_nchunk _str _n iter@IE_done{}   = liftI $ iter
-enum_pure_nchunk str  _n iter | cNull str = liftI $ iter
+enum_pure_nchunk _str _n iter@IE_done{}   = liftI iter
+enum_pure_nchunk str  _n iter | cNull str = liftI iter
 enum_pure_nchunk str n (IE_cont k)        = enum_pure_nchunk s2 n ==<< k (Chunk s1)
  where (s1,s2) = cSplitAt n str
 enum_pure_nchunk _str _n (IE_jmp _off _k) = fail "enum_pure_nchunk cannot handle ranom IO"

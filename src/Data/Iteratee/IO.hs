@@ -1,5 +1,3 @@
-{-# LANGUAGE FlexibleContexts #-}
-
 -- |Random and Binary IO with generic Iteratees.
 
 module Data.Iteratee.IO(
@@ -15,7 +13,6 @@ where
 import Data.Iteratee.Base
 import Data.Iteratee.Binary()
 import Data.Iteratee.IO.Base
-import Data.Word
 import Data.Int
 
 import System.Posix hiding (FileOffset)
@@ -31,7 +28,7 @@ import System.IO (SeekMode(..))
 -- |The enumerator of a POSIX File Descriptor.  This version enumerates
 -- over the entire contents of a file, in order, unless stopped by
 -- the iteratee.  In particular, seeking is not supported.
-enum_fd :: ReadableChunk s Word8 => Fd -> EnumeratorGM s Word8 IO a
+enum_fd :: ReadableChunk s el => Fd -> EnumeratorGM s el IO a
 enum_fd fd iter' = IM $ allocaBytes (fromIntegral buffer_size) $ loop iter'
   where
     buffer_size = 4096
@@ -49,7 +46,7 @@ enum_fd fd iter' = IM $ allocaBytes (fromIntegral buffer_size) $ loop iter'
 
 -- |The enumerator of a POSIX File Descriptor: a variation of enum_fd that
 -- supports RandomIO (seek requests)
-enum_fd_random :: ReadableChunk s Word8 => Fd -> EnumeratorGM s Word8 IO a
+enum_fd_random :: ReadableChunk s el => Fd -> EnumeratorGM s el IO a
 enum_fd_random fd iter =
  IM $ allocaBytes (fromIntegral buffer_size) (loop (0,0) iter)
  where
@@ -58,11 +55,11 @@ enum_fd_random fd iter =
   buffer_size = 4096
   -- the first argument of loop is (off,len), describing which part
   -- of the file is currently in the buffer 'p'
-  loop :: (ReadableChunk s Word8) =>
+  loop :: (ReadableChunk s el) =>
           (FileOffset,Int) ->
-          IterateeG s Word8 IO a -> 
-	  Ptr Word8 ->
-          IO (IterateeG s Word8 IO a)
+          IterateeG s el IO a -> 
+	  Ptr el ->
+          IO (IterateeG s el IO a)
   loop _pos iter'@IE_done{} _p = return iter'
   loop pos@(off,len) (IE_jmp off' c) p | 
     off <= off' && off' < off + fromIntegral len =	-- Seek within buffer p
@@ -91,7 +88,7 @@ enum_fd_random fd iter =
 
 -- |Process a file using the given IterateeGM.  This function wraps
 -- enum_fd_random as a convenience.
-file_driver_rb :: ReadableChunk s Word8 => IterateeGM s Word8 IO a ->
+file_driver_rb :: ReadableChunk s el => IterateeGM s el IO a ->
                FilePath ->
                IO (Either (String, a) a)
 file_driver_rb iter filepath = do

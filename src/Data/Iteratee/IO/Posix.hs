@@ -22,6 +22,7 @@ import Foreign.C
 import Foreign.Ptr
 import System.Posix
 import System.IO (SeekMode(..))
+import Control.Monad
 import Data.Bits			-- for select
 import Foreign.Marshal.Array		-- for select
 
@@ -36,7 +37,7 @@ import Foreign.Marshal.Array		-- for select
 myfdRead :: Fd -> Ptr CChar -> ByteCount -> IO (Either Errno ByteCount)
 myfdRead (Fd fd) ptr n = do
   n' <- cRead fd ptr n
-  if n' == -1 then getErrno >>= return . Left 
+  if n' == -1 then liftM Left getErrno
      else return . Right . fromIntegral $ n'
 
 foreign import ccall unsafe "unistd.h read" cRead
@@ -46,12 +47,12 @@ foreign import ccall unsafe "unistd.h read" cRead
 myfdSeek:: Fd -> SeekMode -> FileOffset -> IO (Either Errno FileOffset)
 myfdSeek (Fd fd) mode off = do
   n' <- cLSeek fd off (mode2Int mode)
-  if n' == -1 then getErrno >>= return . Left 
+  if n' == -1 then liftM Left getErrno
      else return . Right  $ n'
  where mode2Int :: SeekMode -> CInt	-- From GHC source
-       mode2Int AbsoluteSeek = (0)
-       mode2Int RelativeSeek = (1)
-       mode2Int SeekFromEnd  = (2)
+       mode2Int AbsoluteSeek = 0
+       mode2Int RelativeSeek = 1
+       mode2Int SeekFromEnd  = 2
 
 foreign import ccall unsafe "unistd.h lseek" cLSeek
   :: CInt -> FileOffset -> CInt -> IO FileOffset
@@ -91,7 +92,7 @@ select'read'pending mfd =
        \readfs ->
          do
          rc <- c_select (fdmax+1) readfs nullPtr nullPtr nullPtr
-         if rc == -1 then getErrno >>= return . Left 
+         if rc == -1 then liftM Left getErrno
          -- because the wait was indefinite, rc must be positive!
             else peekArray (length fds) readfs >>=
                  return . Right . map Fd . fds2mfd))

@@ -4,6 +4,7 @@ import qualified Data.Iteratee.IO as IIO
 import Control.Monad.Trans
 import Control.Monad.Identity
 import Data.Char
+import Data.Word
 
 import System.Posix
 
@@ -149,12 +150,16 @@ print_headers_print_body = do
 
 -- This iteratee uses a map_stream to convert the stream from
 -- Word8 elements to Char elements.
+-- This is necessary because we want only ASCII chars, not unicode chars.
 test_driver_full iter filepath = do
   fd <- openFd filepath ReadOnly Nothing defaultFileFlags
   putStrLn "About to read headers"
-  unIM $ (IIO.enum_fd fd >. enum_eof) ==<< (map_stream (chr . fromIntegral) ==<< iter)
+  unIM $ (IIO.enum_fd fd >. enum_eof) ==<< (map_stream mapfn ==<< iter)
   closeFd fd
   putStrLn "Finished reading"
+ where
+  mapfn :: Word8 -> Char
+  mapfn = chr . fromIntegral
 
 test31 = test_driver_full read_headers_print_body "test_full1.txt"
 test32 = test_driver_full read_headers_print_body "test_full2.txt"

@@ -1,4 +1,4 @@
-Name:		Iteratee
+Name:		iteratee
 Version:        0.1.0
 Cabal-Version:  >= 1.2
 Description:	The IterateeGM monad provides strict, safe, and functional

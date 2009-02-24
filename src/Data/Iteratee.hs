@@ -3,7 +3,7 @@
 module Data.Iteratee (
   module Data.Iteratee.Base,
   module Data.Iteratee.Binary,
-  file_driver_rb
+  fileDriverRandom
 )
 
 where

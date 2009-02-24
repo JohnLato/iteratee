@@ -128,7 +128,7 @@ read_riff = do
   s <- string_read4
   case s == Just "RIFF" of
     True -> return ()
-    False -> iter_err $ "Bad RIFF header: " ++ show s
+    False -> iterErr $ "Bad RIFF header: " ++ show s
 
 -- | Read the WAVE part of the RIFF header.
 read_riff_wave :: IterateeGM V Word8 IO ()
@@ -136,7 +136,7 @@ read_riff_wave = do
   s <- string_read4
   case s == Just "WAVE" of
     True -> return ()
-    False -> iter_err $ "Bad RIFF/WAVE header: " ++ show s
+    False -> iterErr $ "Bad RIFF/WAVE header: " ++ show s
 
 -- | An internal function to find all the chunks.  It assumes that the
 -- stream is positioned to read the first chunk.
@@ -147,9 +147,9 @@ find_chunks n = find_chunks' 12 []
     bindm string_read4 $ \typ -> do
       count <- endian_read4 LSB
       case (wave_chunk typ, count) of
-        (Nothing, _) -> (iter_err $ "Bad subchunk descriptor: " ++ show typ)
+        (Nothing, _) -> (iterErr $ "Bad subchunk descriptor: " ++ show typ)
           >> return Nothing
-        (_, Nothing) -> iter_err "Bad subchunk length" >> return Nothing
+        (_, Nothing) -> iterErr "Bad subchunk length" >> return Nothing
         (Just chk, Just count') -> let newpos = offset + 8 + count' in
           case newpos >= fromIntegral n of
             True -> return . Just $ reverse $
@@ -182,7 +182,7 @@ read_value :: WAVEDict ->
               Int -> -- Count
               IterateeGM V Word8 IO (Maybe WAVEDE_ENUM)
 read_value _dict offset _ 0 = do
-  iter_err $ "Zero count in the entry of chunk at: " ++ show offset
+  iterErr $ "Zero count in the entry of chunk at: " ++ show offset
   return Nothing
 
 read_value dict offset WAVE_DATA count = do
@@ -191,10 +191,10 @@ read_value dict offset WAVE_DATA count = do
     Just fmt ->
       return . Just . WEN_DUB $ \iter_dub -> do
         sseek (8 + fromIntegral offset)
-        let iter = conv_stream (conv_func fmt) iter_dub
+        let iter = convStream (conv_func fmt) iter_dub
         joinI $ joinI $ stakeR count ==<< iter
     Nothing -> do
-      iter_err $ "No valid format for data chunk at: " ++ show offset
+      iterErr $ "No valid format for data chunk at: " ++ show offset
       return Nothing
 
 -- return the WaveFormat iteratee
@@ -210,40 +210,40 @@ read_value _dict offset (WAVE_OTHER _str) count =
     joinI $ stakeR count iter
 
 unroll_8 :: (Monad m) => IterateeGM V Word8 m (Maybe (V Word8))
-unroll_8 = liftI $ IE_cont step
+unroll_8 = liftI $ Cont step
   where
   step (Chunk vec)
     | Vec.null vec = unroll_8
-    | True         = liftI $ IE_done (Just vec) (Chunk Vec.empty)
-  step stream      = liftI $ IE_done Nothing stream
+    | True         = liftI $ Done (Just vec) (Chunk Vec.empty)
+  step stream      = liftI $ Done Nothing stream
 
 -- TODO :: Use a rewrite rule to use unroll_8 when the return of
 -- unroll_n is Word8
 -- first parameter is sizeOf a
 unroll_n :: Storable a => Int -> IterateeGM V Word8 IO (Maybe (V a))
-unroll_n wSize = liftI $ IE_cont step
+unroll_n wSize = liftI $ Cont step
   where
   step (Chunk vec)
     | Vec.null vec                    = unroll_n wSize
-    | Vec.length vec < wSize          = liftI $ IE_cont $ step' vec
+    | Vec.length vec < wSize          = liftI $ Cont $ step' vec
     | Vec.length vec `rem` wSize == 0 = lift (convert_vec vec) >>= \v ->
-                                        liftI $ IE_done v (Chunk Vec.empty)
+                                        liftI $ Done v (Chunk Vec.empty)
     | True    = let newLen = (Vec.length vec `div` wSize) * wSize
                     (h, t) = Vec.splitAt newLen vec
                 in
-                lift (convert_vec h) >>= \v -> liftI $ IE_done v (Chunk t)
-  step stream = liftI $ IE_done Nothing stream
+                lift (convert_vec h) >>= \v -> liftI $ Done v (Chunk t)
+  step stream = liftI $ Done Nothing stream
   step' i (Chunk vec)
-    | Vec.null vec                          = liftI $ IE_cont $ step' i
-    | Vec.length vec + Vec.length i < wSize = liftI $ IE_cont $ step'
+    | Vec.null vec                          = liftI $ Cont $ step' i
+    | Vec.length vec + Vec.length i < wSize = liftI $ Cont $ step'
                                               (Vec.append i vec)
     | True        = let vec' = Vec.append i vec
                         newLen = (Vec.length vec' `div` wSize) * wSize
                         (h, t) = Vec.splitAt newLen vec'
                     in
                     lift (convert_vec $ Vec.append i h) >>= \v ->
-                      liftI $ IE_done v (Chunk t)
-  step' _i stream = liftI $ IE_done Nothing stream
+                      liftI $ Done v (Chunk t)
+  step' _i stream = liftI $ Done Nothing stream
   convert_vec vec = let (fp, off, len) = VB.toForeignPtr vec
                         f = FP.plusPtr (FFP.unsafeForeignPtrToPtr fp) off
                     in
@@ -310,7 +310,7 @@ conv_func (AudioFormat _nc _sr 24) = (fmap . fmap . Vec.map)
 conv_func (AudioFormat _nc _sr 32) = (fmap . fmap . Vec.map)
   (normalize 32 . (fromIntegral :: Word32 -> Int32))
   (unroll_n $ sizeOf (undefined :: Word32))
-conv_func _ = iter_err "Invalid wave bit depth" >> return Nothing
+conv_func _ = iterErr "Invalid wave bit depth" >> return Nothing
 
 -- |An Iteratee to read a wave format chunk
 sWaveFormat :: IterateeGM V Word8 IO (Maybe AudioFormat)

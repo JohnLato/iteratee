@@ -96,10 +96,10 @@ process_tiff (Just dict) = do
 
   (n,hist) <- compute_hist dict
   note ["computed histogram over ", show n, " values\n", show hist]
-  iter_report_err >>= maybe (return ()) error
+  iterReportError >>= maybe (return ()) error
   note ["Verifying values of sample pixels"]
   verify_pixel_vals dict [(0,255), (17,248)]
-  err <- iter_report_err
+  err <- iterReportError
   maybe (return ()) error err
   return err
  where check_tag tag action v = do
@@ -116,11 +116,11 @@ compute_hist :: MonadIO m =>
                 IterateeGM [] Word8 m (Int,IM.IntMap Int)
 compute_hist dict = joinI $ pixel_matrix_enum dict ==<< compute_hist' 0 IM.empty
  where
- compute_hist' count = liftI . IE_cont .step count
+ compute_hist' count = liftI . Cont .step count
  step count hist (Chunk ch)
    | cNull ch  = compute_hist' count hist
    | otherwise = compute_hist' (count + cLength ch) (foldr accum hist ch)
- step count hist s        = liftI $ IE_done (count,hist) s
+ step count hist s        = liftI $ Done (count,hist) s
  accum e = IM.insertWith (+) (fromIntegral e) 1
 
 -- Another sample processor of the pixel matrix: verifying values of
@@ -133,17 +133,17 @@ verify_pixel_vals dict pixels = joinI $ pixel_matrix_enum dict ==<<
 				verify 0 (IM.fromList pixels)
  where
  verify _ m | IM.null m = return ()
- verify n m = liftI $ IE_cont (step n m)
+ verify n m = liftI $ Cont (step n m)
  step n m (Chunk xs)
    | cNull xs = verify n m
    | otherwise = let (h, t) = (cHead xs, cTail xs) in
    case IM.updateLookupWithKey (\_k _e -> Nothing) n m of
     (Just v,m') -> if v == h then step (succ n) m' (Chunk t)
-		     else iter_err $ unwords ["Pixel #",show n,
+		     else iterErr $ unwords ["Pixel #",show n,
 					      "expected:",show v,
 					      "found", show h]
     (Nothing,m')->    step (succ n) m' (Chunk t)
- step _n _m s = liftI $ IE_done () s
+ step _n _m s = liftI $ Done () s
 
 
 -- ========================================================================
@@ -318,7 +318,7 @@ tiff_reader = do
      case (c1,c2) of
       (Just 0x4d, Just 0x4d) -> return $ Just MSB
       (Just 0x49, Just 0x49) -> return $ Just LSB
-      _ -> (iter_err $ "Bad TIFF magic word: " ++ show [c1,c2])
+      _ -> (iterErr $ "Bad TIFF magic word: " ++ show [c1,c2])
            >> return Nothing
 
    -- Check the version in the header. It is always ...
@@ -327,7 +327,7 @@ tiff_reader = do
      v <- endian_read2 MSB
      case v of
       Just v' | v' == tiff_version -> return ()
-      _ -> iter_err $ "Bad TIFF version: " ++ show v
+      _ -> iterErr $ "Bad TIFF version: " ++ show v
 
 -- A few conversion procedures
 u32_to_float :: Word32 -> Double
@@ -390,7 +390,7 @@ load_dict e =
   convert_type typ | typ > 0 && typ <= fromEnum (maxBound::TIFF_TYPE)
       = return . Just . toEnum $ typ
   convert_type typ = do
-      iter_err $ "Bad type of entry: " ++ show typ
+      iterErr $ "Bad type of entry: " ++ show typ
       return Nothing
 
   read_value :: MonadIO m => TIFF_TYPE -> Endian -> Int -> 
@@ -398,7 +398,7 @@ load_dict e =
 
   read_value typ e' 0 =
     bindm (endian_read4 e') $ \_offset -> do
-      iter_err $ "Zero count in the entry of type: " ++ show typ
+      iterErr $ "Zero count in the entry of type: " ++ show typ
       return Nothing
 
             		-- Read an ascii string from the offset in the
@@ -409,7 +409,7 @@ load_dict e =
     bindm (endian_read4 e') $ \offset ->
       return . Just . TEN_CHAR $ \iter_char -> do
             sseek (fromIntegral offset)
-            let iter = conv_stream 
+            let iter = convStream 
                          (bindm snext (return. Just .(:[]). chr . fromIntegral))
                          iter_char
             joinI $ joinI $ stakeR (pred count) ==<< iter
@@ -431,7 +431,7 @@ load_dict e =
     bindm (endian_read4 e') $ \offset ->
       return . Just . TEN_INT $ \iter_int -> do
             sseek (fromIntegral offset)
-            let iter = conv_stream 
+            let iter = convStream 
                          (bindm snext (return . Just . (:[]) . conv_byte typ))
                          iter_int
             joinI $ joinI $ stakeR count ==<< iter
@@ -481,7 +481,7 @@ load_dict e =
     bindm (endian_read4 e') $ \offset ->
       return . Just . TEN_INT $ \iter_int -> do
             sseek (fromIntegral offset)
-            let iter = conv_stream 
+            let iter = convStream 
                          (bindm (endian_read2 e') 
 			  (return . Just . (:[]) . conv_short typ))
                          iter_int
@@ -499,7 +499,7 @@ load_dict e =
     bindm (endian_read4 e') $ \offset ->
       return . Just . TEN_INT $ \iter_int -> do
             sseek (fromIntegral offset)
-            let iter = conv_stream 
+            let iter = convStream 
                          (bindm (endian_read4 e')  
 			  (return . Just . (:[]) . conv_long typ))
                          iter_int
@@ -512,7 +512,7 @@ load_dict e =
     bindm (endian_read4 e) $ \offset ->
       return . Just . TEN_RAT $ \iter_rat -> do
             sseek (fromIntegral offset)
-            let iter = conv_stream 
+            let iter = convStream 
                          (bindm (endian_read4 e) $ \i1 ->
 			   bindm (endian_read4 e) $ \i2 ->
 			    (return . Just . (:[]) $ conv_rat typ i1 i2))
@@ -528,7 +528,7 @@ load_dict e =
 
   immed_value :: (Monad m) => [el] -> EnumeratorGMM [] Word8 [] el m a
   immed_value item iter =
-     (enum_pure_1chunk item >. enum_eof) iter >>== joinI . return
+     (enumPure1Chunk item >. enumEof) iter >>== joinI . return
 
   conv_byte :: TIFF_TYPE -> Word8 -> Int
   conv_byte TT_byte  = fromIntegral
@@ -575,17 +575,17 @@ pixel_matrix_enum dict iter = validate_dict >>= proceed
       vfound <- dict_read_int tag dict
       case vfound of
         Just v' | v' == v -> return $ Just ()
-	_ -> iter_err (unwords ["dict_assert: tag:", show tag,
+	_ -> iterErr (unwords ["dict_assert: tag:", show tag,
 				"expected:", show v, "found:", show vfound]) >>
              return Nothing
 
-   proceed Nothing = enum_err "Can't handle this TIFF" iter >>== return
+   proceed Nothing = enumErr "Can't handle this TIFF" iter >>== return
 
    proceed (Just (ncols,nrows,rows_per_strip,strip_offsets)) = do
      let strip_size = rows_per_strip * ncols
 	 image_size = nrows * ncols
      note ["Processing the pixel matrix, ", show image_size, " bytes"]
-     let loop _pos _ iter'@IE_done{} = return iter'
+     let loop _pos _ iter'@Done{} = return iter'
          loop _pos [] iter'          = return iter'
          loop pos (strip:strips) iter' = do
 	   sseek (fromIntegral strip)

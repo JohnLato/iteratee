@@ -19,7 +19,12 @@ newtype WrappedByteString a = WrapBS { unWrap :: BBase.ByteString }
 instance ReadableChunk WrappedByteString Word8 where
   readFromPtr p l = do
     fptr <- newForeignPtr_ p
-    return $ WrapBS $ BBase.fromForeignPtr fptr 0 l
+    return . WrapBS $ BBase.fromForeignPtr fptr 0 l
+
+instance ReadableChunk WrappedByteString Char where
+  readFromPtr p l = do
+    fptr <- newForeignPtr_ p
+    return . WrapBS $ BBase.fromForeignPtr (castForeignPtr fptr) 0 l
 
 instance StreamChunk WrappedByteString Word8 where
   cLength        = BW.length . unWrap

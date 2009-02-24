@@ -74,14 +74,14 @@ line = sbreak (\c -> c == '\r' || c == '\n') >>= check_next
 -- |Print lines as they are received. This is the first `impure' iteratee
 -- with non-trivial actions during chunk processing
 print_lines :: IterateeGM [] Line IO ()
-print_lines = liftI $ IE_cont step
+print_lines = liftI $ Cont step
  where
  step (Chunk []) = print_lines
  step (Chunk ls) = lift (mapM_ pr_line ls) >> print_lines
- step EOF        = lift (putStrLn ">> natural end") >> liftI (IE_done () EOF)
+ step EOF        = lift (putStrLn ">> natural end") >> liftI (Done () EOF)
  step stream     = lift (putStrLn ">> unnatural end") >>
-		   liftI (IE_done () stream)
- pr_line line' = putStrLn $ ">> read line: " ++ line'
+		   liftI (Done () stream)
+ pr_line line'   = putStrLn $ ">> read line: " ++ line'
 
 
 -- |Convert the stream of characters to the stream of lines, and
@@ -95,14 +95,14 @@ print_lines = liftI $ IE_cont step
 enum_lines :: Monad m =>
 	      IterateeG [] Line m a ->
               IterateeGM [] Char m (IterateeG [] Line m a)
-enum_lines iter@IE_done{} = return iter
-enum_lines IE_jmp{}       = error "Seeking is not supported by enum_lines"
-enum_lines (IE_cont k) = line >>= check_line k
+enum_lines iter@Done{} = return iter
+enum_lines Seek{}      = error "Seeking is not supported by enum_lines"
+enum_lines (Cont k)    = line >>= check_line k
  where
  check_line k' (Right "") =
    enum_lines ==<< k' EOF      -- empty line, normal term
  check_line k' (Right l)  = enum_lines ==<< k' (Chunk [l])
- check_line k' _          = enum_lines ==<< k' (Err "EOF") -- abnormal termin
+ check_line k' _          = enum_lines ==<< k' (Error "EOF") -- abnormal termin
 
 -- |Convert the stream of characters to the stream of words, and
 -- apply the given iteratee to enumerate the latter.
@@ -114,9 +114,9 @@ enum_lines (IE_cont k) = line >>= check_line k
 enum_words :: Monad m =>
 	      IterateeG [] String m a ->
               IterateeGM [] Char m (IterateeG [] String m a)
-enum_words iter@IE_done{} = return iter
-enum_words IE_jmp{}       = error "Seeking not supported by enum_words"
-enum_words (IE_cont k) = sdropWhile isSpace >> sbreak isSpace >>= check_word k
+enum_words iter@Done{} = return iter
+enum_words Seek{}      = error "Seeking not supported by enum_words"
+enum_words (Cont k)    = sdropWhile isSpace >> sbreak isSpace >>= check_word k
  where
  check_word k' ("",_)  = enum_words ==<< k' EOF
  check_word k' (str,_) = enum_words ==<< k' (Chunk [str])

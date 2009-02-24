@@ -43,15 +43,15 @@ import System.Posix
 enum_chunk_decoded :: Monad m => Iteratee m a -> IterateeM m a
 enum_chunk_decoded = docase
  where
- docase iter@IE_done{} =
-    liftI iter >>= (\r -> (enum_chunk_decoded ==<< skip_till_eof) >> return r)
- docase iter@(IE_cont k) = line >>= check_size
+ docase iter@Done{} =
+    liftI iter >>= (\r -> (enum_chunk_decoded ==<< skipToEof) >> return r)
+ docase iter@(Cont k) = line >>= check_size
   where
   check_size (Right "0") = line >> k EOF
   check_size (Right str) =
-     maybe (k . Err $ "Bad chunk size: " ++ str) (read_chunk iter)
+     maybe (k . Error $ "Bad chunk size: " ++ str) (read_chunk iter)
          $ read_hex 0 str
-  check_size _ = k (Err "Error reading chunk size")
+  check_size _ = k (Error "Error reading chunk size")
 
  read_chunk iter size =
      do
@@ -60,8 +60,8 @@ enum_chunk_decoded = docase
      c2 <- snext
      case (c1,c2) of
        (Just '\r',Just '\n') -> docase r
-       _ -> (enum_chunk_decoded ==<< skip_till_eof) >>
-	    enum_err "Bad chunk trailer" r
+       _ -> (enum_chunk_decoded ==<< skipToEof) >>
+	    enumErr "Bad chunk trailer" r
 
  read_hex acc "" = Just acc
  read_hex acc (d:rest) | isHexDigit d = read_hex (16*acc + digitToInt d) rest
@@ -80,8 +80,8 @@ test_str1 =
 
 testp1 :: Bool
 testp1 =
-    let IE_done (IE_done lines' EOF) (Chunk rest)
-	    = runIdentity . unIM $ enum_pure_1chunk test_str1 ==<<
+    let Done (Done lines' EOF) (Chunk rest)
+	    = runIdentity . unIM $ enumPure1Chunk test_str1 ==<<
 	                             (enum_lines ==<< stream2list)
     in
     lines' == ["header1: v1","header2: v2","header3: v3","header4: v4",
@@ -90,8 +90,8 @@ testp1 =
 
 testp2 :: Bool
 testp2 =
-    let IE_done (IE_done lines' EOF) (Chunk rest)
-	    = runIdentity . unIM $ enum_pure_nchunk test_str1 5 ==<<
+    let Done (Done lines' EOF) (Chunk rest)
+	    = runIdentity . unIM $ enumPureNChunk test_str1 5 ==<<
 	                             (enum_lines ==<< stream2list)
     in
     lines' == ["header1: v1","header2: v2","header3: v3","header4: v4",
@@ -104,8 +104,8 @@ testw1 =
     let test_str = "header1: v1\rheader2: v2\r\nheader3:\t v3"
 	expected = ["header1:","v1","header2:","v2","header3:","v3"] in
     let run_test test_str' =
-         let IE_done (IE_done words' EOF) EOF
-	       = runIdentity . unIM $ (enum_pure_nchunk test_str' 5 >. enum_eof)
+         let Done (Done words' EOF) EOF
+	       = runIdentity . unIM $ (enumPureNChunk test_str' 5 >. enumEof)
 	                                ==<< (enum_words ==<< stream2list)
          in words'
     in
@@ -127,10 +127,10 @@ read_headers_print_body :: IterateeGM [] Char IO (IterateeG [] Line IO ())
 read_headers_print_body = do
      headers' <- enum_lines ==<< stream2list
      case headers' of
-	IE_done headers EOF -> lift $ do
+	Done headers EOF -> lift $ do
 	   putStrLn "Complete headers"
 	   print headers
-	IE_done headers (Err err) -> lift $ do
+	Done headers (Error err) -> lift $ do
 	   putStrLn $ "Incomplete headers due to " ++ err
 	   print headers
         _ -> lift $ putStrLn "Pattern not matched"
@@ -148,13 +148,13 @@ print_headers_print_body = do
      lift $ putStrLn "\nLines of the body follow"
      enum_chunk_decoded ==<< line_printer
 
--- This iteratee uses a map_stream to convert the stream from
+-- This iteratee uses a mapStream to convert the stream from
 -- Word8 elements to Char elements.
 -- This is necessary because we want only ASCII chars, not unicode chars.
 test_driver_full iter filepath = do
   fd <- openFd filepath ReadOnly Nothing defaultFileFlags
   putStrLn "About to read headers"
-  unIM $ (IIO.enum_fd fd >. enum_eof) ==<< (map_stream mapfn ==<< iter)
+  unIM $ (IIO.enumFd fd >. enumEof) ==<< (mapStream mapfn ==<< iter)
   closeFd fd
   putStrLn "Finished reading"
  where

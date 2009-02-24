@@ -18,7 +18,7 @@ main = do
     [] -> putStrLn "Usage: wave_reader FileName"
     filename:xs -> do
       putStrLn $ "Reading file: " ++ filename
-      file_driver_rb (wave_reader >>= test) filename
+      fileDriverRandom (wave_reader >>= test) filename
       return ()
 
 type V = Vec.Vector
@@ -44,8 +44,8 @@ test (Just dict) = do
 max_iter :: IterateeGM V Double IO Double
 max_iter = m' 0
   where
-  m' acc = liftI $ IE_cont (step acc)
+  m' acc = liftI $ Cont (step acc)
   step acc (Chunk xs)
     | Vec.null xs  = m' acc
     | otherwise = m' $! Vec.foldl' (max . abs) acc xs
-  step acc str = liftI $ IE_done acc str
+  step acc str = liftI $ Done acc str

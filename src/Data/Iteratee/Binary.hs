@@ -11,7 +11,9 @@ module Data.Iteratee.Binary (
 )
 where
 
-import Data.Iteratee.Base
+import Data.Iteratee.Base.StreamChunk (StreamChunk)
+import Data.Iteratee.Base (IterateeGM)
+import qualified Data.Iteratee.Base as It
 import Data.Word
 import Data.Bits
 import Data.Int
@@ -29,8 +31,8 @@ data Endian = MSB -- ^ Most Significant Byte is first (big-endian)
 
 endian_read2 :: (StreamChunk s Word8, Monad m) => Endian -> IterateeGM s Word8 m (Maybe Word16)
 endian_read2 e =
-  bindm snext $ \c1 ->
-  bindm snext $ \c2 ->
+  It.bindm It.head $ \c1 ->
+  It.bindm It.head $ \c2 ->
   case e of
     MSB -> return $ return $ (fromIntegral c1 `shiftL` 8) .|. fromIntegral c2
     LSB -> return $ return $ (fromIntegral c2 `shiftL` 8) .|. fromIntegral c1
@@ -40,9 +42,9 @@ endian_read2 e =
 -- well.
 endian_read3 :: (StreamChunk s Word8, Monad m) => Endian -> IterateeGM s Word8 m (Maybe Word32)
 endian_read3 e = 
-  bindm snext $ \c1 ->
-  bindm snext $ \c2 ->
-  bindm snext $ \c3 ->
+  It.bindm It.head $ \c1 ->
+  It.bindm It.head $ \c2 ->
+  It.bindm It.head $ \c3 ->
   case e of
     MSB -> return $ return $ (((fromIntegral c1
                         `shiftL` 8) .|. fromIntegral c2)
@@ -56,10 +58,10 @@ endian_read3 e =
 
 endian_read4 :: (StreamChunk s Word8, Monad m) => Endian -> IterateeGM s Word8 m (Maybe Word32)
 endian_read4 e =
-  bindm snext $ \c1 ->
-  bindm snext $ \c2 ->
-  bindm snext $ \c3 ->
-  bindm snext $ \c4 ->
+  It.bindm It.head $ \c1 ->
+  It.bindm It.head $ \c2 ->
+  It.bindm It.head $ \c3 ->
+  It.bindm It.head $ \c4 ->
   case e of
     MSB -> return $ return $ 
 	       (((((fromIntegral c1

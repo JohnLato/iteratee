@@ -10,6 +10,7 @@ module Data.Iteratee.IO(
 
 where
 
+import Data.Iteratee.Base.StreamChunk (ReadableChunk (..))
 import Data.Iteratee.Base
 import Data.Iteratee.Binary()
 import Data.Iteratee.IO.Base

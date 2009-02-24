@@ -38,11 +38,12 @@ Library
  build-depends:         haskell98, mtl, containers, unix, storablevector, bytestring
  exposed-modules:       Data.Iteratee
                         Data.Iteratee.Base
+                        Data.Iteratee.Base.StreamChunk
                         Data.Iteratee.Binary
                         Data.Iteratee.Char
-                        Data.Iteratee.WrappedByteString
-                        Data.Iteratee.IO
-                        Data.Iteratee.IO.Base
                         Data.Iteratee.Codecs.Wave
                         Data.Iteratee.Codecs.Tiff
+                        Data.Iteratee.IO
+                        Data.Iteratee.IO.Base
+                        Data.Iteratee.WrappedByteString
 

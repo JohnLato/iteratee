@@ -1,4 +1,5 @@
 import Data.Iteratee
+import qualified Data.Iteratee as Iter
 import Data.Iteratee.Char
 import qualified Data.Iteratee.IO as IIO
 import Control.Monad.Trans
@@ -55,9 +56,9 @@ enum_chunk_decoded = docase
 
  read_chunk iter size =
      do
-     r  <- stake size iter
-     c1 <- snext
-     c2 <- snext
+     r  <- Iter.take size iter
+     c1 <- Iter.head
+     c2 <- Iter.head
      case (c1,c2) of
        (Just '\r',Just '\n') -> docase r
        _ -> (enum_chunk_decoded ==<< skipToEof) >>

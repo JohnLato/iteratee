@@ -50,7 +50,9 @@
 
 module Data.Iteratee.Codecs.Tiff where
 
-import Data.Iteratee.Base
+import Data.Iteratee.Base (StreamG (..), IterateeG (..), IterateeGM, EnumeratorGMM, EnumeratorN, bindm, liftI, (==<<), (>.), (>>==), iterErr, enumErr, convStream, iterReportError, enumEof)
+import qualified Data.Iteratee.Base as Iter
+import qualified Data.Iteratee.Base.StreamChunk as SC
 import Data.Iteratee.Binary
 import Control.Monad.State
 import Data.Char (chr)
@@ -114,12 +116,12 @@ process_tiff (Just dict) = do
 compute_hist :: MonadIO m =>
                 TIFFDict ->
                 IterateeGM [] Word8 m (Int,IM.IntMap Int)
-compute_hist dict = joinI $ pixel_matrix_enum dict ==<< compute_hist' 0 IM.empty
+compute_hist dict = Iter.joinI $ pixel_matrix_enum dict ==<< compute_hist' 0 IM.empty
  where
  compute_hist' count = liftI . Cont .step count
  step count hist (Chunk ch)
-   | cNull ch  = compute_hist' count hist
-   | otherwise = compute_hist' (count + cLength ch) (foldr accum hist ch)
+   | SC.null ch  = compute_hist' count hist
+   | otherwise = compute_hist' (count + SC.length ch) (foldr accum hist ch)
  step count hist s        = liftI $ Done (count,hist) s
  accum e = IM.insertWith (+) (fromIntegral e) 1
 
@@ -129,14 +131,14 @@ compute_hist dict = joinI $ pixel_matrix_enum dict ==<< compute_hist' 0 IM.empty
 -- as everything is verified or the error is detected
 verify_pixel_vals :: MonadIO m =>
                      TIFFDict -> [(IM.Key, Word8)] -> IterateeGM [] Word8 m ()
-verify_pixel_vals dict pixels = joinI $ pixel_matrix_enum dict ==<< 
+verify_pixel_vals dict pixels = Iter.joinI $ pixel_matrix_enum dict ==<< 
 				verify 0 (IM.fromList pixels)
  where
  verify _ m | IM.null m = return ()
  verify n m = liftI $ Cont (step n m)
  step n m (Chunk xs)
-   | cNull xs = verify n m
-   | otherwise = let (h, t) = (cHead xs, cTail xs) in
+   | SC.null xs = verify n m
+   | otherwise = let (h, t) = (SC.head xs, SC.tail xs) in
    case IM.updateLookupWithKey (\_k _e -> Nothing) n m of
     (Just v,m') -> if v == h then step (succ n) m' (Chunk t)
 		     else iterErr $ unwords ["Pixel #",show n,
@@ -307,14 +309,14 @@ tiff_reader = do
   check_version
   case endian of
     Just e -> bindm (endian_read4 e) $ \dict_offset -> do
-              sseek (fromIntegral dict_offset)
+              Iter.seek (fromIntegral dict_offset)
               load_dict e
     Nothing -> return Nothing
  where
    -- Read the magic and set the endianness
    read_magic = do
-     c1 <- snext
-     c2 <- snext
+     c1 <- Iter.head
+     c2 <- Iter.head
      case (c1,c2) of
       (Just 0x4d, Just 0x4d) -> return $ Just MSB
       (Just 0x49, Just 0x49) -> return $ Just LSB
@@ -408,11 +410,11 @@ load_dict e =
   read_value TT_ascii e' count | count > 4 = -- for sure, val-offset is offset
     bindm (endian_read4 e') $ \offset ->
       return . Just . TEN_CHAR $ \iter_char -> do
-            sseek (fromIntegral offset)
+            Iter.seek (fromIntegral offset)
             let iter = convStream 
-                         (bindm snext (return. Just .(:[]). chr . fromIntegral))
+                         (bindm Iter.head (return. Just .(:[]). chr . fromIntegral))
                          iter_char
-            joinI $ joinI $ stakeR (pred count) ==<< iter
+            Iter.joinI $ Iter.joinI $ Iter.takeR (pred count) ==<< iter
 
 			-- Read the string of 0 to 3 characters long
                         -- The zero terminator is included in count, but
@@ -420,45 +422,45 @@ load_dict e =
   read_value TT_ascii _e count = do	-- count is within 1..4
     let len = pred count		-- string length
     let loop acc 0 = return . Just . reverse $ acc
-        loop acc n = bindm snext (\v -> loop ((chr . fromIntegral $ v):acc)
+        loop acc n = bindm Iter.head (\v -> loop ((chr . fromIntegral $ v):acc)
                                              (pred n))
     bindm (loop [] len) $ \str -> do
-      sdrop (4-len)
+      Iter.drop (4-len)
       return . Just . TEN_CHAR $ immed_value str
 
 			-- Read the array of signed or unsigned bytes
   read_value typ e' count | count > 4 && typ == TT_byte || typ == TT_sbyte =
     bindm (endian_read4 e') $ \offset ->
       return . Just . TEN_INT $ \iter_int -> do
-            sseek (fromIntegral offset)
+            Iter.seek (fromIntegral offset)
             let iter = convStream 
-                         (bindm snext (return . Just . (:[]) . conv_byte typ))
+                         (bindm Iter.head (return . Just . (:[]) . conv_byte typ))
                          iter_int
-            joinI $ joinI $ stakeR count ==<< iter
+            Iter.joinI $ Iter.joinI $ Iter.takeR count ==<< iter
 
 			-- Read the array of 1 to 4 bytes
   read_value typ _e count | typ == TT_byte || typ == TT_sbyte = do
     let loop acc 0 = return . Just . reverse $ acc
-        loop acc n = bindm snext (\v -> loop (conv_byte typ v:acc)
+        loop acc n = bindm Iter.head (\v -> loop (conv_byte typ v:acc)
                                              (pred n))
     bindm (loop [] count) $ \str -> do
-      sdrop (4-count)
+      Iter.drop (4-count)
       return . Just . TEN_INT $ immed_value str
 
 			-- Read the array of Word8
   read_value TT_undefined e' count | count > 4 =
     bindm (endian_read4 e') $ \offset ->
       return . Just . TEN_BYTE $ \iter -> do
-            sseek (fromIntegral offset)
-            joinI $ stakeR count iter
+            Iter.seek (fromIntegral offset)
+            Iter.joinI $ Iter.takeR count iter
 
 			-- Read the array of Word8 of 1..4 elements,
 			-- packed in the offset field
   read_value TT_undefined _e count = do 
     let loop acc 0 = return . Just . reverse $ acc
-        loop acc n = bindm snext (\v -> loop (v:acc) (pred n))
+        loop acc n = bindm Iter.head (\v -> loop (v:acc) (pred n))
     bindm (loop [] count) $ \str -> do
-      sdrop (4-count)
+      Iter.drop (4-count)
       return . Just . TEN_BYTE $ immed_value str
 
 			-- Read the array of short integers
@@ -466,7 +468,7 @@ load_dict e =
 			-- of 1 element: the offset field contains the value
   read_value typ e' 1 | typ == TT_short || typ == TT_sshort =
     bindm (endian_read2 e') $ \item -> do
-      sdrop 2				-- skip the padding
+      Iter.drop 2				-- skip the padding
       return . Just . TEN_INT $ immed_value [conv_short typ item]
 
 			-- of 2 elements: the offset field contains the value
@@ -480,12 +482,12 @@ load_dict e =
   read_value typ e' count | typ == TT_short || typ == TT_sshort =
     bindm (endian_read4 e') $ \offset ->
       return . Just . TEN_INT $ \iter_int -> do
-            sseek (fromIntegral offset)
+            Iter.seek (fromIntegral offset)
             let iter = convStream 
                          (bindm (endian_read2 e') 
 			  (return . Just . (:[]) . conv_short typ))
                          iter_int
-            joinI $ joinI $ stakeR (2*count) ==<< iter
+            Iter.joinI $ Iter.joinI $ Iter.takeR (2*count) ==<< iter
 
 
 			-- Read the array of long integers
@@ -498,12 +500,12 @@ load_dict e =
   read_value typ e' count | typ == TT_long || typ == TT_slong =
     bindm (endian_read4 e') $ \offset ->
       return . Just . TEN_INT $ \iter_int -> do
-            sseek (fromIntegral offset)
+            Iter.seek (fromIntegral offset)
             let iter = convStream 
                          (bindm (endian_read4 e')  
 			  (return . Just . (:[]) . conv_long typ))
                          iter_int
-            joinI $ joinI $ stakeR (4*count) ==<< iter
+            Iter.joinI $ Iter.joinI $ Iter.takeR (4*count) ==<< iter
 
 			-- Read the array of rationals. A rational can't
 			-- be packed into the offset field
@@ -511,13 +513,13 @@ load_dict e =
   read_value typ e count | typ == TT_rational || typ == TT_srational = do 
     bindm (endian_read4 e) $ \offset ->
       return . Just . TEN_RAT $ \iter_rat -> do
-            sseek (fromIntegral offset)
+            Iter.seek (fromIntegral offset)
             let iter = convStream 
                          (bindm (endian_read4 e) $ \i1 ->
 			   bindm (endian_read4 e) $ \i2 ->
 			    (return . Just . (:[]) $ conv_rat typ i1 i2))
                          iter_rat
-            joinI $ joinI $ stakeR (8*count) ==<< iter
+            Iter.joinI $ Iter.joinI $ Iter.takeR (8*count) ==<< iter
 -}
 
 
@@ -528,7 +530,7 @@ load_dict e =
 
   immed_value :: (Monad m) => [el] -> EnumeratorGMM [] Word8 [] el m a
   immed_value item iter =
-     (enumPure1Chunk item >. enumEof) iter >>== joinI . return
+     (Iter.enumPure1Chunk item >. enumEof) iter >>== Iter.joinI . return
 
   conv_byte :: TIFF_TYPE -> Word8 -> Int
   conv_byte TT_byte  = fromIntegral
@@ -588,9 +590,9 @@ pixel_matrix_enum dict iter = validate_dict >>= proceed
      let loop _pos _ iter'@Done{} = return iter'
          loop _pos [] iter'          = return iter'
          loop pos (strip:strips) iter' = do
-	   sseek (fromIntegral strip)
+	   Iter.seek (fromIntegral strip)
 	   let len = min strip_size (image_size - pos)
-	   iter'' <- stakeR (fromIntegral len) iter'
+	   iter'' <- Iter.takeR (fromIntegral len) iter'
 	   loop (pos+len) strips iter''
      loop 0 strip_offsets iter
 
@@ -610,7 +612,7 @@ dict_read_ints :: Monad m => TIFF_TAG -> TIFFDict ->
 dict_read_ints tag dict = 
   case IM.lookup (tag_to_int tag) dict of
       Just (TIFFDE _ (TEN_INT enum)) -> do
-	     e <- enum  ==<< stream2list
+	     e <- enum  ==<< Iter.stream2list
 	     return (Just e)
       _ -> return Nothing
 
@@ -619,7 +621,7 @@ dict_read_rat :: Monad m => TIFF_TAG -> TIFFDict ->
 dict_read_rat tag dict = 
   case IM.lookup (tag_to_int tag) dict of
       Just (TIFFDE 1 (TEN_RAT enum)) -> do
-	     [e] <- enum  ==<< stream2list
+	     [e] <- enum  ==<< Iter.stream2list
 	     return (Just e)
       _ -> return Nothing
 
@@ -628,6 +630,6 @@ dict_read_string :: Monad m => TIFF_TAG -> TIFFDict ->
 dict_read_string tag dict = 
   case IM.lookup (tag_to_int tag) dict of
       Just (TIFFDE _ (TEN_CHAR enum)) -> do
-	     e <- enum  ==<< stream2list
+	     e <- enum  ==<< Iter.stream2list
 	     return (Just e)
       _ -> return Nothing

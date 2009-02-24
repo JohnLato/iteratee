@@ -18,7 +18,8 @@ module Data.Iteratee.Codecs.Wave (
 )
 where
 
-import Data.Iteratee.Base
+import Data.Iteratee.Base (StreamG (..), IterateeG (..), IterateeGM, EnumeratorGMM, (==<<), liftI, bindm, iterErr)
+import qualified Data.Iteratee.Base as Iter
 import Data.Iteratee.Binary
 import qualified Data.StorableVector as Vec
 import qualified Data.StorableVector.Base as VB
@@ -105,10 +106,10 @@ type BitDepth = Integer
 -- convenience function to read a 4-byte ASCII string
 string_read4 :: Monad m => IterateeGM V Word8 m (Maybe String)
 string_read4 =
-  bindm snext $ \s1 ->
-   bindm snext $ \s2 ->
-   bindm snext $ \s3 ->
-   bindm snext $ \s4 ->
+  bindm Iter.head $ \s1 ->
+   bindm Iter.head $ \s2 ->
+   bindm Iter.head $ \s3 ->
+   bindm Iter.head $ \s4 ->
    return . Just $ map (chr . fromIntegral) [s1, s2, s3, s4]
 
 -- -----------------
@@ -155,7 +156,7 @@ find_chunks n = find_chunks' 12 []
             True -> return . Just $ reverse $
                 (fromIntegral offset, chk, fromIntegral count') : acc
             False -> do
-              sseek $ fromIntegral newpos
+              Iter.seek $ fromIntegral newpos
               find_chunks' newpos $
                (fromIntegral offset, chk, fromIntegral count') : acc
 
@@ -190,9 +191,9 @@ read_value dict offset WAVE_DATA count = do
   case fmt_m of
     Just fmt ->
       return . Just . WEN_DUB $ \iter_dub -> do
-        sseek (8 + fromIntegral offset)
-        let iter = convStream (conv_func fmt) iter_dub
-        joinI $ joinI $ stakeR count ==<< iter
+        Iter.seek (8 + fromIntegral offset)
+        let iter = Iter.convStream (conv_func fmt) iter_dub
+        Iter.joinI $ Iter.joinI $ Iter.takeR count ==<< iter
     Nothing -> do
       iterErr $ "No valid format for data chunk at: " ++ show offset
       return Nothing
@@ -200,14 +201,14 @@ read_value dict offset WAVE_DATA count = do
 -- return the WaveFormat iteratee
 read_value _dict offset WAVE_FMT count =
   return . Just . WEN_BYTE $ \iter -> do
-    sseek (8 + fromIntegral offset)
-    joinI $ stakeR count iter
+    Iter.seek (8 + fromIntegral offset)
+    Iter.joinI $ Iter.takeR count iter
 
 -- for WAVE_OTHER, return Word8s and maybe the user can parse them
 read_value _dict offset (WAVE_OTHER _str) count =
   return . Just . WEN_BYTE $ \iter -> do
-    sseek (8 + fromIntegral offset)
-    joinI $ stakeR count iter
+    Iter.seek (8 + fromIntegral offset)
+    Iter.joinI $ Iter.takeR count iter
 
 unroll_8 :: (Monad m) => IterateeGM V Word8 m (Maybe (V Word8))
 unroll_8 = liftI $ Cont step
@@ -318,7 +319,7 @@ sWaveFormat =
   bindm (endian_read2 LSB) $ \f' -> --data format, 1==PCM
    bindm (endian_read2 LSB) $ \nc ->
    bindm (endian_read4 LSB) $ \sr -> do
-     sdrop 6
+     Iter.drop 6
      bindm (endian_read2 LSB) $ \bd ->
        case f' == 1 of
          True -> return . Just $ AudioFormat (fromIntegral nc)
@@ -359,7 +360,7 @@ dict_read_first_data :: WAVEDict -> IterateeGM V Word8 IO (Maybe [Double])
 dict_read_first_data dict = case IM.lookup (fromEnum WAVE_DATA) dict of
   Just [] -> return Nothing
   Just ((WAVEDE _ WAVE_DATA (WEN_DUB enum)) : _xs) -> do
-       e <- enum ==<< stream2list
+       e <- enum ==<< Iter.stream2list
        return $ Just e
   _ -> return Nothing
 
@@ -368,7 +369,7 @@ dict_read_last_data :: WAVEDict -> IterateeGM V Word8 IO (Maybe [Double])
 dict_read_last_data dict = case IM.lookup (fromEnum WAVE_DATA) dict of
   Just [] -> return Nothing
   Just xs -> let (WAVEDE _ WAVE_DATA (WEN_DUB enum)) = last xs in do
-    e <- enum ==<< stream2list
+    e <- enum ==<< Iter.stream2list
     return $ Just e
   _ -> return Nothing
 
@@ -378,7 +379,7 @@ dict_read_data :: Int -> --Index in the data chunk list to read
                   IterateeGM V Word8 IO (Maybe [Double])
 dict_read_data ix dict = case IM.lookup (fromEnum WAVE_DATA) dict of
   Just xs -> let (WAVEDE _ WAVE_DATA (WEN_DUB enum)) = (!!) xs ix in do
-    e <- enum ==<< stream2list
+    e <- enum ==<< Iter.stream2list
     return $ Just e
   _ -> return Nothing
 

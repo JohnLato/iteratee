@@ -30,7 +30,8 @@ module Data.Iteratee.Char (
 
 where
 
-import Data.Iteratee.Base
+import Data.Iteratee.Base (StreamG (..), IterateeG, IterateeGM, EnumeratorGM, (==<<), liftI)
+import qualified Data.Iteratee.Base as Iter
 import Data.Char
 import Control.Monad.Trans
 
@@ -55,11 +56,11 @@ type Line = String	-- The line of text, terminators are not included
 -- has changed.
 -- Compare the code below with GHCBufferIO.line_lazy
 line :: Monad m => IterateeM m (Either Line Line)
-line = sbreak (\c -> c == '\r' || c == '\n') >>= check_next
+line = Iter.break (\c -> c == '\r' || c == '\n') >>= check_next
  where
- check_next (line',Just '\r') = speek >>= \c ->
+ check_next (line',Just '\r') = Iter.peek >>= \c ->
 	case c of
-	  Just '\n' -> snext >> return (Right line')
+	  Just '\n' -> Iter.head >> return (Right line')
 	  Just _    -> return (Right line')
 	  Nothing   -> return (Left line')
  check_next (line',Just _)  = return (Right line')
@@ -74,13 +75,13 @@ line = sbreak (\c -> c == '\r' || c == '\n') >>= check_next
 -- |Print lines as they are received. This is the first `impure' iteratee
 -- with non-trivial actions during chunk processing
 print_lines :: IterateeGM [] Line IO ()
-print_lines = liftI $ Cont step
+print_lines = liftI $ Iter.Cont step
  where
  step (Chunk []) = print_lines
  step (Chunk ls) = lift (mapM_ pr_line ls) >> print_lines
- step EOF        = lift (putStrLn ">> natural end") >> liftI (Done () EOF)
+ step EOF        = lift (putStrLn ">> natural end") >> liftI (Iter.Done () EOF)
  step stream     = lift (putStrLn ">> unnatural end") >>
-		   liftI (Done () stream)
+		   liftI (Iter.Done () stream)
  pr_line line'   = putStrLn $ ">> read line: " ++ line'
 
 
@@ -95,9 +96,9 @@ print_lines = liftI $ Cont step
 enum_lines :: Monad m =>
 	      IterateeG [] Line m a ->
               IterateeGM [] Char m (IterateeG [] Line m a)
-enum_lines iter@Done{} = return iter
-enum_lines Seek{}      = error "Seeking is not supported by enum_lines"
-enum_lines (Cont k)    = line >>= check_line k
+enum_lines iter@Iter.Done{} = return iter
+enum_lines Iter.Seek{}      = error "Seeking is not supported by enum_lines"
+enum_lines (Iter.Cont k)    = line >>= check_line k
  where
  check_line k' (Right "") =
    enum_lines ==<< k' EOF      -- empty line, normal term
@@ -114,9 +115,10 @@ enum_lines (Cont k)    = line >>= check_line k
 enum_words :: Monad m =>
 	      IterateeG [] String m a ->
               IterateeGM [] Char m (IterateeG [] String m a)
-enum_words iter@Done{} = return iter
-enum_words Seek{}      = error "Seeking not supported by enum_words"
-enum_words (Cont k)    = sdropWhile isSpace >> sbreak isSpace >>= check_word k
+enum_words iter@Iter.Done{} = return iter
+enum_words Iter.Seek{}      = error "Seeking not supported by enum_words"
+enum_words (Iter.Cont k)    = Iter.dropWhile isSpace >>
+                              Iter.break isSpace >>= check_word k
  where
  check_word k' ("",_)  = enum_words ==<< k' EOF
  check_word k' (str,_) = enum_words ==<< k' (Chunk [str])

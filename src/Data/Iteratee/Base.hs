@@ -1,12 +1,8 @@
-{-# LANGUAGE MultiParamTypeClasses, FlexibleInstances #-}
-
 -- |Monadic and General Iteratees:
 -- incremental input parsers, processors and transformers
 
 module Data.Iteratee.Base (
   -- * Types
-  StreamChunk (..),
-  ReadableChunk (..),
   StreamG (..),
   IterateeG (..),
   IterateeGM (..),
@@ -24,16 +20,16 @@ module Data.Iteratee.Base (
   iterErr,
   iterReportError,
   -- ** Basic Iteratees
-  sbreak,
-  sdropWhile,
-  snext,
-  speek,
+  break,
+  dropWhile,
+  drop,
+  head,
+  peek,
   skipToEof,
-  sdrop,
-  sseek,
+  seek,
   -- ** Advanced iteratee combinators
-  stake,
-  stakeR,
+  take,
+  takeR,
   mapStream,
   convStream,
   -- * Enumerators
@@ -48,115 +44,18 @@ module Data.Iteratee.Base (
 )
 where
 
+import Prelude hiding (head, drop, dropWhile, take, break)
+import qualified Prelude as P
+
+import qualified Data.Iteratee.Base.StreamChunk as SC
 import Data.Iteratee.IO.Base
-import Data.List (splitAt, findIndex)
 import Control.Monad.Trans
 import Control.Monad.Identity
-import Foreign.Ptr
 import System.IO
-
--- for the StorableVector instance
-import qualified Data.StorableVector as Vec
-import qualified Data.StorableVector.Base as VB
-import Foreign.ForeignPtr
-import Foreign.Marshal.Array
-import Foreign.Storable
-
 
 -- |A useful combinator.
 bindm :: Monad m => m (Maybe a) -> (a -> m (Maybe b)) -> m (Maybe b)
 bindm m f = m >>= maybe (return Nothing) f
-
--- |Class of types that can be used to hold chunks of data within Iteratee
--- streams.
-class StreamChunk c el where
-  -- |Length of currently available data.
-  cLength :: c el -> Int
-  -- |Create an empty chunk of data.
-  cEmpty :: c el
-  -- |Test if the current stream is null.
-  cNull :: c el -> Bool
-  -- |Prepend an element to the front of the data.
-  cCons :: el -> c el -> c el
-  -- |Return the first element of the stream.
-  cHead :: c el -> el
-  -- |Return the tail of the stream.
-  cTail :: c el -> c el
-  -- |First index matching the predicate.
-  cFindIndex :: (el -> Bool) -> c el -> Maybe Int
-  -- |Split the data at the specified index.
-  cSplitAt :: Int -> c el -> (c el, c el)
-  -- |Drop data matching the predicate.
-  cDropWhile :: (el -> Bool) -> c el -> c el
-  -- |Append to chunks of data into one.
-  cAppend :: c el -> c el -> c el
-  -- |Create a stream from a list.
-  fromList :: [el] -> c el
-  -- |Create a list from the stream.
-  toList :: c el -> [el]
-  -- |Map a computation over the stream.
-  cMap :: (StreamChunk c' el') => (el -> el') -> c el -> c' el'
-
-instance StreamChunk [] el where
-  cLength    = length
-  cEmpty     = []
-  cNull []   = True
-  cNull _    = False
-  cCons      = (:)
-  cHead      = head
-  cTail      = tail
-  cFindIndex = findIndex
-  cSplitAt   = splitAt
-  cDropWhile = dropWhile
-  cAppend    = (++)
-  fromList   = id
-  toList     = id
-  cMap       = listmap
-
-instance (Storable el) => StreamChunk Vec.Vector el where
-  cLength    = Vec.length
-  cEmpty     = Vec.empty
-  cNull      = Vec.null
-  cCons      = Vec.cons
-  cHead      = Vec.head
-  cTail      = Vec.tail
-  cFindIndex = Vec.findIndex
-  cSplitAt   = Vec.splitAt
-  cDropWhile = Vec.dropWhile
-  cAppend    = Vec.append
-  fromList   = Vec.pack
-  toList     = Vec.unpack
-  cMap       = vecmap
-
-listmap :: (StreamChunk s' el') => (el -> el') -> [el] -> s' el'
-listmap f = foldr (cCons . f) cEmpty
-
-{-# RULES "listmap/map" listmap = map #-}
-
-vecmap :: (Storable el, StreamChunk s' el') =>
-          (el -> el') ->
-          Vec.Vector el ->
-          s' el'
-vecmap f xs = step xs
-  where
-  step vec
-    | Vec.null vec = cEmpty
-    | True         = f (Vec.head vec) `cCons` step (Vec.tail vec)
-
-{-# RULES "vecmap/map" forall s (f :: forall el el'.(Storable el') => el -> el'). vecmap f s = Vec.map f s #-}
-
--- |Class of streams which can be filled from a 'Ptr'.  Typically these
--- are streams which can be read from a file.
-class StreamChunk s el => ReadableChunk s el where
-  readFromPtr :: Ptr (el) -> Int -> IO (s el)
-
-instance (Storable el) => ReadableChunk [] el where
-  readFromPtr = flip peekArray
-
-instance Storable el => ReadableChunk Vec.Vector el where
-  readFromPtr p l = do
-    fptr <- newForeignPtr_ p
-    return $ VB.fromForeignPtr fptr (fromIntegral l)
 
 -- |A stream is a (continuing) sequence of elements bundled in Chunks.
 -- The first two variants indicate termination of the stream.
@@ -166,7 +65,7 @@ instance Storable el => ReadableChunk Vec.Vector el where
 -- data but which is still continuing. A stream processor should,
 -- informally speaking, ``suspend itself'' and wait for more data
 -- to arrive.
-data (StreamChunk c el) => StreamG c el = EOF | Error String | Chunk (c el)
+data (SC.StreamChunk c el) => StreamG c el = EOF | Error String | Chunk (c el)
 
 -- |Iteratee -- a generic stream processor, what is being folded over
 -- a stream
@@ -213,9 +112,9 @@ m >>== f = IM (unIM m >>= unIM . f)
 -- |Just like an application -- a call-by-value-like application
 infixr 1 ==<<
 (==<<) :: Monad m =>
-  (IterateeG s el m a -> IterateeGM s' el' m b)
-  -> IterateeGM s el m a
-  -> IterateeGM s' el' m b
+          (IterateeG s el m a -> IterateeGM s' el' m b)
+          -> IterateeGM s el m a
+          -> IterateeGM s' el' m b
 (==<<) = flip (>>==)
 
 
@@ -228,8 +127,8 @@ infixr 1 ==<<
 -- We thus send EOF to the internal Iteratee and propagate its result.
 -- This join function is useful when dealing with `derived iteratees'
 -- for embedded/nested streams.  In particular, joinI is useful to
--- process the result of stake, mapStream, or convStream below.
-joinI :: (StreamChunk s el, StreamChunk s' el', Monad m) =>
+-- process the result of take, mapStream, or convStream below.
+joinI :: (SC.StreamChunk s el, SC.StreamChunk s' el', Monad m) =>
          IterateeGM s el m (IterateeG s' el' m a) ->
          IterateeGM s el m a
 joinI m = m >>= (\iter -> enumEof iter >>== check)
@@ -242,25 +141,26 @@ joinI m = m >>= (\iter -> enumEof iter >>== check)
 -- It turns out, IterateeGM form a monad. We can use the familiar do
 -- notation for composing Iteratees
 
-instance (StreamChunk s el, Monad m) => Monad (IterateeGM s el m) where
-  return x = liftI  $ Done  x (Chunk cEmpty)
+instance (SC.StreamChunk s el, Monad m) => Monad (IterateeGM s el m) where
+  return x = liftI  $ Done  x (Chunk SC.empty)
   m >>= f = iter_bind m f
 
-iter_bind :: (StreamChunk s el, Monad m ) =>
+iter_bind :: (SC.StreamChunk s el, Monad m ) =>
              IterateeGM s el m a ->
              (a -> IterateeGM s el m b) ->
              IterateeGM s el m b
 iter_bind m f = m >>== docase
   where
-  docase (Done a (Chunk vec)) | cNull vec = f a
+  docase (Done a (Chunk vec))
+    | SC.null vec        = f a
   docase (Done a stream) = f a >>== (\r -> case r of
-    Done x _ -> liftI $ Done x stream
-    Cont k   -> k stream
-    iter     -> liftI iter)
-  docase (Cont k) = liftI $ Cont ((>>= f) . k)
-  docase (Seek off k) = liftI $ Seek off ((>>= f) . k)
+    Done x _             -> liftI $ Done x stream
+    Cont k               -> k stream
+    iter                 -> liftI iter)
+  docase (Cont k)        = liftI $ Cont ((>>= f) . k)
+  docase (Seek off k)    = liftI $ Seek off ((>>= f) . k)
 
-{-# SPECIALIZE iter_bind :: StreamChunk s el => IterateeGM s el IO a -> (a -> IterateeGM s el IO b) -> IterateeGM s el IO b #-}
+{-# SPECIALIZE iter_bind :: SC.StreamChunk s el => IterateeGM s el IO a -> (a -> IterateeGM s el IO b) -> IterateeGM s el IO b #-}
 
 instance (Monad m, Functor m) => Functor (IterateeGM s el m) where
   fmap f m = m >>== docase
@@ -269,32 +169,32 @@ instance (Monad m, Functor m) => Functor (IterateeGM s el m) where
     docase (Cont k)        = liftI $ Cont (fmap f . k)
     docase (Seek off k)    = liftI $ Seek off (fmap f . k)
 
-instance (StreamChunk s el) => MonadTrans (IterateeGM s el) where
+instance (SC.StreamChunk s el) => MonadTrans (IterateeGM s el) where
   lift m = IM (m >>= unIM . return)
 
-instance (StreamChunk s el, MonadIO m) => MonadIO (IterateeGM s el m) where
+instance (SC.StreamChunk s el, MonadIO m) => MonadIO (IterateeGM s el m) where
   liftIO = lift . liftIO
 
 -- ------------------------------------------------------------------------
 -- Primitive iteratees
 
 -- |Read a stream to the end and return all of its elements as a list
-stream2list :: (StreamChunk s el, Monad m) => IterateeGM s el m [el]
-stream2list = liftI $ Cont (step cEmpty)
+stream2list :: (SC.StreamChunk s el, Monad m) => IterateeGM s el m [el]
+stream2list = liftI $ Cont (step SC.empty)
  where
- step acc (Chunk ls) | cNull ls = liftI $ Cont (step acc)
-                     | otherwise    = liftI $ Cont (step $ acc `cAppend` ls)
- step acc stream                    = liftI $ Done (toList acc) stream
+ step acc (Chunk ls) | SC.null ls   = liftI $ Cont (step acc)
+                     | otherwise    = liftI $ Cont (step $ acc `SC.append` ls)
+ step acc stream                    = liftI $ Done (SC.toList acc) stream
 
 -- |Report and propagate an error.  Disregard the input first and then
 -- propagate the error.
-iterErr :: (StreamChunk s el, Monad m) => String -> IterateeGM s el m ()
+iterErr :: (SC.StreamChunk s el, Monad m) => String -> IterateeGM s el m ()
 iterErr err = liftI $ Cont step
   where
   step _ = liftI $ Done () (Error err)
 
 -- |Check to see if the stream is in error
-iterReportError :: (StreamChunk s el, Monad m) =>
+iterReportError :: (SC.StreamChunk s el, Monad m) =>
                    IterateeGM s el m (Maybe String)
 iterReportError = liftI $ Cont step
   where
@@ -315,37 +215,37 @@ iterReportError = liftI $ Cont step
 --                   str is the scanned part of the stream.
 -- None of the element in str satisfy the break predicate.
 
-sbreak :: (StreamChunk s el, Monad m) =>
+break :: (SC.StreamChunk s el, Monad m) =>
           (el -> Bool) ->
           IterateeGM s el m (s el, Maybe el)
-sbreak cpred = liftI $ Cont (liftI . step cEmpty)
+break cpred = liftI $ Cont (liftI . step SC.empty)
   where
   step before (Chunk str)
-    | cNull str = Cont (liftI . step before)
-    | otherwise = case cFindIndex cpred str of
-        Nothing -> Cont (liftI . step (before `cAppend` str))
-        Just ix -> let (str', tail') = cSplitAt ix str
+    | SC.null str = Cont (liftI . step before)
+    | otherwise = case SC.findIndex cpred str of
+        Nothing -> Cont (liftI . step (before `SC.append` str))
+        Just ix -> let (str', tail') = SC.splitAt ix str
                    in
-                   done (before `cAppend` str') (Just $ cHead tail') (Chunk $ cTail tail')
+                   done (before `SC.append` str') (Just $ SC.head tail') (Chunk $ SC.tail tail')
   step before stream = done before Nothing stream
   done line' char = Done (line', char)
 
 
--- |A particular optimized case of 'sdrop': skip all elements of the stream
+-- |A particular optimized case of 'drop': skip all elements of the stream
 -- satisfying the given predicate - until the first element
 -- that does not satisfy the predicate, or the end of the stream.
 -- This is the analogue of List.dropWhile
-sdropWhile :: (StreamChunk s el, Monad m) =>
+dropWhile :: (SC.StreamChunk s el, Monad m) =>
               (el -> Bool) ->
               IterateeGM s el m ()
-sdropWhile cpred = liftI $ Cont step
+dropWhile cpred = liftI $ Cont step
   where
   step (Chunk str)
-    | cNull str = sdropWhile cpred
-    | otherwise = let remm = cDropWhile cpred str
+    | SC.null str = dropWhile cpred
+    | otherwise = let remm = SC.dropWhile cpred str
                   in
-                  case cNull remm of
-                    True  -> sdropWhile cpred
+                  case SC.null remm of
+                    True  -> dropWhile cpred
                     False -> liftI $ Done () (Chunk remm)
   step stream   = liftI $ Done () stream
 
@@ -353,14 +253,13 @@ sdropWhile cpred = liftI $ Cont step
 -- |Attempt to read the next element of the stream
 -- Return (Just c) if successful, return Nothing if the stream is
 -- terminated (by EOF or an error)
-snext :: (StreamChunk s el, Monad m) =>
+head :: (SC.StreamChunk s el, Monad m) =>
          IterateeGM s el m (Maybe el)
-snext = liftI $ Cont step
+head = liftI $ Cont step
   where
   step (Chunk vec)
-    | cNull vec  = snext
-    | otherwise      = liftI $ Done (Just $ cHead vec)
-                       (Chunk $ cTail vec)
+    | SC.null vec  = head
+    | otherwise      = liftI $ Done (Just $ SC.head vec) (Chunk $ SC.tail vec)
   step stream        = liftI $ Done Nothing stream
 
 
@@ -368,18 +267,18 @@ snext = liftI $ Cont step
 -- it from the stream.
 -- Return (Just c) if successful, return Nothing if the stream is
 -- terminated (by EOF or an error)
-speek :: (StreamChunk s el, Monad m) =>
+peek :: (SC.StreamChunk s el, Monad m) =>
          IterateeGM s el m (Maybe el)
-speek = liftI $ Cont step
+peek = liftI $ Cont step
   where
   step s@(Chunk vec)
-    | cNull vec = speek
-    | otherwise = liftI $ Done (Just $ cHead vec) s
+    | SC.null vec = peek
+    | otherwise = liftI $ Done (Just $ SC.head vec) s
   step stream   = liftI $ Done Nothing stream
 
 
 -- |Skip the rest of the stream
-skipToEof :: (StreamChunk s el, Monad m) => IterateeGM s el m ()
+skipToEof :: (SC.StreamChunk s el, Monad m) => IterateeGM s el m ()
 skipToEof = liftI $ Cont step
   where
   step (Chunk _) = skipToEof
@@ -387,19 +286,20 @@ skipToEof = liftI $ Cont step
 
 -- |Skip n elements of the stream, if there are that many
 -- This is the analogue of List.drop
-sdrop :: (StreamChunk s el, Monad m) => Int -> IterateeGM s el m ()
-sdrop 0 = return ()
-sdrop n = liftI $ Cont step
+drop :: (SC.StreamChunk s el, Monad m) => Int -> IterateeGM s el m ()
+drop 0 = return ()
+drop n = liftI $ Cont step
   where
-  step (Chunk str) | cLength str <= n = sdrop (n - cLength str)
+  step (Chunk str) | SC.length str <= n = drop (n - SC.length str)
   step (Chunk str) = liftI $ Done () (Chunk s2)
-   where (_s1,s2)    = cSplitAt n str
+   where
+   (_s1,s2) = SC.splitAt n str
   step stream      = liftI $ Done () stream
 
 -- |Create a request to seek within an input stream.  This will result in
 -- an error if the enumerator is not capable of responding to a seek request.
-sseek :: (StreamChunk s el, Monad m) => FileOffset -> IterateeGM s el m ()
-sseek off = liftI (Seek off step)
+seek :: (SC.StreamChunk s el, Monad m) => FileOffset -> IterateeGM s el m ()
+seek off = liftI (Seek off step)
   where
   step = liftI . Done ()
 
@@ -418,52 +318,52 @@ type EnumeratorN s_outer el_outer s_inner el_inner m a =
 -- |Read n elements from a stream and apply the given iteratee to the
 -- stream of the read elements. Unless the stream is terminated early, we
 -- read exactly n elements (even if the iteratee has accepted fewer).
-stake :: (StreamChunk s el, Monad m) =>
+take :: (SC.StreamChunk s el, Monad m) =>
    Int -> EnumeratorN s el s el m a
-stake 0 iter = return iter
-stake n iter@Done{} = sdrop n >> return iter
-stake n (Seek _off k) = liftI $ Cont step
+take 0 iter = return iter
+take n iter@Done{} = drop n >> return iter
+take n (Seek _off k) = liftI $ Cont step
   where
   step chunk@(Chunk str)
-    | cNull str        = liftI $ Cont step
-    | cLength str <= n = stake (n - cLength str) ==<< k chunk
-  step (Chunk str)     = done (Chunk s1) (Chunk s2)
-    where (s1,s2) = cSplitAt n str
-  step stream          = done stream stream
-  done s1 s2           = k s1 >>== \r -> liftI $ Done r s2
-stake n (Cont k) = liftI $ Cont step
+    | SC.null str        = liftI $ Cont step
+    | SC.length str <= n = take (n - SC.length str) ==<< k chunk
+  step (Chunk str)       = done (Chunk s1) (Chunk s2)
+    where (s1,s2) = SC.splitAt n str
+  step stream            = done stream stream
+  done s1 s2             = k s1 >>== \r -> liftI $ Done r s2
+take n (Cont k) = liftI $ Cont step
   where
   step chunk@(Chunk str)
-    | cNull str        = liftI $ Cont step
-    | cLength str <= n = stake (n - cLength str) ==<< k chunk
-  step (Chunk str)     = done (Chunk s1) (Chunk s2)
-    where (s1,s2) = cSplitAt n str
-  step stream          = done stream stream
-  done s1 s2           = k s1 >>== \r -> liftI $ Done r s2
+    | SC.null str        = liftI $ Cont step
+    | SC.length str <= n = take (n - SC.length str) ==<< k chunk
+  step (Chunk str)       = done (Chunk s1) (Chunk s2)
+    where (s1,s2) = SC.splitAt n str
+  step stream            = done stream stream
+  done s1 s2             = k s1 >>== \r -> liftI $ Done r s2
 
 
 -- |Read n elements from a stream and apply the given iteratee to the
 -- stream of the read elements. If the given iteratee accepted fewer
 -- elements, we stop.
--- This is the variation of `stake' with the early termination
+-- This is the variation of `take' with the early termination
 -- of processing of the outer stream once the processing of the inner stream
 -- finished early. This variation is particularly useful for randomIO,
 -- where we do not have to care to `drain the input stream'.
-stakeR :: (StreamChunk s el, Monad m) =>
+takeR :: (SC.StreamChunk s el, Monad m) =>
           Int ->
           EnumeratorN s el s el m a
-stakeR 0 iter = return iter
-stakeR _n iter@Done{} = return iter
-stakeR _n iter@Seek{} = return iter
-stakeR n (Cont k)     = liftI $ Cont step
+takeR 0 iter = return iter
+takeR _n iter@Done{} = return iter
+takeR _n iter@Seek{} = return iter
+takeR n (Cont k)     = liftI $ Cont step
   where
   step chunk@(Chunk str)
-    | cNull str        = liftI $ Cont step
-    | cLength str <= n = stakeR (n - cLength str) ==<< k chunk
-  step (Chunk str)     = done (Chunk s1) (Chunk s2)
-    where (s1,s2) = cSplitAt n str
-  step stream          = done stream stream
-  done s1 s2           = k s1 >>== \r -> liftI $ Done r s2
+    | SC.null str        = liftI $ Cont step
+    | SC.length str <= n = takeR (n - SC.length str) ==<< k chunk
+  step (Chunk str)       = done (Chunk s1) (Chunk s2)
+    where (s1,s2) = SC.splitAt n str
+  step stream            = done stream stream
+  done s1 s2             = k s1 >>== \r -> liftI $ Done r s2
 
 -- |Map the stream: yet another iteratee transformer
 -- Given the stream of elements of the type el and the function el->el',
@@ -471,22 +371,26 @@ stakeR n (Cont k)     = liftI $ Cont step
 -- given iteratee to it.
 -- Note the contravariance
 
-mapStream :: (StreamChunk s el, StreamChunk s el', Monad m) =>
+mapStream :: (SC.StreamChunk s el, SC.StreamChunk s el', Monad m) =>
               (el -> el') ->
               EnumeratorN s el s el' m a
 mapStream _f iter@Done{} = return iter
 mapStream f (Cont k) = liftI $ Cont step
   where
-  step (Chunk str) | cNull str = liftI $ Cont step
-  step (Chunk str) = k (Chunk (cMap f str)) >>== mapStream f
-  step EOF         = k EOF       >>== \r -> liftI $ Done r EOF
-  step (Error err) = k (Error err) >>== \r -> liftI $ Done r (Error err)
+  step (Chunk str)
+    | SC.null str  = liftI $ Cont step
+  step (Chunk str) = k (Chunk (SC.cMap f str)) >>== mapStream f
+  step EOF         = k EOF                     >>== \r -> liftI $ Done r EOF
+  step (Error err) = k (Error err)             >>== \r ->
+                       liftI $ Done r (Error err)
 mapStream f (Seek off k) = liftI $ Seek off step
   where
-  step (Chunk str) | cNull str = liftI $ Cont step
-  step (Chunk str) = k (Chunk (cMap f str)) >>== mapStream f
-  step EOF         = k EOF       >>== \r -> liftI $ Done r EOF
-  step (Error err) = k (Error err) >>== \r -> liftI $ Done r (Error err)
+  step (Chunk str)
+    | SC.null str  = liftI $ Cont step
+  step (Chunk str) = k (Chunk (SC.cMap f str)) >>== mapStream f
+  step EOF         = k EOF                     >>== \r -> liftI $ Done r EOF
+  step (Error err) = k (Error err)             >>== \r ->
+                       liftI $ Done r (Error err)
 
 -- |Convert one stream into another, not necessarily in `lockstep'
 -- The transformer mapStream maps one element of the outer stream
@@ -496,7 +400,7 @@ mapStream f (Seek off k) = liftI $ Seek off step
 -- The transformation from one stream to the other is specified as
 -- IterateeGM s el m (Maybe [el']).  The `Maybe' type reflects the
 -- possibility of the conversion error.
-convStream :: (StreamChunk s el, StreamChunk s' el', Monad m) =>
+convStream :: (SC.StreamChunk s el, SC.StreamChunk s' el', Monad m) =>
   IterateeGM s el m (Maybe (s' el')) -> EnumeratorN s el s' el' m a
 convStream _fi iter@Done{} = return iter
 convStream fi (Cont k) = fi >>=
@@ -504,7 +408,7 @@ convStream fi (Cont k) = fi >>=
 convStream fi (Seek _off k) = fi >>=
   (convStream fi ==<<) . k . maybe (Error "conv: stream error") Chunk
 
-{-# SPECIALIZE convStream :: (StreamChunk s el, StreamChunk s' el') => IterateeGM s el IO (Maybe (s' el')) -> EnumeratorN s el s' el' IO a #-}
+{-# SPECIALIZE convStream :: (SC.StreamChunk s el, SC.StreamChunk s' el') => IterateeGM s el IO (Maybe (s' el')) -> EnumeratorN s el s' el' IO a #-}
 
 
 -- ------------------------------------------------------------------------
@@ -529,29 +433,29 @@ type EnumeratorGMM sfrom elfrom sto elto m a =
 
 -- |The most primitive enumerator: applies the iteratee to the terminated
 -- stream. The result is the iteratee usually in the done state.
-enumEof :: (StreamChunk s el, Monad m) => EnumeratorGM s el m a
-enumEof (Done x _)   = liftI $ Done x EOF
-enumEof (Cont k)     = k EOF
+enumEof :: (SC.StreamChunk s el, Monad m) => EnumeratorGM s el m a
+enumEof (Done x _)    = liftI $ Done x EOF
+enumEof (Cont k)      = k EOF
 enumEof (Seek _off k) = k EOF
 
 -- |Another primitive enumerator: report an error
-enumErr :: (StreamChunk s el, Monad m) => String -> EnumeratorGM s el m a
-enumErr str (Done x _) = liftI $ Done x (Error str)
-enumErr str (Cont k)   = k (Error str)
+enumErr :: (SC.StreamChunk s el, Monad m) => String -> EnumeratorGM s el m a
+enumErr str (Done x _)    = liftI $ Done x (Error str)
+enumErr str (Cont k)      = k (Error str)
 enumErr str (Seek _off k) = k (Error str)
 
 -- |The composition of two enumerators: essentially the functional composition
 -- It is convenient to flip the order of the arguments of the composition
 -- though: in e1 >. e2, e1 is executed first
 
-(>.):: (StreamChunk s el, Monad m) =>
+(>.):: (SC.StreamChunk s el, Monad m) =>
        EnumeratorGM s el m a -> EnumeratorGM s el m a -> EnumeratorGM s el m a
 e1 >. e2 = (e2 ==<<) . e1
 
 -- |The pure 1-chunk enumerator
 -- It passes a given list of elements to the iteratee in one chunk
 -- This enumerator does no IO and is useful for testing of base parsing
-enumPure1Chunk :: (StreamChunk s el, Monad m) =>
+enumPure1Chunk :: (SC.StreamChunk s el, Monad m) =>
                     s el ->
                     EnumeratorGM s el m a
 enumPure1Chunk _str iter@Done{} = liftI iter
@@ -562,13 +466,13 @@ enumPure1Chunk _str (Seek _off _k) = fail "enumPure1Chunk cannot handle random I
 -- It passes a given lift of elements to the iteratee in n chunks
 -- This enumerator does no IO and is useful for testing of base parsing
 -- and handling of chunk boundaries
-enumPureNChunk :: (StreamChunk s el, Monad m) =>
+enumPureNChunk :: (SC.StreamChunk s el, Monad m) =>
                     s el ->
                     Int ->
                     EnumeratorGM s el m a
 enumPureNChunk _str _n iter@Done{}   = liftI iter
-enumPureNChunk str  _n iter | cNull str = liftI iter
+enumPureNChunk str  _n iter | SC.null str = liftI iter
 enumPureNChunk str n (Cont k)        = enumPureNChunk s2 n ==<< k (Chunk s1)
-  where (s1,s2) = cSplitAt n str
+  where (s1,s2) = SC.splitAt n str
 enumPureNChunk _str _n (Seek _off _k) = fail "enumPureNChunk cannot handle ranom IO"
 

@@ -56,7 +56,7 @@ class StreamChunk c el where
   cMap :: (StreamChunk c' el') => (el -> el') -> c el -> c' el'
 
 instance StreamChunk [] el where
-  length    = length
+  length    = P.length
   empty     = []
   null []   = True
   null _    = False

@@ -30,12 +30,12 @@ Library
    ghc-options:         -fsimplifier-phases=4
  if os(windows)
    cpp-options:         -DUSE_WINDOWS
-   buildable:           False
    other-modules:       Data.Iteratee.IO.Windows
  else
    cpp-options:         -DUSE_POSIX
    other-modules:       Data.Iteratee.IO.Posix
- build-depends:         haskell98, mtl, containers, unix, storablevector, bytestring
+   build-depends:       unix
+ build-depends:         haskell98, mtl, containers, bytestring
  exposed-modules:       Data.Iteratee
                         Data.Iteratee.Base
                         Data.Iteratee.Base.StreamChunk

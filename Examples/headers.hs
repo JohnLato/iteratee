@@ -152,11 +152,22 @@ print_headers_print_body = do
 -- This iteratee uses a mapStream to convert the stream from
 -- Word8 elements to Char elements.
 -- This is necessary because we want only ASCII chars, not unicode chars.
+-- this version only works on Posix systems
+{-
 test_driver_full iter filepath = do
   fd <- openFd filepath ReadOnly Nothing defaultFileFlags
   putStrLn "About to read headers"
   unIM $ (IIO.enumFd fd >. enumEof) ==<< (mapStream mapfn ==<< iter)
   closeFd fd
+  putStrLn "Finished reading"
+ where
+  mapfn :: Word8 -> Char
+  mapfn = chr . fromIntegral
+-}
+
+test_driver_full iter filepath = do
+  putStrLn "About to read headers"
+  fileDriverRandom (mapStream mapfn ==<< iter) filepath
   putStrLn "Finished reading"
  where
   mapfn :: Word8 -> Char

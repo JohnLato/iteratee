@@ -20,7 +20,7 @@ import Data.Iteratee.Binary()
 import Data.Iteratee.IO.Base
 
 import Data.Int
-import Control.Exception
+import Control.Exception.Extensible
 
 import Foreign.Ptr
 import Foreign.Marshal.Alloc

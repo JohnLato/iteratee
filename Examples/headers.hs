@@ -7,8 +7,6 @@ import Control.Monad.Identity
 import Data.Char
 import Data.Word
 
-import System.Posix
-
 
 -- HTTP chunk decoding
 -- Each chunk has the following format:

@@ -2,7 +2,6 @@
 
 module Data.Iteratee.IO.Windows (
 #if defined(USE_WINDOWS)
-  FileOffset
 #endif
 )
 

@@ -88,6 +88,11 @@ data IterateeG s el m a
   | Cont (StreamG s el -> IterateeGM s el m a)
   | Seek FileOffset (StreamG s el -> IterateeGM s el m a)
 
+instance (Show a) => Show (IterateeG s el m a) where
+  show (Done a _)  = "Iteratee done: " ++ P.show a
+  show (Cont   _k) = "Iteratee: incomplete"
+  show (Seek f _k) = "Iteratee: seek to " ++ (P.show f) ++ "requested"
+
 newtype IterateeGM s el m a = IM {unIM :: m (IterateeG s el m a)}
 
 

@@ -220,7 +220,7 @@ unroller iter = do
   w8 <- iter
   case catMaybes [w1, w2, w3, w4, w5, w6, w7, w8] of
     [] -> return Nothing
-    xs -> return $ Just $ xs
+    xs -> return $ Just xs
 
 -- |Convert Word8s to Doubles
 conv_func :: AudioFormat -> IterateeGM L Word8 IO (Maybe (L Double))

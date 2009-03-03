@@ -69,7 +69,7 @@ foreign import ccall "unistd.h select" c_select
 -- Convert a file descriptor to an FDSet (for use with select)
 -- essentially encode a file descriptor in a big-endian notation
 fd2fds :: CInt -> [FDSET]
-fd2fds fd = (replicate nb 0) ++ [setBit 0 off]
+fd2fds fd = replicate nb 0 ++ [setBit 0 off]
   where
     (nb,off) = quotRem (fromIntegral fd) (bitSize (undefined::FDSET))
 

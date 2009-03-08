@@ -4,7 +4,7 @@ Cabal-Version:  >= 1.2
 Description:	The IterateeGM monad provides strict, safe, and functional
                 I/O.  In addition to pure Iteratee processors, file IO and 
                 combinator functions are provided.
-License:	PublicDomain
+License:	BSD3
 License-file:	LICENSE
 Author:		Oleg Kiselyov
 Maintainer:	John W. Lato, jwlato@gmail.com

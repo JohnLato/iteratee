@@ -8,6 +8,7 @@ License:	BSD3
 License-file:	LICENSE
 Author:		Oleg Kiselyov
 Maintainer:	John W. Lato, jwlato@gmail.com
+homepage:       http://inmachina.net/~jwlato/haskell/iteratee
 Stability:	experimental
 synopsis:       Iteratee-based I/O
 category:       System, Data

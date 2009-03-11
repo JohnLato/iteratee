@@ -1,5 +1,5 @@
 Name:		iteratee
-Version:        0.1.0
+Version:        0.1.1
 Cabal-Version:  >= 1.2
 Description:	The IterateeGM monad provides strict, safe, and functional
                 I/O.  In addition to pure Iteratee processors, file IO and 

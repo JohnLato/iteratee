@@ -52,6 +52,7 @@ import Data.Iteratee.IO.Base
 import Control.Monad.Trans
 import Control.Monad.Identity
 import System.IO
+import Data.Monoid
 
 -- |A useful combinator.
 bindm :: Monad m => m (Maybe a) -> (a -> m (Maybe b)) -> m (Maybe b)
@@ -147,7 +148,7 @@ joinI m = m >>= (\iter -> enumEof iter >>== check)
 -- notation for composing Iteratees
 
 instance (SC.StreamChunk s el, Monad m) => Monad (IterateeGM s el m) where
-  return x = liftI  $ Done  x (Chunk SC.empty)
+  return x = liftI  $ Done  x (Chunk mempty)
   m >>= f = iter_bind m f
 
 iter_bind :: (SC.StreamChunk s el, Monad m ) =>
@@ -185,10 +186,10 @@ instance (SC.StreamChunk s el, MonadIO m) => MonadIO (IterateeGM s el m) where
 
 -- |Read a stream to the end and return all of its elements as a list
 stream2list :: (SC.StreamChunk s el, Monad m) => IterateeGM s el m [el]
-stream2list = liftI $ Cont (step SC.empty)
+stream2list = liftI $ Cont (step mempty)
  where
  step acc (Chunk ls) | SC.null ls   = liftI $ Cont (step acc)
-                     | otherwise    = liftI $ Cont (step $ acc `SC.append` ls)
+                     | otherwise    = liftI $ Cont (step $ acc `mappend` ls)
  step acc stream                    = liftI $ Done (SC.toList acc) stream
 
 -- |Report and propagate an error.  Disregard the input first and then
@@ -223,15 +224,15 @@ iterReportError = liftI $ Cont step
 break :: (SC.StreamChunk s el, Monad m) =>
           (el -> Bool) ->
           IterateeGM s el m (s el, Maybe el)
-break cpred = liftI $ Cont (liftI . step SC.empty)
+break cpred = liftI $ Cont (liftI . step mempty)
   where
   step before (Chunk str)
     | SC.null str = Cont (liftI . step before)
     | otherwise = case SC.findIndex cpred str of
-        Nothing -> Cont (liftI . step (before `SC.append` str))
+        Nothing -> Cont (liftI . step (before `mappend` str))
         Just ix -> let (str', tail') = SC.splitAt ix str
                    in
-                   done (before `SC.append` str') (Just $ SC.head tail') (Chunk $ SC.tail tail')
+                   done (before `mappend` str') (Just $ SC.head tail') (Chunk $ SC.tail tail')
   step before stream = done before Nothing stream
   done line' char = Done (line', char)
 

@@ -18,14 +18,13 @@ import Foreign.Ptr
 import Foreign.Storable
 import Foreign.Marshal.Array
 import System.IO
+import Data.Monoid
 
 -- |Class of types that can be used to hold chunks of data within Iteratee
 -- streams.
-class StreamChunk c el where
+class Monoid (c el) => StreamChunk c el where
   -- |Length of currently available data.
   length :: c el -> Int
-  -- |Create an empty chunk of data.
-  empty :: c el
   -- |Test if the current stream is null.
   null :: c el -> Bool
   -- |Prepend an element to the front of the data.
@@ -40,8 +39,6 @@ class StreamChunk c el where
   splitAt :: Int -> c el -> (c el, c el)
   -- |Drop data matching the predicate.
   dropWhile :: (el -> Bool) -> c el -> c el
-  -- |Append to chunks of data into one.
-  append :: c el -> c el -> c el
   -- |Create a stream from a list.
   fromList :: [el] -> c el
   -- |Create a list from the stream.
@@ -51,7 +48,6 @@ class StreamChunk c el where
 
 instance StreamChunk [] el where
   length    = P.length
-  empty     = []
   null []   = True
   null _    = False
   cons      = (:)
@@ -60,13 +56,12 @@ instance StreamChunk [] el where
   findIndex = L.findIndex
   splitAt   = P.splitAt
   dropWhile = P.dropWhile
-  append    = (++)
   fromList   = id
   toList     = id
   cMap       = listmap
 
 listmap :: (StreamChunk s' el') => (el -> el') -> [el] -> s' el'
-listmap f = foldr (cons . f) empty
+listmap f = foldr (cons . f) mempty
 
 {-# RULES "listmap/map" listmap = map #-}
 

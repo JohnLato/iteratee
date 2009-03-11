@@ -1,4 +1,5 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module Data.Iteratee.WrappedByteString (
   WrappedByteString (..)
@@ -11,10 +12,15 @@ import qualified Data.ByteString as BW
 import qualified Data.ByteString.Char8 as BC
 import qualified Data.ByteString.Internal as BBase
 import Data.Word
+import Data.Monoid
 import Foreign.ForeignPtr
 
 -- |Wrap a Data.ByteString ByteString
 newtype WrappedByteString a = WrapBS { unWrap :: BBase.ByteString }
+
+instance Monoid (WrappedByteString Word8) where
+    mempty = WrapBS BW.empty
+    mappend a1 a2 = WrapBS (BW.append (unWrap a1) (unWrap a2))
 
 instance SC.ReadableChunk WrappedByteString Word8 where
   readFromPtr p l = do
@@ -28,7 +34,6 @@ instance SC.ReadableChunk WrappedByteString Char where
 
 instance SC.StreamChunk WrappedByteString Word8 where
   length        = BW.length . unWrap
-  empty         = WrapBS BW.empty
   null          = BW.null . unWrap
   cons a        = WrapBS . BW.cons a . unWrap
   head          = BW.head . unWrap
@@ -37,7 +42,6 @@ instance SC.StreamChunk WrappedByteString Word8 where
   splitAt i s   = let (a1, a2) = BW.splitAt i $ unWrap s
                   in (WrapBS a1, WrapBS a2)
   dropWhile p   = WrapBS . BW.dropWhile p . unWrap
-  append a1 a2  = WrapBS (BW.append (unWrap a1) (unWrap a2))
   fromList      = WrapBS . BW.pack
   toList        = BW.unpack . unWrap
   cMap          = bwmap
@@ -49,7 +53,7 @@ bwmap :: (SC.StreamChunk s' el') =>
 bwmap f xs = step xs
   where
   step bs
-    | SC.null bs = SC.empty
+    | SC.null bs = mempty
     | True     = f (SC.head bs) `SC.cons` step (SC.tail bs)
 
 -- a specialized version to use in the RULE
@@ -60,10 +64,12 @@ bwmap' f = WrapBS . BW.map f . unWrap
 
 {-# RULES "bwmap/map" forall s (f :: Word8 -> Word8). bwmap f s = bwmap' f s #-}
 
+instance Monoid (WrappedByteString Char) where
+    mempty = WrapBS BW.empty
+    mappend a1 a2 = WrapBS (BW.append (unWrap a1) (unWrap a2))
 
 instance SC.StreamChunk WrappedByteString Char where
   length        = BC.length . unWrap
-  empty         = WrapBS BC.empty
   null          = BC.null . unWrap
   cons a        = WrapBS . BC.cons a . unWrap
   head          = BC.head . unWrap
@@ -72,7 +78,6 @@ instance SC.StreamChunk WrappedByteString Char where
   splitAt i s   = let (a1, a2) = BC.splitAt i $ unWrap s
                   in (WrapBS a1, WrapBS a2)
   dropWhile p   = WrapBS . BC.dropWhile p . unWrap
-  append a1 a2  = WrapBS (BC.append (unWrap a1) (unWrap a2))
   fromList      = WrapBS . BC.pack
   toList        = BC.unpack . unWrap
   cMap          = bcmap
@@ -84,7 +89,7 @@ bcmap :: (SC.StreamChunk s' el') =>
 bcmap f xs = step xs
   where
   step bs
-    | SC.null bs = SC.empty
+    | SC.null bs = mempty
     | True     = f (SC.head bs) `SC.cons` step (SC.tail bs)
 
 -- a specialized version to use in the RULE

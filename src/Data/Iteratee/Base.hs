@@ -166,7 +166,7 @@ iter_bind m f = m >>== docase
   docase (Cont k)        = liftI $ Cont ((>>= f) . k)
   docase (Seek off k)    = liftI $ Seek off ((>>= f) . k)
 
-{-# SPECIALIZE iter_bind :: SC.StreamChunk s el => IterateeGM s el IO a -> (a -> IterateeGM s el IO b) -> IterateeGM s el IO b #-}
+{-# INLINE iter_bind #-}
 
 instance (Monad m, Functor m) => Functor (IterateeGM s el m) where
   fmap f m = m >>== docase

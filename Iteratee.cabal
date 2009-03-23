@@ -22,7 +22,7 @@ flag splitBase
 
 Library
  Hs-Source-Dirs:        src
- ghc-options:           -O2 -Wall
+ ghc-options:           -O2 -Wall -fexcess-precision -fno-method-sharing
  if flag(splitBase)
    build-depends:       base >= 3, base < 5
  else

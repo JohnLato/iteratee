@@ -36,7 +36,7 @@ Library
    cpp-options:         -DUSE_POSIX
    other-modules:       Data.Iteratee.IO.Posix
    build-depends:       unix
- build-depends:         haskell98, mtl, containers, bytestring, extensible-exceptions
+ build-depends:         haskell98, mtl >= 1.0 && < 1.2, containers >= 0.2 && < 0.3, bytestring >= 0.9 && < 0.10, extensible-exceptions >= 0.1 && < 0.2
  exposed-modules:       Data.Iteratee
                         Data.Iteratee.Base
                         Data.Iteratee.Base.StreamChunk

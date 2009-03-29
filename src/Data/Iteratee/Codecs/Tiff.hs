@@ -54,7 +54,8 @@ import Data.Iteratee.Base (StreamG (..), IterateeG (..), IterateeGM, EnumeratorG
 import qualified Data.Iteratee.Base as Iter
 import qualified Data.Iteratee.Base.StreamChunk as SC
 import Data.Iteratee.Binary
-import Control.Monad.State
+import Control.Monad
+import Control.Monad.Trans
 import Data.Char (chr)
 import Data.Int
 import Data.Word

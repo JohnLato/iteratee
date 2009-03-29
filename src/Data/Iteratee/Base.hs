@@ -50,7 +50,6 @@ import qualified Prelude as P
 import qualified Data.Iteratee.Base.StreamChunk as SC
 import Data.Iteratee.IO.Base
 import Control.Monad.Trans
-import Control.Monad.Identity
 import System.IO
 import Data.Monoid
 

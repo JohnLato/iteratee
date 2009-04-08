@@ -11,6 +11,7 @@ import qualified Data.Iteratee.Base.StreamChunk as SC
 import qualified Data.ByteString as BW
 import qualified Data.ByteString.Char8 as BC
 import qualified Data.ByteString.Internal as BBase
+import qualified Data.ListLike as LL
 import Data.Word
 import Data.Monoid
 import Foreign.ForeignPtr
@@ -19,8 +20,12 @@ import Foreign.ForeignPtr
 newtype WrappedByteString a = WrapBS { unWrap :: BBase.ByteString }
 
 instance Monoid (WrappedByteString Word8) where
-    mempty = WrapBS BW.empty
-    mappend a1 a2 = WrapBS (BW.append (unWrap a1) (unWrap a2))
+  mempty = WrapBS BW.empty
+  mappend a1 a2 = WrapBS (BW.append (unWrap a1) (unWrap a2))
+
+instance LL.FoldableLL (WrappedByteString Word8) Word8 where
+  foldl f z c = BW.foldl f z $ unWrap c
+  foldr f z c = BW.foldr f z $ unWrap c
 
 instance SC.ReadableChunk WrappedByteString Word8 where
   readFromPtr p l = do
@@ -32,9 +37,10 @@ instance SC.ReadableChunk WrappedByteString Char where
     fptr <- newForeignPtr_ p
     return . WrapBS $ BBase.fromForeignPtr (castForeignPtr fptr) 0 l
 
-instance SC.StreamChunk WrappedByteString Word8 where
+instance LL.ListLike (WrappedByteString Word8) Word8 where
   length        = BW.length . unWrap
   null          = BW.null . unWrap
+  singleton     = WrapBS . BW.singleton
   cons a        = WrapBS . BW.cons a . unWrap
   head          = BW.head . unWrap
   tail          = WrapBS . BW.tail . unWrap
@@ -44,6 +50,8 @@ instance SC.StreamChunk WrappedByteString Word8 where
   dropWhile p   = WrapBS . BW.dropWhile p . unWrap
   fromList      = WrapBS . BW.pack
   toList        = BW.unpack . unWrap
+
+instance SC.StreamChunk WrappedByteString Word8 where
   cMap          = bwmap
 
 bwmap :: (SC.StreamChunk s' el') =>
@@ -53,8 +61,8 @@ bwmap :: (SC.StreamChunk s' el') =>
 bwmap f xs = step xs
   where
   step bs
-    | SC.null bs = mempty
-    | True     = f (SC.head bs) `SC.cons` step (SC.tail bs)
+    | LL.null bs = mempty
+    | True     = f (LL.head bs) `LL.cons` step (LL.tail bs)
 
 -- a specialized version to use in the RULE
 bwmap' :: (Word8 -> Word8) ->
@@ -68,9 +76,14 @@ instance Monoid (WrappedByteString Char) where
     mempty = WrapBS BW.empty
     mappend a1 a2 = WrapBS (BW.append (unWrap a1) (unWrap a2))
 
-instance SC.StreamChunk WrappedByteString Char where
+instance LL.FoldableLL (WrappedByteString Char) Char where
+  foldl f z c = BC.foldl f z $ unWrap c
+  foldr f z c = BC.foldr f z $ unWrap c
+
+instance LL.ListLike (WrappedByteString Char) Char where
   length        = BC.length . unWrap
   null          = BC.null . unWrap
+  singleton     = WrapBS . BC.singleton
   cons a        = WrapBS . BC.cons a . unWrap
   head          = BC.head . unWrap
   tail          = WrapBS . BC.tail . unWrap
@@ -80,6 +93,8 @@ instance SC.StreamChunk WrappedByteString Char where
   dropWhile p   = WrapBS . BC.dropWhile p . unWrap
   fromList      = WrapBS . BC.pack
   toList        = BC.unpack . unWrap
+
+instance SC.StreamChunk WrappedByteString Char where
   cMap          = bcmap
 
 bcmap :: (SC.StreamChunk s' el') =>
@@ -89,8 +104,8 @@ bcmap :: (SC.StreamChunk s' el') =>
 bcmap f xs = step xs
   where
   step bs
-    | SC.null bs = mempty
-    | True     = f (SC.head bs) `SC.cons` step (SC.tail bs)
+    | LL.null bs = mempty
+    | True     = f (LL.head bs) `LL.cons` step (LL.tail bs)
 
 -- a specialized version to use in the RULE
 bcmap' :: (Char -> Char) ->

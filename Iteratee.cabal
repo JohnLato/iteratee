@@ -20,6 +20,10 @@ extra-source-files: README LICENSE CONTRIBUTORS Examples/headers.hs Examples/tes
 flag splitBase
   description: Choose the new split-up base package.
 
+flag buildTests
+  description: build test executables
+  default:     False
+
 Library
  Hs-Source-Dirs:        src
  ghc-options:           -O2 -Wall -fexcess-precision -fno-method-sharing
@@ -50,3 +54,15 @@ Library
  other-modules:         Data.Iteratee.IO.Fd
                         Data.Iteratee.IO.Handle
 
+Executable test
+  GHC-Options:     -Wall
+  Hs-Source-Dirs:  src, tests
+  Main-Is:         tests.hs
+  Other-Modules:   QuickCheckUtils
+  Build-Depends:   QuickCheck >= 1 && < 2
+  If flag(splitBase)
+    Build-Depends: base >= 3 && < 5
+  Else
+    Build-Depends: base >= 1 && < 2
+  if !flag(buildTests)
+    buildable:     False

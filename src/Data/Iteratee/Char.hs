@@ -16,22 +16,22 @@ module Data.Iteratee.Char (
   -- * Type synonyms
   Stream,
   Iteratee,
-  IterateeM,
   EnumeratorM,
   Line,
   -- * Word and Line processors
   line,
-  print_lines,
-  enum_lines,
-  enum_words,
+  printLines,
+  readLines,
+  enumLines,
+  enumWords,
 
   module Data.Iteratee.Base
 )
 
 where
 
-import Data.Iteratee.Base (StreamG (..), IterateeG, IterateeGM, EnumeratorGM, (==<<), liftI)
 import qualified Data.Iteratee.Base as Iter
+import Data.Iteratee.Base hiding (break)
 import Data.Char
 import Control.Monad.Trans
 
@@ -39,8 +39,7 @@ import Control.Monad.Trans
 -- This stream is used by many input parsers.
 type Stream = StreamG [] Char
 
-type Iteratee  m a = IterateeG  [] Char m a
-type IterateeM m a = IterateeGM [] Char m a
+type Iteratee = IterateeG [] Char
 
 -- Useful combinators for implementing iteratees and enumerators
 
@@ -55,17 +54,13 @@ type Line = String	-- The line of text, terminators are not included
 -- The code is the same as that of pure Iteratee, only the signature
 -- has changed.
 -- Compare the code below with GHCBufferIO.line_lazy
-line :: Monad m => IterateeM m (Either Line Line)
-line = Iter.break (\c -> c == '\r' || c == '\n') >>= check_next
- where
- check_next (line',Just '\r') = Iter.peek >>= \c ->
-	case c of
-	  Just '\n' -> Iter.head >> return (Right line')
-	  Just _    -> return (Right line')
-	  Nothing   -> return (Left line')
- check_next (line',Just _)  = return (Right line')
- check_next (line',Nothing) = return (Left line')
-
+line :: Monad m => IterateeG [] Char m (Maybe Line)
+line = Iter.break (\c -> c == '\r' || c == '\n') >>= \l ->
+       terminators >>= check l
+  where
+  check _ 0 = return Nothing
+  check l _ = return . Just $ l
+  terminators = heads "\r\n" >>= \l -> if l == 0 then heads "\n" else return l
 
 -- Line iteratees: processors of a stream whose elements are made of Lines
 
@@ -74,15 +69,32 @@ line = Iter.break (\c -> c == '\r' || c == '\n') >>= check_next
 
 -- |Print lines as they are received. This is the first `impure' iteratee
 -- with non-trivial actions during chunk processing
-print_lines :: IterateeGM [] Line IO ()
-print_lines = liftI $ Iter.Cont step
- where
- step (Chunk []) = print_lines
- step (Chunk ls) = lift (mapM_ pr_line ls) >> print_lines
- step EOF        = lift (putStrLn ">> natural end") >> liftI (Iter.Done () EOF)
- step stream     = lift (putStrLn ">> unnatural end") >>
-		   liftI (Iter.Done () stream)
- pr_line line'   = putStrLn $ ">> read line: " ++ line'
+printLines :: IterateeG [] Char IO ()
+printLines = lines'
+  where
+  lines' = Iter.break (\c -> c == '\r' || c == '\n') >>= \l ->
+               terminators >>= check l
+  check _  0 = return ()
+  check "" _ = return ()
+  check l  _ = liftIO (putStrLn l) >> lines'
+  terminators = heads "\r\n" >>= \l -> if l == 0 then heads "\n" else return l
+
+
+-- |Read a sequence of lines from the stream up to the empty lin
+-- The line can be terminated by CR, LF, or CRLF -- or by EOF or stream error.
+-- Return the read lines, in order, not including the terminating empty line
+-- Upon EOF or stream error, return the complete, terminated lines accumulated
+-- so far.
+
+readLines :: (Monad m) => IterateeG [] Char m (Either [Line] [Line])
+readLines = lines' []
+  where
+  lines' acc = Iter.break (\c -> c == '\r' || c == '\n') >>= \l ->
+               terminators >>= check acc l
+  check acc _  0 = return . Left . reverse $ acc -- no terminator found
+  check acc "" _ = return . Right . reverse $ acc
+  check acc l  _ = lines' (l:acc)
+  terminators = heads "\r\n" >>= \l -> if l == 0 then heads "\n" else return l
 
 
 -- |Convert the stream of characters to the stream of lines, and
@@ -93,35 +105,33 @@ print_lines = liftI $ Iter.Cont step
 -- This is the first proper iteratee-enumerator: it is the iteratee of the
 -- character stream and the enumerator of the line stream.
 
-enum_lines :: Monad m =>
-	      IterateeG [] Line m a ->
-              IterateeGM [] Char m (IterateeG [] Line m a)
-enum_lines iter@Iter.Done{} = return iter
-enum_lines Iter.Seek{}      = error "Seeking is not supported by enum_lines"
-enum_lines (Iter.Cont k)    = line >>= check_line k
- where
- check_line k' (Right "") =
-   enum_lines ==<< k' EOF      -- empty line, normal term
- check_line k' (Right l)  = enum_lines ==<< k' (Chunk [l])
- check_line k' _          = enum_lines ==<< k' (Error "EOF") -- abnormal termin
+enumLines :: (Functor m, Monad m) =>
+             IterateeG [] Line m a ->
+             IterateeG [] Char m (IterateeG [] Line m a)
+enumLines iter = line >>= check iter
+  where
+  --check :: Maybe Line -> IterateeG [] Char m (IterateeG [] Line m a)
+  check iter' Nothing  = return iter'
+  check iter' (Just l) = return . joinIM . fmap Iter.liftI $
+                         (runIter iter' $ Chunk [l])
+
 
 -- |Convert the stream of characters to the stream of words, and
 -- apply the given iteratee to enumerate the latter.
 -- Words are delimited by white space.
 -- This is the analogue of List.words
--- One should keep in mind that enum_words is a more general, monadic
+-- One should keep in mind that enumWords is a more general, monadic
 -- function.
 
-enum_words :: Monad m =>
-	      IterateeG [] String m a ->
-              IterateeGM [] Char m (IterateeG [] String m a)
-enum_words iter@Iter.Done{} = return iter
-enum_words Iter.Seek{}      = error "Seeking not supported by enum_words"
-enum_words (Iter.Cont k)    = Iter.dropWhile isSpace >>
-                              Iter.break isSpace >>= check_word k
- where
- check_word k' ("",_)  = enum_words ==<< k' EOF
- check_word k' (str,_) = enum_words ==<< k' (Chunk [str])
+enumWords :: (Functor m, Monad m) =>
+	     IterateeG [] String m a ->
+             IterateeG [] Char m (IterateeG [] String m a)
+enumWords iter = Iter.break isSpace >>= check iter
+  where
+  --check :: String -> IterateeG [] Char m (IterateeG [] String m a)
+  check iter' "" = return iter'
+  check iter' w  = return . joinIM . fmap Iter.liftI $
+                   (runIter iter' $ Chunk [w])
 
 
 -- ------------------------------------------------------------------------

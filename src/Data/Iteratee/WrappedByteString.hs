@@ -24,8 +24,8 @@ instance Monoid (WrappedByteString Word8) where
   mappend a1 a2 = WrapBS (BW.append (unWrap a1) (unWrap a2))
 
 instance LL.FoldableLL (WrappedByteString Word8) Word8 where
-  foldl f z c = BW.foldl f z $ unWrap c
-  foldr f z c = BW.foldr f z $ unWrap c
+  foldl f z = BW.foldl f z . unWrap
+  foldr f z = BW.foldr f z . unWrap
 
 instance SC.ReadableChunk WrappedByteString Word8 where
   readFromPtr p l = do
@@ -77,8 +77,8 @@ instance Monoid (WrappedByteString Char) where
     mappend a1 a2 = WrapBS (BW.append (unWrap a1) (unWrap a2))
 
 instance LL.FoldableLL (WrappedByteString Char) Char where
-  foldl f z c = BC.foldl f z $ unWrap c
-  foldr f z c = BC.foldr f z $ unWrap c
+  foldl f z = BC.foldl f z . unWrap
+  foldr f z = BC.foldr f z . unWrap
 
 instance LL.ListLike (WrappedByteString Char) Char where
   length        = BC.length . unWrap

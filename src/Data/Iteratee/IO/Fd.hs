@@ -9,10 +9,8 @@ module Data.Iteratee.IO.Fd(
   -- * File enumerators
   -- ** FileDescriptor based enumerators
   enumFd,
-  enumFdRandom,
   -- * Iteratee drivers
-  fileDriverFd,
-  fileDriverRandomFd,
+  fileDriverFd
 #endif
 )
 
@@ -23,12 +21,9 @@ import Data.Iteratee.Base.StreamChunk (ReadableChunk (..))
 import Data.Iteratee.Base
 import Data.Iteratee.Binary()
 import Data.Iteratee.IO.Base
-import Data.Int
 
 import Foreign.Ptr
 import Foreign.Marshal.Alloc
-
-import System.IO (SeekMode(..))
 
 import System.Posix hiding (FileOffset)
 
@@ -39,21 +34,23 @@ import System.Posix hiding (FileOffset)
 -- over the entire contents of a file, in order, unless stopped by
 -- the iteratee.  In particular, seeking is not supported.
 enumFd :: ReadableChunk s el => Fd -> EnumeratorGM s el IO a
-enumFd fd iter' = IM $ allocaBytes (fromIntegral buffer_size) $ loop iter'
+enumFd fd iter' = allocaBytes (fromIntegral buffer_size) $ loop iter'
   where
     buffer_size = 4096
-    loop iter@Done{} _p = return iter
-    loop _iter@Seek{} _p = error "enumFd is not compatabile with seek IO"
-    loop (Cont step) p = do
+    loop iter p = do
       n <- myfdRead fd (castPtr p) buffer_size
       case n of
-        Left _errno -> unIM $ step (Error "IO error")
-        Right 0 -> return iter'
+        Left _errno -> enumErr "IO error" iter
+        Right 0 -> return iter
         Right n' -> do
           s <- readFromPtr p (fromIntegral n')
-          im <- unIM $ step (Chunk s)
-	  loop im p
+          igv <- runIter iter (Chunk s)
+          check p igv
+    check _p (Done x _) = return . return $ x
+    check p  (Cont i Nothing) = loop i p
+    check _p (Cont _ (Just e)) = return $ throwErr e
 
+{-
 -- |The enumerator of a POSIX File Descriptor: a variation of enumFd that
 -- supports RandomIO (seek requests)
 enumFdRandom :: ReadableChunk s el => Fd -> EnumeratorGM s el IO a
@@ -95,23 +92,20 @@ enumFdRandom fd iter =
          s <- readFromPtr p (fromIntegral n')
          im <- unIM $ step (Chunk s)
 	 loop (off + fromIntegral len,fromIntegral n') im p
+-}
 
 -- |Process a file using the given IterateeGM.  This function wraps
 -- enumFd as a convenience.
-fileDriverFd :: ReadableChunk s el => IterateeGM s el IO a ->
+fileDriverFd :: ReadableChunk s el => IterateeG s el IO a ->
                 FilePath ->
-                IO (Either (String, a) a)
+                IO a
 fileDriverFd iter filepath = do
   fd <- openFd filepath ReadOnly Nothing defaultFileFlags
-  result <- unIM $ (enumFd fd >. enumEof) ==<< iter
+  result <- enumFd fd iter >>= run
   closeFd fd
-  print_res result
- where
-  print_res (Done a (Error err)) = return $ Left (err, a)
-  print_res (Done a _) = return $ Right a
-  print_res (Cont _)   = return $ Left ("Iteratee unfinished", undefined)
-  print_res (Seek _ _) = return $ Left ("Iteratee unfinished", undefined)
+  return result
 
+{-
 -- |Process a file using the given IterateeGM.  This function wraps
 -- enumFdRandom as a convenience.
 fileDriverRandomFd :: ReadableChunk s el => IterateeGM s el IO a ->
@@ -127,5 +121,7 @@ fileDriverRandomFd iter filepath = do
   print_res (Done a _) = return $ Right a
   print_res (Cont _)   = return $ Left ("Iteratee unfinished", undefined)
   print_res (Seek _ _) = return $ Left ("Iteratee unfinished", undefined)
+-}
 
 #endif
+

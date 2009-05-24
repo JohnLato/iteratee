@@ -1,5 +1,5 @@
 Name:		iteratee
-Version:        0.1.1
+Version:        0.2
 Cabal-Version:  >= 1.2
 Description:	The IterateeGM monad provides strict, safe, and functional
                 I/O.  In addition to pure Iteratee processors, file IO and 
@@ -46,8 +46,8 @@ Library
                         Data.Iteratee.Base.StreamChunk
                         Data.Iteratee.Binary
                         Data.Iteratee.Char
-                        Data.Iteratee.Codecs.Wave
-                        Data.Iteratee.Codecs.Tiff
+                        --Data.Iteratee.Codecs.Wave
+                        --Data.Iteratee.Codecs.Tiff
                         Data.Iteratee.IO
                         Data.Iteratee.IO.Base
                         Data.Iteratee.WrappedByteString

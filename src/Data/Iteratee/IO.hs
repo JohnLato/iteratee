@@ -6,15 +6,15 @@ module Data.Iteratee.IO(
   -- * File enumerators
   -- ** Handle-based enumerators
   enumHandle,
-  enumHandleRandom,
+  --enumHandleRandom,
 #if defined(USE_POSIX)
   -- ** FileDescriptor based enumerators
   enumFd,
-  enumFdRandom,
+  --enumFdRandom,
 #endif
   -- * Iteratee drivers
   fileDriver,
-  fileDriverRandom,
+  --fileDriverRandom,
 )
 
 where
@@ -31,37 +31,39 @@ import Data.Iteratee.IO.Fd
 -- If Posix is available, use the fileDriverRandomFd as fileDriverRandom.  Otherwise, use a handle-based variant.
 #if defined(USE_POSIX)
 
--- |Process a file using the given IterateeGM.  This function wraps
+-- |Process a file using the given IterateeG.  This function wraps
 -- enumFd as a convenience.
-fileDriver :: ReadableChunk s el => IterateeGM s el IO a ->
+fileDriver :: ReadableChunk s el => IterateeG s el IO a ->
               FilePath ->
-              IO (Either (String, a) a)
+              IO a
 fileDriver = fileDriverFd
 
--- |Process a file using the given IterateeGM.  This function wraps
+{-
+-- |Process a file using the given IterateeG.  This function wraps
 -- enumFdRandom as a convenience.
-fileDriverRandom :: ReadableChunk s el => IterateeGM s el IO a ->
+fileDriverRandom :: ReadableChunk s el => IterateeG s el IO a ->
                     FilePath ->
-                    IO (Either (String, a) a)
+                    IO a
 fileDriverRandom = fileDriverRandomFd
+-}
 
 #else
 
 -- -----------------------------------------------
 -- Handle-based operations for compatibility.
 
--- |Process a file using the given IterateeGM.  This function wraps
+-- |Process a file using the given IterateeG.  This function wraps
 -- enumHandle as a convenience.
-fileDriver :: ReadableChunk s el => IterateeGM s el IO a ->
+fileDriver :: ReadableChunk s el => IterateeG s el IO a ->
               FilePath ->
-              IO (Either (String, a) a)
+              IO a
 fileDriver = fileDriverHandle
 
--- |Process a file using the given IterateeGM.  This function wraps
+-- |Process a file using the given IterateeG.  This function wraps
 -- enumFdHandle as a convenience.
-fileDriverRandom :: ReadableChunk s el => IterateeGM s el IO a ->
+fileDriverRandom :: ReadableChunk s el => IterateeG s el IO a ->
                     FilePath ->
-                    IO (Either (String, a) a)
+                    IO a
 fileDriverRandom = fileDriverRandomHandle
 
 #endif

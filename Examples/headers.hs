@@ -38,39 +38,45 @@ import Data.Word
 -- Also, the iteratee may have found an error and decided to abort further
 -- processing. Flushing the remainder of the input is reasonable then.
 -- One can make a different choice...
+-- Upon further consideration, I reversed the earlier decision:
+-- if we detected a framing error, we can't trust the rest of the stream
+-- We can't skip till the EOF chunk as we aren't even sure we can
+-- recognize the EOF chunk any more.
+-- So, we just report the _recoverable_ error upstream:
+-- the recovery will be to report the accumlated nested iteratee.
 
-enum_chunk_decoded :: Monad m => Iteratee m a -> IterateeM m a
-enum_chunk_decoded = docase
- where
- docase iter@Done{} =
-    liftI iter >>= (\r -> (enum_chunk_decoded ==<< skipToEof) >> return r)
- docase iter@(Cont k) = line >>= check_size
+enum_chunk_decoded :: Monad m => Iteratee m a -> m (Iteratee m a)
+enum_chunk_decoded iter = return read_size
   where
-  check_size (Right "0") = line >> k EOF
-  check_size (Right str) =
-     maybe (k . Error $ "Bad chunk size: " ++ str) (read_chunk iter)
-         $ read_hex 0 str
-  check_size _ = k (Error "Error reading chunk size")
+  read_size = Iter.break (== '\r') >>= checkCRLF iter . check_size
+  checkCRLF iter' m = do
+    n <- heads "\r\n"
+    if n == 2 then m else frame_err "Bad Chunk: no CRLF" iter'
+  check_size "0" = checkCRLF iter (joinIM $ enumEof iter)
+  check_size str@(_:_) =
+    maybe (frame_err ("Bad chunk size: " ++ str) iter) read_chunk $
+      read_hex 0 str
+  check_size _ = frame_err "Error reading chunk size" iter
 
- read_chunk iter size =
-     do
-     r  <- Iter.take size iter
-     c1 <- Iter.head
-     c2 <- Iter.head
-     case (c1,c2) of
-       (Just '\r',Just '\n') -> docase r
-       _ -> (enum_chunk_decoded ==<< skipToEof) >>
-	    enumErr "Bad chunk trailer" r
+  read_chunk size = Iter.take size iter >>= \r -> checkCRLF r (joinIM $ enum_chunk_decoded r)
+  read_hex acc "" = Just acc
+  read_hex acc (d:rest) | isHexDigit d = read_hex (16*acc + digitToInt d) rest
+  read_hex acc _ = Nothing
 
- read_hex acc "" = Just acc
- read_hex acc (d:rest) | isHexDigit d = read_hex (16*acc + digitToInt d) rest
- read_hex _acc _ = Nothing
-
+  frame_err e iter = IterateeG (\_ ->
+                     return $ Cont (joinIM $ enumErr e $ iter)
+                     (Just "Frame error"))
 
 -- ------------------------------------------------------------------------
 -- Tests
 
 -- Pure tests, requiring no IO
+
+read_lines_rest :: Iteratee Identity (Either [Line] [Line], String)
+read_lines_rest = do
+  ls <- readLines
+  rest <- Iter.break (const False)
+  return (ls, rest)
 
 test_str1 :: String
 test_str1 =
@@ -79,101 +85,60 @@ test_str1 =
 
 testp1 :: Bool
 testp1 =
-    let Done (Done lines' EOF) (Chunk rest)
-	    = runIdentity . unIM $ enumPure1Chunk test_str1 ==<<
-	                             (enum_lines ==<< stream2list)
+    let (Right lines, rest) = runIdentity . run . joinIM $
+         enumPure1Chunk test_str1 read_lines_rest
     in
-    lines' == ["header1: v1","header2: v2","header3: v3","header4: v4",
-	      "header5: v5","header6: v6","header7: v7"]
+    lines == ["header1: v1","header2: v2","header3: v3","header4: v4",
+	     "header5: v5","header6: v6","header7: v7"]
     && rest == "rest\n"
 
 testp2 :: Bool
 testp2 =
-    let Done (Done lines' EOF) (Chunk rest)
-	    = runIdentity . unIM $ enumPureNChunk test_str1 5 ==<<
-	                             (enum_lines ==<< stream2list)
+    let (Right lines, rest) = runIdentity . run . joinIM $
+                              enumPureNChunk test_str1 5 read_lines_rest
     in
-    lines' == ["header1: v1","header2: v2","header3: v3","header4: v4",
-	      "header5: v5","header6: v6","header7: v7"]
-    && rest == "r"
+    lines == ["header1: v1","header2: v2","header3: v3","header4: v4",
+	     "header5: v5","header6: v6","header7: v7"]
+    && rest == "rest\n"
 
-
-testw1 :: Bool
-testw1 =
-    let test_str = "header1: v1\rheader2: v2\r\nheader3:\t v3"
-	expected = ["header1:","v1","header2:","v2","header3:","v3"] in
-    let run_test test_str' =
-         let Done (Done words' EOF) EOF
-	       = runIdentity . unIM $ (enumPureNChunk test_str' 5 >. enumEof)
-	                                ==<< (enum_words ==<< stream2list)
-         in words'
-    in
-    and [run_test test_str == expected,
-	 run_test (test_str ++ " ") == expected]
 
 -- Run the complete test, reading the headers and the body
 
--- This simple iteratee is used to process a variety of streams:
--- embedded, interleaved, etc.
-line_printer :: IterateeGM [] Char IO (IterateeG [] Line IO ())
-line_printer = enum_lines ==<< print_lines
-
--- Two sample processors
-
--- Read the headers, print the headers, read the lines of the chunk-encoded
--- body and print each line as it has been read
-read_headers_print_body :: IterateeGM [] Char IO (IterateeG [] Line IO ())
-read_headers_print_body = do
-     headers' <- enum_lines ==<< stream2list
-     case headers' of
-	Done headers EOF -> lift $ do
-	   putStrLn "Complete headers"
-	   print headers
-	Done headers (Error err) -> lift $ do
-	   putStrLn $ "Incomplete headers due to " ++ err
-	   print headers
-        _ -> lift $ putStrLn "Pattern not matched"
-
-     lift $ putStrLn "\nLines of the body follow"
-     enum_chunk_decoded ==<< line_printer
-
--- Read the headers and print the header right after it has been read
--- Read the lines of the chunk-encoded body and print each line as
--- it has been read
-print_headers_print_body :: IterateeGM [] Char IO (IterateeG [] Line IO ())
-print_headers_print_body = do
-     lift $ putStrLn "\nLines of the headers follow"
-     line_printer
-     lift $ putStrLn "\nLines of the body follow"
-     enum_chunk_decoded ==<< line_printer
-
--- This iteratee uses a mapStream to convert the stream from
--- Word8 elements to Char elements.
--- This is necessary because we want only ASCII chars, not unicode chars.
--- this version only works on Posix systems
-{-
-test_driver_full iter filepath = do
-  fd <- openFd filepath ReadOnly Nothing defaultFileFlags
+test_driver_full filepath = do
   putStrLn "About to read headers"
-  unIM $ (IIO.enumFd fd >. enumEof) ==<< (mapStream mapfn ==<< iter)
-  closeFd fd
+  result <- fileDriver (mapStream mapfn read_headers_body) filepath >>= run
   putStrLn "Finished reading"
+  case result of
+    (Right headers, Right body, _) ->
+      do
+      putStrLn "Complete headers"
+      print headers
+      putStrLn "\nComplete body"
+      print body
+    (Left headers, _, status) ->
+      do
+      putStrLn $ "Problem " ++ show status
+      putStrLn "Incomplete headers"
+      print headers
+    (Right headers, Left body, status) ->
+      do
+      putStrLn "Complete headers"
+      print headers
+      putStrLn $ "Problem " ++ show status
+      putStrLn "Incomplete body"
+      print body
  where
   mapfn :: Word8 -> Char
   mapfn = chr . fromIntegral
--}
+  read_headers_body = do
+    headers <- readLines
+    body <- joinIM $ enum_chunk_decoded readLines
+    status <- isFinished
+    return (headers, body, status)
 
-test_driver_full iter filepath = do
-  putStrLn "About to read headers"
-  fileDriverRandom (mapStream mapfn ==<< iter) filepath
-  putStrLn "Finished reading"
- where
-  mapfn :: Word8 -> Char
-  mapfn = chr . fromIntegral
+test31 = test_driver_full "test_full1.txt"
+test32 = test_driver_full "test_full2.txt"
+test33 = test_driver_full "test_full3.txt"
 
-test31 = test_driver_full read_headers_print_body "test_full1.txt"
-test32 = test_driver_full read_headers_print_body "test_full2.txt"
-test33 = test_driver_full read_headers_print_body "test_full3.txt"
-
-test34 = test_driver_full print_headers_print_body "test_full3.txt"
+test34 = test_driver_full "test_full3.txt"
 

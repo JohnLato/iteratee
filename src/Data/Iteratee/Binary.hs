@@ -5,14 +5,13 @@ module Data.Iteratee.Binary (
   -- * Types
   Endian (..),
   -- * Endian multi-byte iteratees
-  endian_read2,
-  endian_read3,
-  endian_read4
+  endianRead2,
+  endianRead3,
+  endianRead4
 )
 where
 
 import Data.Iteratee.Base.StreamChunk (StreamChunk)
-import Data.Iteratee.Base (IterateeGM)
 import qualified Data.Iteratee.Base as It
 import Data.Word
 import Data.Bits
@@ -29,46 +28,49 @@ data Endian = MSB -- ^ Most Significant Byte is first (big-endian)
   | LSB           -- ^ Least Significan Byte is first (little-endian)
   deriving (Eq, Ord, Show, Enum)
 
-endian_read2 :: (StreamChunk s Word8, Monad m) => Endian -> IterateeGM s Word8 m (Maybe Word16)
-endian_read2 e =
-  It.bindm It.head $ \c1 ->
-  It.bindm It.head $ \c2 ->
+endianRead2 :: (StreamChunk s Word8, Monad m) => Endian ->
+                It.IterateeG s Word8 m Word16
+endianRead2 e = do
+  c1 <- It.head
+  c2 <- It.head
   case e of
-    MSB -> return $ return $ (fromIntegral c1 `shiftL` 8) .|. fromIntegral c2
-    LSB -> return $ return $ (fromIntegral c2 `shiftL` 8) .|. fromIntegral c1
+    MSB -> return $ (fromIntegral c1 `shiftL` 8) .|. fromIntegral c2
+    LSB -> return $ (fromIntegral c2 `shiftL` 8) .|. fromIntegral c1
 
 -- |read 3 bytes in an endian manner.  If the first bit is set (negative),
 -- set the entire first byte so the Word32 can be properly set negative as
 -- well.
-endian_read3 :: (StreamChunk s Word8, Monad m) => Endian -> IterateeGM s Word8 m (Maybe Word32)
-endian_read3 e = 
-  It.bindm It.head $ \c1 ->
-  It.bindm It.head $ \c2 ->
-  It.bindm It.head $ \c3 ->
+endianRead3 :: (StreamChunk s Word8, Monad m) => Endian ->
+                It.IterateeG s Word8 m Word32
+endianRead3 e = do
+  c1 <- It.head
+  c2 <- It.head
+  c3 <- It.head
   case e of
-    MSB -> return $ return $ (((fromIntegral c1
+    MSB -> return $ (((fromIntegral c1
                         `shiftL` 8) .|. fromIntegral c2)
                         `shiftL` 8) .|. fromIntegral c3
     LSB ->
      let m :: Int32
          m = shiftR (shiftL (fromIntegral c3) 24) 8 in
-     return $ return $ (((fromIntegral c3
+     return $ (((fromIntegral c3
                         `shiftL` 8) .|. fromIntegral c2)
                         `shiftL` 8) .|. fromIntegral m
 
-endian_read4 :: (StreamChunk s Word8, Monad m) => Endian -> IterateeGM s Word8 m (Maybe Word32)
-endian_read4 e =
-  It.bindm It.head $ \c1 ->
-  It.bindm It.head $ \c2 ->
-  It.bindm It.head $ \c3 ->
-  It.bindm It.head $ \c4 ->
+endianRead4 :: (StreamChunk s Word8, Monad m) => Endian ->
+                It.IterateeG s Word8 m Word32
+endianRead4 e = do
+  c1 <- It.head
+  c2 <- It.head
+  c3 <- It.head
+  c4 <- It.head
   case e of
-    MSB -> return $ return $ 
+    MSB -> return $ 
 	       (((((fromIntegral c1
 		`shiftL` 8) .|. fromIntegral c2)
 	        `shiftL` 8) .|. fromIntegral c3)
 	        `shiftL` 8) .|. fromIntegral c4
-    LSB -> return $ return $ 
+    LSB -> return $ 
 	       (((((fromIntegral c4
 		`shiftL` 8) .|. fromIntegral c3)
 	        `shiftL` 8) .|. fromIntegral c2)

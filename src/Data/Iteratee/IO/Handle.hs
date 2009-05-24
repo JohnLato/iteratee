@@ -6,10 +6,10 @@
 module Data.Iteratee.IO.Handle(
   -- * File enumerators
   enumHandle,
-  enumHandleRandom,
+  --enumHandleRandom,
   -- * Iteratee drivers
   fileDriverHandle,
-  fileDriverRandomHandle,
+  --fileDriverRandomHandle,
 )
 
 where
@@ -17,12 +17,10 @@ where
 import Data.Iteratee.Base.StreamChunk (ReadableChunk (..))
 import Data.Iteratee.Base
 import Data.Iteratee.Binary()
-import Data.Iteratee.IO.Base
 
 import Data.Int
 import Control.Exception.Extensible
 
-import Foreign.Ptr
 import Foreign.Marshal.Alloc
 
 import System.IO
@@ -35,21 +33,24 @@ import System.IO
 -- over the entire contents of a file, in order, unless stopped by
 -- the iteratee.  In particular, seeking is not supported.
 enumHandle :: ReadableChunk s el => Handle -> EnumeratorGM s el IO a
-enumHandle h iter' = IM $ allocaBytes (fromIntegral buffer_size) $ loop iter'
+enumHandle h i = allocaBytes (fromIntegral buffer_size) $ loop i
   where
     buffer_size = 4096
-    loop iter@Done{} _p     = return iter
-    loop _iter@Seek{} _p    = error "enumH is not compatabile with seek IO"
-    loop iter@(Cont step) p = do
-      n <- try $ hGetBuf h p buffer_size
+    loop iter p = do
+      n <- (try $ hGetBuf h p buffer_size) :: IO (Either SomeException Int)
       case n of
-        Left ex -> unIM $ step (Error $ show (ex :: SomeException))
-        Right 0 -> return iter
+        Left _   -> enumErr "IO error" iter
+        Right 0  -> return iter
         Right n' -> do
           s <- readFromPtr p (fromIntegral n')
-          im <- unIM $ step (Chunk s)
-	  loop im p
+          igv <- runIter iter (Chunk s)
+          check p igv
+    check _p (Done x _) = return . return $ x
+    check p  (Cont i' Nothing) = loop i' p
+    check _p (Cont _ (Just e)) = return $ throwErr e
 
+
+{-
 -- |The enumerator of a POSIX File Descriptor: a variation of enumFd that
 -- supports RandomIO (seek requests)
 enumHandleRandom :: ReadableChunk s el => Handle -> EnumeratorGM s el IO a
@@ -92,6 +93,7 @@ enumHandleRandom h iter =
          s <- readFromPtr p (fromIntegral n')
          im <- unIM $ step (Chunk s)
 	 loop (off + fromIntegral len,fromIntegral n') im p
+-}
 
 -- ----------------------------------------------
 -- File Driver wrapper functions.
@@ -99,20 +101,16 @@ enumHandleRandom h iter =
 -- |Process a file using the given IterateeGM.  This function wraps
 -- enumHandle as a convenience.
 fileDriverHandle :: ReadableChunk s el =>
-                    IterateeGM s el IO a ->
+                    IterateeG s el IO a ->
                     FilePath ->
-                    IO (Either (String, a) a)
+                    IO a
 fileDriverHandle iter filepath = do
   h <- openBinaryFile filepath ReadMode
-  result <- unIM $ (enumHandle h >. enumEof) ==<< iter
+  result <- enumHandle h iter >>= run
   hClose h
-  print_res result
- where
-  print_res (Done a (Error err)) = return $ Left (err, a)
-  print_res (Done a _) = return $ Right a
-  print_res (Cont _)   = return $ Left ("Iteratee unfinished", undefined)
-  print_res (Seek _ _) = return $ Left ("Iteratee unfinished", undefined)
+  return result
 
+{-
 -- |Process a file using the given IterateeGM.  This function wraps
 -- enumHandleRandom as a convenience.
 fileDriverRandomHandle :: ReadableChunk s el =>
@@ -129,4 +127,5 @@ fileDriverRandomHandle iter filepath = do
   print_res (Done a _) = return $ Right a
   print_res (Cont _)   = return $ Left ("Iteratee unfinished", undefined)
   print_res (Seek _ _) = return $ Left ("Iteratee unfinished", undefined)
+-}
 

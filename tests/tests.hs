@@ -13,11 +13,13 @@ import Control.Monad.Identity
 import Text.Printf (printf)
 import System.Environment (getArgs)
 
+instance Show (a -> b) where
+  show _ = "<<function>>"
+
 -- ---------------------------------------------
 -- List <-> Stream
 
 runner1 = runIdentity . Iter.run . runIdentity
-runner2 = runIdentity . Iter.run
 
 prop_list xs = runner1 (enumPure1Chunk xs stream2list) == xs
   where types = xs :: [Int]
@@ -25,17 +27,16 @@ prop_list xs = runner1 (enumPure1Chunk xs stream2list) == xs
 prop_clist xs n = n > 0 ==> runner1 (enumPureNChunk xs n stream2list) == xs
   where types = xs :: [Int]
 
-prop_breakAll xs = runner1 (enumPure1Chunk xs (Iter.break (const True))) == []
+prop_break f xs = runner1 (enumPure1Chunk xs (Iter.break f)) == fst (break f xs)
   where types = xs :: [Int]
 
-prop_breakNone xs = runner1 (enumPure1Chunk xs (Iter.break (const False))) == xs
+prop_break2 f xs = runner1 (enumPure1Chunk xs (Iter.break f >> stream2list)) == snd (break f xs)
   where types = xs :: [Int]
 
-prop_break xs = runner1 (enumPure1Chunk xs (Iter.break (<= 10))) == fst (break (<= 10) xs)
+prop_head xs = length xs > 0 ==> runner1 (enumPure1Chunk xs Iter.head) == head xs
   where types = xs :: [Int]
 
-prop_head [] = True
-prop_head xs = runner1 (enumPure1Chunk xs Iter.head) == head xs
+prop_head2 xs = length xs > 0 ==> runner1 (enumPure1Chunk xs (Iter.head >> stream2list)) == tail xs
   where types = xs :: [Int]
 
 prop_peek xs = runner1 (enumPure1Chunk xs peek) == sHead xs
@@ -44,17 +45,25 @@ prop_peek xs = runner1 (enumPure1Chunk xs peek) == sHead xs
   sHead [] = Nothing
   sHead (x:_) = Just x
 
+prop_peek2 xs = runner1 (enumPure1Chunk xs (peek >> stream2list)) == xs
+  where types = xs :: [Int]
+
+-- ---------------------------------------------
+-- Simple enumerator tests
+
+
 -- ---------------------------------------------
 tests = [
   testGroup "Elementary" [
     testProperty "list" prop_list,
     testProperty "chunkList" prop_clist],
   testGroup "Simple Iteratees" [
-    testProperty "breakAll" prop_breakAll,
-    testProperty "breakNone" prop_breakNone,
     testProperty "break" prop_break,
+    testProperty "break2" prop_break2,
     testProperty "head" prop_head,
-    testProperty "peek" prop_peek
+    testProperty "head2" prop_head2,
+    testProperty "peek" prop_peek,
+    testProperty "peek2" prop_peek2
     ]
   ]
 

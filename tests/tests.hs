@@ -55,11 +55,12 @@ prop_peek2 xs = runner1 (enumPure1Chunk xs (peek >> stream2list)) == xs
 
 type I = IterateeG [] Int Identity [Int]
 
-prop_enumChunks n xs i = n > 0 ==>
+-- guard against null lists for head
+prop_enumChunks n xs i = n > 0 && length xs > 0 ==>
   runner1 (enumPure1Chunk xs i) == runner1 (enumPureNChunk xs n i)
   where types = (n :: Int, xs :: [Int], i :: I)
 
--- guard agains null lists for head
+-- guard against null lists for head
 prop_app1 xs ys i = (length xs > 0 && length ys > 0) ==>
                     runner1 (enumPure1Chunk ys (joinIM $ enumPure1Chunk xs i))
                     == runner1 (enumPure1Chunk (xs ++ ys) i)
@@ -87,8 +88,8 @@ tests = [
     ,testProperty "head2" prop_head2
     ,testProperty "peek" prop_peek
     ,testProperty "peek2" prop_peek2
-    ],
-  testGroup "Simple Enumerators/Combinators" [
+    ]
+  ,testGroup "Simple Enumerators/Combinators" [
     testProperty "enumPureNChunk" prop_enumChunks
     ,testProperty "enum append 1" prop_app1
     ,testProperty "enum sequencing" prop_app2

@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleInstances, FlexibleContexts #-}
 
 module QCUtils where
 
@@ -16,6 +16,13 @@ instance (Show a, StreamChunk s el) => Show (IterateeG s el Identity a) where
   show = (++) "<<Iteratee>> " . show . runIdentity . run
 
 -- Arbitrary instances
+
+instance Arbitrary (c el) => Arbitrary (StreamG c el) where
+  arbitrary = do
+    err <- arbitrary
+    xs <- arbitrary
+    elements [EOF err, Chunk xs]
+
 instance (Num a, Ord a, Monad m) => Arbitrary (IterateeG [] a m [a]) where
   arbitrary = elements [
               I.head >> stream2list

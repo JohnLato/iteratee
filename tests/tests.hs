@@ -35,6 +35,9 @@ prop_functor str@(EOF _) f = isEOF $ fmap f str
 prop_functor str@(Chunk xs) f = fmap f str == Chunk (fmap f xs)
   where types = (str :: ST, f :: Int -> Integer)
 
+prop_mappend2 str = str `mappend` mempty == mempty `mappend` str
+  where types = (str :: ST)
+
 
 isChunk (Chunk _) = True
 isChunk (EOF _)   = False
@@ -119,6 +122,33 @@ prop_isFinished2 = runner1 (enumErr "Error" (isFinished :: IterateeG [] Int Iden
 
 -- take, mapStream, convStream, and takeR
 
+runner2 = runIdentity . run . runner1
+
+prop_mapStream xs i = length xs > 0 ==>
+                      runner2 (enumPure1Chunk xs $ mapStream id i)
+                      == runner1 (enumPure1Chunk xs i)
+  where types = (i :: I, xs :: [Int])
+
+prop_mapStream2 xs n i = n > 0 && length xs > 0 ==>
+                         runner2 (enumPureNChunk xs n $ mapStream id i)
+                         == runner1 (enumPure1Chunk xs i)
+  where types = (i :: I, xs :: [Int])
+
+prop_mapjoin xs i = length xs > 0 ==>
+  runIdentity (run (joinI . runIdentity $ enumPure1Chunk xs $ mapStream id i))
+  == runner1 (enumPure1Chunk xs i)
+  where types = (i :: I, xs :: [Int])
+
+prop_take xs n = n >= 0 ==>
+                 runner2 (enumPure1Chunk xs $ Iter.take n stream2list)
+                 == runner1 (enumPure1Chunk (Prelude.take n xs) stream2list)
+  where types = (xs :: [Int])
+
+prop_take2 xs n = n > 0 ==>
+                  runner2 (enumPure1Chunk xs $ Iter.take n peek)
+                  == runner1 (enumPure1Chunk (Prelude.take n xs) peek)
+  where types = (xs :: [Int])
+
 -- ---------------------------------------------
 tests = [
   testGroup "Elementary" [
@@ -127,6 +157,7 @@ tests = [
   ,testGroup "StreamG tests" [
     testProperty "mempty" prop_mempty
     ,testProperty "mappend" prop_mappend
+    ,testProperty "mappend associates" prop_mappend
     ,testProperty "functor" prop_functor
   ]
   ,testGroup "Simple Iteratees" [
@@ -146,6 +177,13 @@ tests = [
     ,testProperty "enumEof" prop_eof
     ,testProperty "isFinished" prop_isFinished
     ,testProperty "isFinished error" prop_isFinished2
+    ]
+  ,testGroup "Nested iteratees" [
+    testProperty "mapStream identity" prop_mapStream
+    ,testProperty "mapStream identity 2" prop_mapStream2
+    ,testProperty "mapStream identity joinI" prop_mapjoin
+    ,testProperty "take" prop_take
+    ,testProperty "take (finished iteratee)" prop_take
     ]
   ]
 

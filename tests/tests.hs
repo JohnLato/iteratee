@@ -61,17 +61,16 @@ prop_enumChunks n xs i = n > 0 && length xs > 0 ==>
   where types = (n :: Int, xs :: [Int], i :: I)
 
 -- guard against null lists for head
-prop_app1 xs ys i = (length xs > 0 && length ys > 0) ==>
+prop_app1 xs ys i = (length xs > 0 || length ys > 0) ==>
                     runner1 (enumPure1Chunk ys (joinIM $ enumPure1Chunk xs i))
                     == runner1 (enumPure1Chunk (xs ++ ys) i)
   where types = (xs :: [Int], ys :: [Int], i :: I)
 
-prop_app2 xs ys = (length xs > 0 && length ys > 0) ==>
-                  runner1 ((enumPure1Chunk xs >. enumPure1Chunk ys) stream2list)
+prop_app2 xs ys = runner1 ((enumPure1Chunk xs >. enumPure1Chunk ys) stream2list)
                   == runner1 (enumPure1Chunk (xs ++ ys) stream2list)
   where types = (xs :: [Int], ys :: [Int])
 
-prop_app3 xs ys i = (length xs > 0 && length ys > 0) ==>
+prop_app3 xs ys i = (length xs > 0 || length ys > 0) ==>
                     runner1 ((enumPure1Chunk xs >. enumPure1Chunk ys) i)
                     == runner1 (enumPure1Chunk (xs ++ ys) i)
   where types = (xs :: [Int], ys :: [Int], i :: I)

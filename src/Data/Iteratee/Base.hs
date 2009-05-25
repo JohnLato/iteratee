@@ -369,14 +369,18 @@ take n' iter = IterateeG (step n')
                return (Done i' s2)
 
 
-{-
 -- |Read n elements from a stream and apply the given iteratee to the
 -- stream of the read elements. If the given iteratee accepted fewer
 -- elements, we stop.
 -- This is the variation of `take' with the early termination
 -- of processing of the outer stream once the processing of the inner stream
--- finished early. This variation is particularly useful for randomIO,
--- where we do not have to care to `drain the input stream'.
+-- finished early.
+{-
+takeR 0 iter = return iter
+takeR n iter = IterateeG (step n')
+  where
+  step n (Chunk str) | SC.null str = return
+
 takeR n (Cont k)     = liftI $ Cont step
   where
   step chunk@(Chunk str)

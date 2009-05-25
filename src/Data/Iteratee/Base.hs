@@ -74,6 +74,15 @@ data StreamG c el =
   EOF (Maybe ErrMsg)
   | Chunk (c el)
 
+instance Eq (c el) => Eq (StreamG c el) where
+  EOF mErr1 == EOF mErr2 = mErr1 == mErr2
+  Chunk xs == Chunk ys   = xs == ys
+  _ == _ = False
+
+instance Show (c el) => Show (StreamG c el) where
+  show (EOF mErr) = "StreamG: EOF " ++ show mErr
+  show (Chunk xs) = "StreamG: Chunk " ++ show xs
+
 instance Functor c => Functor (StreamG c) where
   fmap _ (EOF mErr) = EOF mErr
   fmap f (Chunk xs) = Chunk $ fmap f xs
@@ -114,6 +123,7 @@ data IterGV c el m a =
 newtype IterateeG c el m a = IterateeG{
   runIter :: StreamG c el -> m (IterGV c el m a)
   }
+
 
 -- Useful combinators for implementing iteratees and enumerators
 

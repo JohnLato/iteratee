@@ -75,6 +75,11 @@ prop_app3 xs ys i = (length xs > 0 || length ys > 0) ==>
                     == runner1 (enumPure1Chunk (xs ++ ys) i)
   where types = (xs :: [Int], ys :: [Int], i :: I)
 
+prop_eof xs ys i = length xs > 0 ==>
+                runner1 (enumPure1Chunk ys $ runIdentity $ (enumPure1Chunk xs >. enumEof) i)
+                == runner1 (enumPure1Chunk xs i)
+  where types = (xs :: [Int], ys :: [Int], i :: I)
+
 -- ---------------------------------------------
 tests = [
   testGroup "Elementary" [
@@ -93,6 +98,7 @@ tests = [
     ,testProperty "enum append 1" prop_app1
     ,testProperty "enum sequencing" prop_app2
     ,testProperty "enum sequencing 2" prop_app3
+    ,testProperty "enumEof" prop_eof
     ]
   ]
 

@@ -1,6 +1,8 @@
 {-# OPTIONS_GHC -O #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 
+import QCUtils
+
 import Test.Framework (defaultMain, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 
@@ -51,19 +53,46 @@ prop_peek2 xs = runner1 (enumPure1Chunk xs (peek >> stream2list)) == xs
 -- ---------------------------------------------
 -- Simple enumerator tests
 
+type I = IterateeG [] Int Identity [Int]
+
+prop_enumChunks n xs i = n > 0 ==>
+  runner1 (enumPure1Chunk xs i) == runner1 (enumPureNChunk xs n i)
+  where types = (n :: Int, xs :: [Int], i :: I)
+
+-- guard agains null lists for head
+prop_app1 xs ys i = (length xs > 0 && length ys > 0) ==>
+                    runner1 (enumPure1Chunk ys (joinIM $ enumPure1Chunk xs i))
+                    == runner1 (enumPure1Chunk (xs ++ ys) i)
+  where types = (xs :: [Int], ys :: [Int], i :: I)
+
+prop_app2 xs ys = (length xs > 0 && length ys > 0) ==>
+                  runner1 ((enumPure1Chunk xs >. enumPure1Chunk ys) stream2list)
+                  == runner1 (enumPure1Chunk (xs ++ ys) stream2list)
+  where types = (xs :: [Int], ys :: [Int])
+
+prop_app3 xs ys i = (length xs > 0 && length ys > 0) ==>
+                    runner1 ((enumPure1Chunk xs >. enumPure1Chunk ys) i)
+                    == runner1 (enumPure1Chunk (xs ++ ys) i)
+  where types = (xs :: [Int], ys :: [Int], i :: I)
 
 -- ---------------------------------------------
 tests = [
   testGroup "Elementary" [
-    testProperty "list" prop_list,
-    testProperty "chunkList" prop_clist],
+    testProperty "list" prop_list
+    ,testProperty "chunkList" prop_clist],
   testGroup "Simple Iteratees" [
-    testProperty "break" prop_break,
-    testProperty "break2" prop_break2,
-    testProperty "head" prop_head,
-    testProperty "head2" prop_head2,
-    testProperty "peek" prop_peek,
-    testProperty "peek2" prop_peek2
+    testProperty "break" prop_break
+    ,testProperty "break2" prop_break2
+    ,testProperty "head" prop_head
+    ,testProperty "head2" prop_head2
+    ,testProperty "peek" prop_peek
+    ,testProperty "peek2" prop_peek2
+    ],
+  testGroup "Simple Enumerators/Combinators" [
+    testProperty "enumPureNChunk" prop_enumChunks
+    ,testProperty "enum append 1" prop_app1
+    ,testProperty "enum sequencing" prop_app2
+    ,testProperty "enum sequencing 2" prop_app3
     ]
   ]
 

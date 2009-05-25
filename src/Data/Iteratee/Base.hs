@@ -275,6 +275,7 @@ head = IterateeG step
 -- stream.
 -- For example, if the stream contains "abd", then (heads "abc")
 -- will remove the characters "ab" and return 2.
+-- TODO - an uncommon bug: (enumPure1Chunk [1] >. enumPure1Chunk [1]) heads [1,3] returns 2, not 1 (matches both 1's)
 heads :: (SC.StreamChunk s el, Monad m, Eq el) =>
          s el ->
          IterateeG s el m Int
@@ -476,10 +477,11 @@ enumPureNChunk :: (SC.StreamChunk s el, Monad m) =>
                     Int ->
                     EnumeratorGM s el m a
 enumPureNChunk str _ iter | SC.null str = return iter
-enumPureNChunk str n iter = runIter iter (Chunk s1) >>=
-                            checkIfDone (enumPureNChunk s2 n)
+enumPureNChunk str n iter | n > 0 = runIter iter (Chunk s1) >>=
+                                    checkIfDone (enumPureNChunk s2 n)
   where
   (s1, s2) = SC.splitAt n str
+enumPureNChunk _ n _ = error $ "enumPureNChunk called with n==" ++ show n
 
 -- |A variant of join for Iteratees in a monad.
 joinIM :: (Monad m) =>

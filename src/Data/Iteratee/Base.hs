@@ -275,7 +275,6 @@ head = IterateeG step
 -- stream.
 -- For example, if the stream contains "abd", then (heads "abc")
 -- will remove the characters "ab" and return 2.
--- TODO - an uncommon bug: (enumPure1Chunk [1] >. enumPure1Chunk [1]) heads [1,3] returns 2, not 1 (matches both 1's)
 heads :: (SC.StreamChunk s el, Monad m, Eq el) =>
          s el ->
          IterateeG s el m Int
@@ -283,7 +282,7 @@ heads st | SC.null st = return 0
 heads st = loop 0 st
   where
   loop cnt xs | SC.null xs = return cnt
-  loop cnt _xs             = IterateeG (step cnt st)
+  loop cnt xs              = IterateeG (step cnt xs)
   step cnt str (Chunk xs) | SC.null xs  = return $ Cont (loop cnt str) Nothing
   step cnt str stream     | SC.null str = return $ Done cnt stream
   step cnt str s@(Chunk xs) =

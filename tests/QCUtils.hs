@@ -23,12 +23,14 @@ instance Arbitrary (c el) => Arbitrary (StreamG c el) where
     xs <- arbitrary
     elements [EOF err, Chunk xs]
 
-instance (Num a, Ord a, Monad m) => Arbitrary (IterateeG [] a m [a]) where
-  arbitrary = elements [
-              I.head >> stream2list
-              ,I.drop 2 >> stream2list
+instance (Num a, Ord a, Arbitrary a, Monad m) => Arbitrary (IterateeG [] a m [a]) where
+  arbitrary = do
+    n <- suchThat arbitrary (>0)
+    ns <- arbitrary
+    elements [
+              I.drop n >> stream2list
               ,I.break (< 5)
-              ,I.heads [1,3,5] >> stream2list
+              ,I.heads ns >> stream2list
               ,I.peek >> stream2list
               ]
 

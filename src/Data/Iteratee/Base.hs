@@ -30,7 +30,7 @@ module Data.Iteratee.Base (
   heads,
   peek,
   skipToEof,
-  --seek,
+  seek,
   -- ** Advanced iteratee combinators
   take,
   takeR,
@@ -321,6 +321,15 @@ skipToEof = IterateeG step
   where
   step (Chunk _) = return $ Cont skipToEof Nothing
   step s         = return $ Done () s
+
+
+-- |Seek to a position in the stream
+seek :: (Monad m) => FileOffset -> IterateeG s el m ()
+seek n = IterateeG step
+  where
+  step (Chunk _) = return $ Cont (seek n) (Just (Seek n))
+  step s         = return $ Done () s
+
 
 
 -- |Skip n elements of the stream, if there are that many

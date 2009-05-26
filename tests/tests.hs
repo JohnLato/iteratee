@@ -9,6 +9,7 @@ import Test.Framework.Providers.QuickCheck2 (testProperty)
 import Test.QuickCheck
 
 import Data.Iteratee hiding (head, break)
+import qualified Data.Iteratee.Char as IC
 import qualified Data.Iteratee as Iter
 import Control.Monad.Identity
 import Data.Monoid
@@ -179,6 +180,21 @@ prop_takeR xs n = n >= 0 ==>
   where types = (xs :: [Int])
 
 -- ---------------------------------------------
+-- Data.Iteratee.Char
+
+{-
+-- this isn't true, since lines "\r" returns ["\r"], and IC.line should
+-- return Right "".  Not sure what a real test would be...
+prop_line xs = length xs > 0 ==>
+               fromEither (runner1 (enumPure1Chunk xs $ IC.line))
+               == head (lines xs)
+  where
+  types = xs :: [Char]
+  fromEither (Left l)  = l
+  fromEither (Right l) = l
+-}
+
+-- ---------------------------------------------
 tests = [
   testGroup "Elementary" [
     testProperty "list" prop_list
@@ -221,6 +237,9 @@ tests = [
     ,testProperty "take" prop_take
     ,testProperty "take (finished iteratee)" prop_take2
     ,testProperty "takeR" prop_takeR
+    ]
+  ,testGroup "Data.Iteratee.Char" [
+    --testProperty "line" prop_line
     ]
   ]
 

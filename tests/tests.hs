@@ -84,6 +84,14 @@ prop_head xs = length xs > 0 ==> runner1 (enumPure1Chunk xs Iter.head) == head x
 prop_head2 xs = length xs > 0 ==> runner1 (enumPure1Chunk xs (Iter.head >> stream2list)) == tail xs
   where types = xs :: [Int]
 
+prop_heads xs = runner1 (enumPure1Chunk xs $ heads xs) == length xs
+  where types = xs :: [Int]
+
+prop_heads2 xs = runner1 (enumPure1Chunk xs $ heads [] >>= \c ->
+                          stream2list >>= \s -> return (c,s))
+                 == (0, xs)
+  where types = xs :: [Int]
+
 prop_peek xs = runner1 (enumPure1Chunk xs peek) == sHead xs
   where
   types = xs :: [Int]
@@ -165,6 +173,11 @@ prop_take2 xs n = n > 0 ==>
                   == runner1 (enumPure1Chunk (Prelude.take n xs) peek)
   where types = (xs :: [Int])
 
+prop_takeR xs n = n >= 0 ==>
+                  runner2 (enumPure1Chunk xs $ Iter.take n stream2list)
+                  == runner2 (enumPure1Chunk xs $ takeR n stream2list)
+  where types = (xs :: [Int])
+
 -- ---------------------------------------------
 tests = [
   testGroup "Elementary" [
@@ -179,9 +192,11 @@ tests = [
   ]
   ,testGroup "Simple Iteratees" [
     testProperty "break" prop_break
-    ,testProperty "break2" prop_break2
+    ,testProperty "break remaineder" prop_break2
     ,testProperty "head" prop_head
-    ,testProperty "head2" prop_head2
+    ,testProperty "head remainder" prop_head2
+    ,testProperty "heads" prop_heads
+    ,testProperty "null heads" prop_heads2
     ,testProperty "peek" prop_peek
     ,testProperty "peek2" prop_peek2
     ,testProperty "skipToEof" prop_skip
@@ -205,6 +220,7 @@ tests = [
     ,testProperty "mapStream identity joinI" prop_mapjoin
     ,testProperty "take" prop_take
     ,testProperty "take (finished iteratee)" prop_take2
+    ,testProperty "takeR" prop_takeR
     ]
   ]
 

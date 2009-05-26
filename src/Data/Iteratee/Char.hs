@@ -54,12 +54,12 @@ type Line = String	-- The line of text, terminators are not included
 -- The code is the same as that of pure Iteratee, only the signature
 -- has changed.
 -- Compare the code below with GHCBufferIO.line_lazy
-line :: Monad m => IterateeG [] Char m (Maybe Line)
+line :: Monad m => IterateeG [] Char m (Either Line Line)
 line = Iter.break (\c -> c == '\r' || c == '\n') >>= \l ->
        terminators >>= check l
   where
-  check _ 0 = return Nothing
-  check l _ = return . Just $ l
+  check l 0 = return . Left $ l
+  check l _ = return . Right $ l
   terminators = heads "\r\n" >>= \l -> if l == 0 then heads "\n" else return l
 
 -- Line iteratees: processors of a stream whose elements are made of Lines
@@ -110,10 +110,10 @@ enumLines :: (Functor m, Monad m) =>
              IterateeG [] Char m (IterateeG [] Line m a)
 enumLines iter = line >>= check iter
   where
-  --check :: Maybe Line -> IterateeG [] Char m (IterateeG [] Line m a)
-  check iter' Nothing  = return iter'
-  check iter' (Just l) = return . joinIM . fmap Iter.liftI $
-                         (runIter iter' $ Chunk [l])
+  --check :: Either Line Line -> IterateeG [] Char m (IterateeG [] Line m a)
+  check iter' (Left l)  = runLine iter' l
+  check iter' (Right l) = runLine iter' l
+  runLine i' l = return . joinIM . fmap Iter.liftI $ (runIter i' $ Chunk [l])
 
 
 -- |Convert the stream of characters to the stream of words, and

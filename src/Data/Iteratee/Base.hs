@@ -33,7 +33,7 @@ module Data.Iteratee.Base (
   --seek,
   -- ** Advanced iteratee combinators
   take,
-  --takeR,
+  takeR,
   mapStream,
   --convStream,
   -- * Enumerators
@@ -375,22 +375,24 @@ take n' iter = IterateeG (step n')
 -- This is the variation of `take' with the early termination
 -- of processing of the outer stream once the processing of the inner stream
 -- finished early.
-{-
+takeR :: (SC.StreamChunk s el, Monad m) =>
+         Int ->
+         IterateeG s el m a ->
+         IterateeG s el m (IterateeG s el m a)
 takeR 0 iter = return iter
-takeR n iter = IterateeG (step n')
+takeR n iter = IterateeG (step n)
   where
-  step n (Chunk str) | SC.null str = return
+  step n' s@(Chunk str)
+    | LL.null str        = return $ Cont (takeR n iter) Nothing
+    | LL.length str <= n = runIter iter s >>= check (n - LL.length str)
+    | otherwise          = done (Chunk str1) (Chunk str2)
+      where (str1, str2) = LL.splitAt n' str
+  step _n str            = done str str
+  check _n' (Done a str)   = return $ Done (return a) str
+  check n'  (Cont k mErr)  = return $ Cont (takeR n' k) mErr
+  done s1 s2 = runIter iter s1 >>= checkIfDone return >>= \i' ->
+               return (Done i' s2)
 
-takeR n (Cont k)     = liftI $ Cont step
-  where
-  step chunk@(Chunk str)
-    | SC.null str        = liftI $ Cont step
-    | SC.length str <= n = takeR (n - SC.length str) ==<< k chunk
-  step (Chunk str)       = done (Chunk s1) (Chunk s2)
-    where (s1,s2) = SC.splitAt n str
-  step stream            = done stream stream
-  done s1 s2             = k s1 >>== \r -> liftI $ Done r s2
--}
 
 -- |Map the stream: yet another iteratee transformer
 -- Given the stream of elements of the type el and the function el->el',

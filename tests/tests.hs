@@ -88,14 +88,11 @@ prop_skip xs = runner1 (enumPure1Chunk xs (skipToEof >> stream2list)) == []
 
 type I = IterateeG [] Int Identity [Int]
 
--- guard against null lists for head
-prop_enumChunks n xs i = n > 0 && length xs > 0 ==>
+prop_enumChunks n xs i = n > 0  ==>
   runner1 (enumPure1Chunk xs i) == runner1 (enumPureNChunk xs n i)
   where types = (n :: Int, xs :: [Int], i :: I)
 
--- guard against null lists for head
-prop_app1 xs ys i = (length xs > 0 || length ys > 0) ==>
-                    runner1 (enumPure1Chunk ys (joinIM $ enumPure1Chunk xs i))
+prop_app1 xs ys i = runner1 (enumPure1Chunk ys (joinIM $ enumPure1Chunk xs i))
                     == runner1 (enumPure1Chunk (xs ++ ys) i)
   where types = (xs :: [Int], ys :: [Int], i :: I)
 
@@ -103,14 +100,13 @@ prop_app2 xs ys = runner1 ((enumPure1Chunk xs >. enumPure1Chunk ys) stream2list)
                   == runner1 (enumPure1Chunk (xs ++ ys) stream2list)
   where types = (xs :: [Int], ys :: [Int])
 
-prop_app3 xs ys i = (length xs > 0 || length ys > 0) ==>
-                    runner1 ((enumPure1Chunk xs >. enumPure1Chunk ys) i)
+prop_app3 xs ys i = runner1 ((enumPure1Chunk xs >. enumPure1Chunk ys) i)
                     == runner1 (enumPure1Chunk (xs ++ ys) i)
   where types = (xs :: [Int], ys :: [Int], i :: I)
 
-prop_eof xs ys i = length xs > 0 ==>
-                runner1 (enumPure1Chunk ys $ runIdentity $ (enumPure1Chunk xs >. enumEof) i)
-                == runner1 (enumPure1Chunk xs i)
+prop_eof xs ys i = runner1 (enumPure1Chunk ys $ runIdentity $
+                           (enumPure1Chunk xs >. enumEof) i)
+                 == runner1 (enumPure1Chunk xs i)
   where types = (xs :: [Int], ys :: [Int], i :: I)
 
 prop_isFinished = runner1 (enumEof (isFinished :: IterateeG [] Int Identity (Maybe String))) == Just "EOF"
@@ -124,17 +120,16 @@ prop_isFinished2 = runner1 (enumErr "Error" (isFinished :: IterateeG [] Int Iden
 
 runner2 = runIdentity . run . runner1
 
-prop_mapStream xs i = length xs > 0 ==>
-                      runner2 (enumPure1Chunk xs $ mapStream id i)
+prop_mapStream xs i = runner2 (enumPure1Chunk xs $ mapStream id i)
                       == runner1 (enumPure1Chunk xs i)
   where types = (i :: I, xs :: [Int])
 
-prop_mapStream2 xs n i = n > 0 && length xs > 0 ==>
+prop_mapStream2 xs n i = n > 0 ==>
                          runner2 (enumPureNChunk xs n $ mapStream id i)
                          == runner1 (enumPure1Chunk xs i)
   where types = (i :: I, xs :: [Int])
 
-prop_mapjoin xs i = length xs > 0 ==>
+prop_mapjoin xs i =
   runIdentity (run (joinI . runIdentity $ enumPure1Chunk xs $ mapStream id i))
   == runner1 (enumPure1Chunk xs i)
   where types = (i :: I, xs :: [Int])

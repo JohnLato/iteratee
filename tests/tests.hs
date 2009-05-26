@@ -24,6 +24,9 @@ instance Show (a -> b) where
 
 type ST = StreamG [] Int
 
+prop_eq str = str == str
+  where types = (str :: ST)
+
 prop_mempty = mempty == (Chunk [] :: StreamG [] Int)
 
 prop_mappend str1 str2 | isChunk str1 && isChunk str2 =
@@ -47,11 +50,21 @@ chunkData (Chunk xs) = xs
 isEOF (EOF _)   = True
 isEOF (Chunk _) = False
 
+-- ---------------------------------------------
+-- Iteratee instances
+
+runner1 = runIdentity . Iter.run . runIdentity
+
+prop_iterFmap xs f a = runner1 (enumPure1Chunk xs (fmap f $ return a))
+                     == runner1 (enumPure1Chunk xs (return $ f a))
+  where types = (xs :: [Int], f :: Int -> Int, a :: Int)
+
+prop_iterFmap2 xs f i = runner1 (enumPure1Chunk xs (fmap f i))
+                      == f (runner1 (enumPure1Chunk xs i))
+  where types = (xs :: [Int], i :: I, f :: [Int] -> [Int])
 
 -- ---------------------------------------------
 -- List <-> Stream
-
-runner1 = runIdentity . Iter.run . runIdentity
 
 prop_list xs = runner1 (enumPure1Chunk xs stream2list) == xs
   where types = xs :: [Int]
@@ -113,6 +126,14 @@ prop_isFinished = runner1 (enumEof (isFinished :: IterateeG [] Int Identity (May
 
 prop_isFinished2 = runner1 (enumErr "Error" (isFinished :: IterateeG [] Int Identity (Maybe String))) == Just "Error"
 
+prop_null xs i = runner1 (enumPure1Chunk xs =<< enumPure1Chunk [] i)
+                 == runner1 (enumPure1Chunk xs i)
+  where types = (xs :: [Int], i :: I)
+
+prop_nullH xs = length xs > 0 ==>
+                runner1 (enumPure1Chunk xs =<< enumPure1Chunk [] Iter.head)
+                == runner1 (enumPure1Chunk xs Iter.head)
+  where types = (xs :: [Int])
 -- ---------------------------------------------
 -- Nested Iteratees
 
@@ -152,8 +173,9 @@ tests = [
   ,testGroup "StreamG tests" [
     testProperty "mempty" prop_mempty
     ,testProperty "mappend" prop_mappend
-    ,testProperty "mappend associates" prop_mappend
+    ,testProperty "mappend associates" prop_mappend2
     ,testProperty "functor" prop_functor
+    ,testProperty "eq" prop_eq
   ]
   ,testGroup "Simple Iteratees" [
     testProperty "break" prop_break
@@ -163,6 +185,8 @@ tests = [
     ,testProperty "peek" prop_peek
     ,testProperty "peek2" prop_peek2
     ,testProperty "skipToEof" prop_skip
+    ,testProperty "iteratee Functor 1" prop_iterFmap
+    ,testProperty "iteratee Functor 2" prop_iterFmap2
     ]
   ,testGroup "Simple Enumerators/Combinators" [
     testProperty "enumPureNChunk" prop_enumChunks
@@ -172,13 +196,15 @@ tests = [
     ,testProperty "enumEof" prop_eof
     ,testProperty "isFinished" prop_isFinished
     ,testProperty "isFinished error" prop_isFinished2
+    ,testProperty "null data idempotence" prop_null
+    ,testProperty "null data head idempotence" prop_nullH
     ]
   ,testGroup "Nested iteratees" [
     testProperty "mapStream identity" prop_mapStream
     ,testProperty "mapStream identity 2" prop_mapStream2
     ,testProperty "mapStream identity joinI" prop_mapjoin
     ,testProperty "take" prop_take
-    ,testProperty "take (finished iteratee)" prop_take
+    ,testProperty "take (finished iteratee)" prop_take2
     ]
   ]
 

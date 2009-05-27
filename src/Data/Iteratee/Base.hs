@@ -35,7 +35,7 @@ module Data.Iteratee.Base (
   take,
   takeR,
   mapStream,
-  --convStream,
+  convStream,
   -- * Enumerators
   enumEof,
   enumErr,
@@ -412,7 +412,8 @@ takeR n iter = IterateeG (step n)
 mapStream :: (SC.StreamChunk s el, SC.StreamChunk s el', Monad m) =>
               (el -> el') ->
               EnumeratorN s el s el' m a
-mapStream f iter = IterateeG (\str -> runIter iter (strMap (SC.cMap f) str) >>= check)
+mapStream f iter = IterateeG (\str -> runIter iter (strMap (SC.cMap f) str) >>=
+                   check)
   where
   check (Done a _) = return $ Done (return a) (Chunk LL.empty)
   check (Cont k mErr) = return $ Cont (mapStream f k) mErr
@@ -424,18 +425,14 @@ mapStream f iter = IterateeG (\str -> runIter iter (strMap (SC.cMap f) str) >>= 
 -- general: it may take several elements of the outer stream to produce
 -- one element of the inner stream, or the other way around.
 -- The transformation from one stream to the other is specified as
--- IterateeGM s el m (Maybe [el']).  The `Maybe' type reflects the
--- possibility of the conversion error.
-{-
+-- IterateeGM s el m (s' el').
 convStream :: (SC.StreamChunk s el, SC.StreamChunk s' el', Monad m) =>
-  IterateeGM s el m (Maybe (s' el')) -> EnumeratorN s el s' el' m a
-convStream _fi iter@Done{} = return iter
-convStream fi (Cont k) = fi >>=
-  (convStream fi ==<<) . k . maybe (throwErr "Stream conversion Error") Chunk
+  IterateeG s el m (s' el') ->
+  EnumeratorN s el s' el' m a
+convStream fi iter = fi >>= \istr -> convStream fi (joinIM $ enumPure1Chunk istr iter)
 
-{-# SPECIALIZE convStream :: (SC.StreamChunk s el, SC.StreamChunk s' el') => IterateeGM s el IO (Maybe (s' el')) -> EnumeratorN s el s' el' IO a #-}
+{-# SPECIALIZE convStream :: (SC.StreamChunk s el, SC.StreamChunk s' el') => IterateeG s el IO (s' el') -> EnumeratorN s el s' el' IO a #-}
 
--}
 
 -- ------------------------------------------------------------------------
 -- Enumerators

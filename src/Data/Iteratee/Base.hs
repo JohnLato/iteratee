@@ -5,6 +5,7 @@
 
 module Data.Iteratee.Base (
   -- * Types
+  ErrMsg (..),
   StreamG (..),
   IterGV (..),
   IterateeG (..),
@@ -98,7 +99,9 @@ strMap :: (c el -> c' el') -> StreamG c el -> StreamG c' el'
 strMap f (Chunk xs) = Chunk $ f xs
 strMap _ (EOF mErr) = EOF mErr
 
-type ErrMsg = String
+data ErrMsg = Err String
+              | Seek FileOffset
+              deriving (Show, Eq)
 
 -- |Iteratee -- a generic stream processor, what is being folded over
 -- a stream
@@ -147,7 +150,7 @@ isFinished :: (SC.StreamChunk s el, Monad m) =>
               IterateeG s el m (Maybe ErrMsg)
 isFinished = IterateeG check
   where
-  check s@(EOF e) = return $ Done (Just $ fromMaybe "EOF" e) s
+  check s@(EOF e) = return $ Done (Just $ fromMaybe (Err "EOF") e) s
   check s         = return $ Done Nothing s
 
 -- |If the iteratee (IterGV) has finished, return its value.  If it has not
@@ -239,7 +242,7 @@ throwErr e = IterateeG (\_ -> return $ Cont (throwErr e) (Just e))
 -- of an error, keep the original error message.
 setEOF :: StreamG c el -> ErrMsg
 setEOF (EOF (Just e)) = e
-setEOF _              = "EOF"
+setEOF _              = Err "EOF"
 
 
 -- ------------------------------------------------------------------------
@@ -460,17 +463,18 @@ enumEof :: Monad m =>
            EnumeratorGM s el m a
 enumEof iter = runIter iter (EOF Nothing) >>= check
   where
-  check (Done x _)  = return $ IterateeG $ return . Done x
-  check (Cont _ e') = return $ throwErr (fromMaybe "Divergent Iteratee" e')
+  check (Done x _) = return $ IterateeG $ return . Done x
+  check (Cont _ e) = return $ throwErr (fromMaybe (Err "Divergent Iteratee") e)
 
 -- |Another primitive enumerator: report an error
 enumErr :: (SC.StreamChunk s el, Monad m) =>
-           ErrMsg ->
+           String ->
            EnumeratorGM s el m a
-enumErr e iter = runIter iter (EOF (Just e)) >>= check
+enumErr e iter = runIter iter (EOF (Just (Err e))) >>= check
   where
   check (Done x _)  = return $ IterateeG (return . Done x)
-  check (Cont _ e') = return $ throwErr (fromMaybe "Divergent Iteratee" e')
+  check (Cont _ e') = return $ throwErr
+                      (fromMaybe (Err "Divergent Iteratee") e')
 
 -- |The composition of two enumerators: essentially the functional composition
 -- It is convenient to flip the order of the arguments of the composition

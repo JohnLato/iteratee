@@ -17,6 +17,12 @@ instance (Show a, StreamChunk s el) => Show (IterateeG s el Identity a) where
 
 -- Arbitrary instances
 
+instance Arbitrary ErrMsg where
+  arbitrary = do
+    err <- arbitrary
+    n <- arbitrary :: Gen Int
+    elements [Err err, Seek (fromIntegral n)]
+
 instance Arbitrary (c el) => Arbitrary (StreamG c el) where
   arbitrary = do
     err <- arbitrary

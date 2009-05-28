@@ -131,9 +131,9 @@ prop_eof xs ys i = runner1 (enumPure1Chunk ys $ runIdentity $
                  == runner1 (enumPure1Chunk xs i)
   where types = (xs :: [Int], ys :: [Int], i :: I)
 
-prop_isFinished = runner1 (enumEof (isFinished :: IterateeG [] Int Identity (Maybe String))) == Just "EOF"
+prop_isFinished = runner1 (enumEof (isFinished :: IterateeG [] Int Identity (Maybe ErrMsg))) == Just (Err "EOF")
 
-prop_isFinished2 = runner1 (enumErr "Error" (isFinished :: IterateeG [] Int Identity (Maybe String))) == Just "Error"
+prop_isFinished2 = runner1 (enumErr "Error" (isFinished :: IterateeG [] Int Identity (Maybe ErrMsg))) == Just (Err "Error")
 
 prop_null xs i = runner1 (enumPure1Chunk xs =<< enumPure1Chunk [] i)
                  == runner1 (enumPure1Chunk xs i)

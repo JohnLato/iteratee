@@ -217,7 +217,7 @@ instance (Monad m, Functor m) => Applicative (IterateeG s el m) where
   m <*> a = m >>= \f -> fmap f a
 
 instance MonadTrans (IterateeG s el) where
-  lift m = IterateeG $ \str -> m >>= \x -> runIter (return x) str
+  lift m = IterateeG $ \str -> m >>= \a -> return $ Done a str
 
 instance (MonadIO m) => MonadIO (IterateeG s el m) where
   liftIO = lift . liftIO

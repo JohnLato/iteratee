@@ -11,8 +11,10 @@ import Test.QuickCheck
 import Data.Iteratee hiding (head, break)
 import qualified Data.Iteratee.Char as IC
 import qualified Data.Iteratee as Iter
+import qualified Data.Iteratee.Base.StreamChunk as SC
 import Control.Monad.Identity
 import Data.Monoid
+import qualified Data.ListLike as LL
 
 import Text.Printf (printf)
 import System.Environment (getArgs)
@@ -177,6 +179,32 @@ prop_mapjoin xs i =
   == runner1 (enumPure1Chunk xs i)
   where types = (i :: I, xs :: [Int])
 
+
+convId :: (SC.StreamChunk s el, Monad m) => IterateeG s el m (StreamG s el)
+convId = IterateeG (\str -> case str of
+  s@(Chunk xs) | LL.null xs -> return $ Cont convId Nothing
+  s@(Chunk _) -> return $ Done s (Chunk mempty)
+  s@(EOF e)   -> return $ Done s (EOF e)
+  )
+
+prop_convId xs = runner1 (enumPure1Chunk xs convId) == Chunk xs
+  where types = xs :: [Int]
+
+prop_convstream xs i = length xs > 0 ==>
+                       runner2 (enumPure1Chunk xs $ convStream convId i)
+                       == runner1 (enumPure1Chunk xs i)
+  where types = (xs :: [Int], i :: I)
+
+prop_convstream2 xs = length xs > 0 ==>
+                      runner2 (enumPure1Chunk xs $ convStream convId Iter.head)
+                      == runner1 (enumPure1Chunk xs Iter.head)
+  where types = (xs :: [Int])
+
+prop_convstream3 xs = length xs > 0 ==>
+                      runner2 (enumPure1Chunk xs $ convStream convId stream2list)
+                      == runner1 (enumPure1Chunk xs stream2list)
+  where types = (xs :: [Int])
+
 prop_take xs n = n >= 0 ==>
                  runner2 (enumPure1Chunk xs $ Iter.take n stream2list)
                  == runner1 (enumPure1Chunk (Prelude.take n xs) stream2list)
@@ -253,6 +281,9 @@ tests = [
     ,testProperty "take" prop_take
     ,testProperty "take (finished iteratee)" prop_take2
     ,testProperty "takeR" prop_takeR
+    ,testProperty "convStream EOF" prop_convstream2
+    ,testProperty "convStream identity" prop_convstream
+    ,testProperty "convStream identity 2" prop_convstream3
     ]
   ,testGroup "Data.Iteratee.Char" [
     --testProperty "line" prop_line

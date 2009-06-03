@@ -432,14 +432,19 @@ mapStream f iter = IterateeG (\str -> runIter iter (strMap (SC.cMap f) str) >>=
 -- general: it may take several elements of the outer stream to produce
 -- one element of the inner stream, or the other way around.
 -- The transformation from one stream to the other is specified as
--- IterateeGM s el m (s' el').
-convStream :: (SC.StreamChunk s el, SC.StreamChunk s' el', Monad m) =>
-  IterateeG s el m (s' el') ->
+-- IterateeGM s el m (StreamG s' el').  The transformer must return
+-- EOF to finish the transformation if the inner iteratee does not
+-- otherwise terminate (e.g. stream2list)
+convStream :: Monad m =>
+  IterateeG s el m (StreamG s' el') ->
   EnumeratorN s el s' el' m a
-convStream fi iter = fi >>= \istr -> convStream fi (joinIM $ enumPure1Chunk istr iter)
+convStream fi iter = fi >>= lift . runIter iter >>= check
+  where
+  check (Done a _)        = return . return $ a
+  check (Cont k Nothing)  = convStream fi k
+  check (Cont _ (Just e)) = return $ throwErr e
 
-{-# SPECIALIZE convStream :: (SC.StreamChunk s el, SC.StreamChunk s' el') => IterateeG s el IO (s' el') -> EnumeratorN s el s' el' IO a #-}
-
+{-# SPECIALIZE convStream :: IterateeG s el IO (StreamG s' el') -> EnumeratorN s el s' el' IO a #-}
 
 -- ------------------------------------------------------------------------
 -- Enumerators

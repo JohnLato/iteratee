@@ -123,6 +123,10 @@ data IterGV c el m a =
   Done a (StreamG c el)
   | Cont (IterateeG c el m a) (Maybe ErrMsg)
 
+instance (Show (c el), Show a) => Show (IterGV c el m a) where
+  show (Done a str) = "IterGV Done <<" ++ show a ++ ">> : <<" ++ show str ++ ">>"
+  show (Cont _ mErr) = "IterGV Cont :: " ++ show mErr
+
 newtype IterateeG c el m a = IterateeG{
   runIter :: StreamG c el -> m (IterGV c el m a)
   }

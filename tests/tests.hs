@@ -54,6 +54,7 @@ isEOF (Chunk _) = False
 -- ---------------------------------------------
 -- Iteratee instances
 
+runner0 = runIdentity . Iter.run
 runner1 = runIdentity . Iter.run . runIdentity
 
 prop_iterFmap xs f a = runner1 (enumPure1Chunk xs (fmap f $ return a))
@@ -63,6 +64,18 @@ prop_iterFmap xs f a = runner1 (enumPure1Chunk xs (fmap f $ return a))
 prop_iterFmap2 xs f i = runner1 (enumPure1Chunk xs (fmap f i))
                       == f (runner1 (enumPure1Chunk xs i))
   where types = (xs :: [Int], i :: I, f :: [Int] -> [Int])
+
+prop_iterMonad1 xs a f = runner1 (enumPureNChunk xs 1 (return a >>= f))
+                       == runner1 (enumPure1Chunk xs (f a))
+  where types = (xs :: [Int], a :: Int, f :: Int -> I)
+
+prop_iterMonad2 m xs = runner1 (enumPureNChunk xs 1 (m >>= return))
+                     == runner1 (enumPure1Chunk xs m)
+  where types = (xs :: [Int], m :: I)
+
+prop_iterMonad3 m f g xs = runner1 (enumPureNChunk xs 1 ((m >>= f) >>= g))
+                         == runner1 (enumPure1Chunk xs (m >>= (\x -> f x >>= g)))
+  where types = (xs :: [Int], m :: I, f :: [Int] -> I, g :: [Int] -> I)
 
 -- ---------------------------------------------
 -- List <-> Stream
@@ -218,6 +231,9 @@ tests = [
     ,testProperty "skipToEof" prop_skip
     ,testProperty "iteratee Functor 1" prop_iterFmap
     ,testProperty "iteratee Functor 2" prop_iterFmap2
+    ,testProperty "iteratee Monad LI" prop_iterMonad1
+    ,testProperty "iteratee Monad RI" prop_iterMonad2
+    ,testProperty "iteratee Monad Assc" prop_iterMonad3
     ]
   ,testGroup "Simple Enumerators/Combinators" [
     testProperty "enumPureNChunk" prop_enumChunks

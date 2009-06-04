@@ -40,7 +40,7 @@ Library
    cpp-options:         -DUSE_POSIX
    other-modules:       Data.Iteratee.IO.Posix
    build-depends:       unix
- build-depends:         haskell98, containers >= 0.2 && < 0.3, bytestring >= 0.9 && < 0.10, extensible-exceptions >= 0.1 && < 0.2, transformers >= 0.1.4 && < 0.2, ListLike >= 1.0 && < 1.1
+ build-depends:         haskell98, containers >= 0.2 && < 0.3, bytestring >= 0.9 && < 0.10, extensible-exceptions >= 0.1 && < 0.2, transformers >= 0.1.4 && < 0.2, ListLike >= 1.0 && < 2
  exposed-modules:       Data.Iteratee
                         Data.Iteratee.Base
                         Data.Iteratee.Base.StreamChunk
@@ -58,8 +58,8 @@ Executable test
   GHC-Options:     -Wall
   Hs-Source-Dirs:  src, tests
   Main-Is:         tests.hs
-  Other-Modules:   QuickCheckUtils
-  Build-Depends:   QuickCheck >= 1 && < 2
+  Other-Modules:   QCUtils
+  Build-Depends:   QuickCheck >= 2 && < 3, test-framework >= 0.2 && < 0.3, test-framework-quickcheck2 >= 0.2 && < 0.3
   If flag(splitBase)
     Build-Depends: base >= 3 && < 5
   Else

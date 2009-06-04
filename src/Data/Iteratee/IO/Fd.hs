@@ -8,9 +8,11 @@ module Data.Iteratee.IO.Fd(
 #if defined(USE_POSIX)
   -- * File enumerators
   -- ** FileDescriptor based enumerators
-  enumFd,
+  enumFd
+  ,enumFdRandom
   -- * Iteratee drivers
-  fileDriverFd
+  ,fileDriverFd
+  ,fileDriverRandomFd
 #endif
 )
 
@@ -24,6 +26,8 @@ import Data.Iteratee.IO.Base
 
 import Foreign.Ptr
 import Foreign.Marshal.Alloc
+
+import System.IO (SeekMode(..))
 
 import System.Posix hiding (FileOffset)
 
@@ -50,49 +54,52 @@ enumFd fd iter' = allocaBytes (fromIntegral buffer_size) $ loop iter'
     check p  (Cont i Nothing) = loop i p
     check _p (Cont _ (Just e)) = return $ throwErr e
 
-{-
 -- |The enumerator of a POSIX File Descriptor: a variation of enumFd that
 -- supports RandomIO (seek requests)
 enumFdRandom :: ReadableChunk s el => Fd -> EnumeratorGM s el IO a
 enumFdRandom fd iter =
- IM $ allocaBytes (fromIntegral buffer_size) (loop (0,0) iter)
+ allocaBytes (fromIntegral buffer_size) (loop (0,0) iter)
  where
   -- this can be usefully varied.  Values between 512 and 4096 seem
   -- to provide the best performance for most cases.
   buffer_size = 4096
   -- the first argument of loop is (off,len), describing which part
   -- of the file is currently in the buffer 'p'
+{-
   loop :: (ReadableChunk s el) =>
           (FileOffset,Int) ->
           IterateeG s el IO a -> 
 	  Ptr el ->
           IO (IterateeG s el IO a)
-  loop _pos iter'@Done{} _p = return iter'
-  loop pos@(off,len) (Seek off' c) p | 
-    off <= off' && off' < off + fromIntegral len =	-- Seek within buffer p
-    do
-    let local_off = fromIntegral $ off' - off
-    s <- readFromPtr (p `plusPtr` local_off) (len - local_off)
-    im <- unIM $ c (Chunk s)
-    loop pos im p
-  loop _pos iter'@(Seek off c) p = do -- Seek outside the buffer
-   off' <- myfdSeek fd AbsoluteSeek (fromIntegral off)
-   case off' of
-    Left _errno -> unIM $ enumErr "IO error" iter'
-    Right off''  -> loop (off'',0) (Cont c) p
+-}
     -- Thanks to John Lato for the strictness annotation
     -- Otherwise, the `off + fromIntegral len' below accumulates thunks
   loop (off,len) _iter' _p | off `seq` len `seq` False = undefined
-  loop (off,len) iter'@(Cont step) p = do
+  loop (off,len) iter' p = do
    n <- myfdRead fd (castPtr p) buffer_size
    case n of
-    Left _errno -> unIM $ step (Error "IO error")
+    Left _errno -> enumErr "IO error" iter'
     Right 0 -> return iter'
     Right n' -> do
          s <- readFromPtr p (fromIntegral n')
-         im <- unIM $ step (Chunk s)
-	 loop (off + fromIntegral len,fromIntegral n') im p
--}
+         igv <- runIter iter' (Chunk s)
+         check (off + fromIntegral len, fromIntegral n') p igv
+  seekTo pos@(off, len) off' iter' p
+    | off <= off' && off' < off + fromIntegral len =   -- Seek within buffer
+    do
+    let local_off = fromIntegral $ off' - off
+    s <- readFromPtr (p `plusPtr` local_off) (len - local_off)
+    igv <- runIter iter' (Chunk s)
+    check pos p igv
+  seekTo _pos off iter' p = do                           -- Seek outside buffer
+    off' <- myfdSeek fd AbsoluteSeek (fromIntegral off)
+    case off' of
+      Left _errno -> enumErr "IO error" iter'
+      Right off'' -> loop (off'',0) iter' p
+  check _ _p (Done x _)                 = return . return $ x
+  check o p  (Cont i Nothing)           = loop o i p
+  check o p  (Cont i (Just (Seek off))) = seekTo o off i p
+  check _ _p (Cont _ (Just e))          = return $ throwErr e
 
 -- |Process a file using the given IterateeGM.  This function wraps
 -- enumFd as a convenience.
@@ -105,23 +112,17 @@ fileDriverFd iter filepath = do
   closeFd fd
   return result
 
-{-
 -- |Process a file using the given IterateeGM.  This function wraps
 -- enumFdRandom as a convenience.
-fileDriverRandomFd :: ReadableChunk s el => IterateeGM s el IO a ->
+fileDriverRandomFd :: ReadableChunk s el =>
+                      IterateeG s el IO a ->
                       FilePath ->
-                      IO (Either (String, a) a)
+                      IO a
 fileDriverRandomFd iter filepath = do
   fd <- openFd filepath ReadOnly Nothing defaultFileFlags
-  result <- unIM $ (enumFdRandom fd >. enumEof) ==<< iter
+  result <- enumFdRandom fd iter >>= run
   closeFd fd
-  print_res result
- where
-  print_res (Done a (Error err)) = return $ Left (err, a)
-  print_res (Done a _) = return $ Right a
-  print_res (Cont _)   = return $ Left ("Iteratee unfinished", undefined)
-  print_res (Seek _ _) = return $ Left ("Iteratee unfinished", undefined)
--}
+  return result
 
 #endif
 

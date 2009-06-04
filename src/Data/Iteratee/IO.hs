@@ -6,15 +6,15 @@ module Data.Iteratee.IO(
   -- * File enumerators
   -- ** Handle-based enumerators
   enumHandle,
-  --enumHandleRandom,
+  enumHandleRandom,
 #if defined(USE_POSIX)
   -- ** FileDescriptor based enumerators
   enumFd,
-  --enumFdRandom,
+  enumFdRandom,
 #endif
   -- * Iteratee drivers
   fileDriver,
-  --fileDriverRandom,
+  fileDriverRandom,
 )
 
 where
@@ -38,14 +38,12 @@ fileDriver :: ReadableChunk s el => IterateeG s el IO a ->
               IO a
 fileDriver = fileDriverFd
 
-{-
 -- |Process a file using the given IterateeG.  This function wraps
 -- enumFdRandom as a convenience.
 fileDriverRandom :: ReadableChunk s el => IterateeG s el IO a ->
                     FilePath ->
                     IO a
 fileDriverRandom = fileDriverRandomFd
--}
 
 #else
 

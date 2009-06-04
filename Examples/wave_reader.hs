@@ -27,7 +27,7 @@ main = do
 -- format information, then use the dict_process_data function
 -- to enumerate over the maxIter iteratee to find the maximum value
 -- (peak amplitude) in the file.
-test :: Maybe (IM.IntMap [WAVEDE]) -> IterateeGM [] Word8 IO ()
+test :: Maybe (IM.IntMap [WAVEDE]) -> IterateeG [] Word8 IO ()
 test Nothing = lift $ putStrLn "No dictionary"
 test (Just dict) = do
   fmtm <- dict_read_first_format dict
@@ -39,10 +39,10 @@ test (Just dict) = do
 -- an iteratee that calculates the maximum value found so far.
 -- this could be written with snext as well, however it is more
 -- efficient to operate on an entire chunk at once.
-maxIter :: IterateeGM [] Double IO Double
-maxIter = m' 0
+maxIter :: IterateeG [] Double IO Double
+maxIter = m 0
   where
-  m' = liftI . Cont . step
-  step acc (Chunk []) = m' acc
-  step acc (Chunk xs) = m' $! foldl' (max . abs) acc xs
-  step acc str = liftI $ Done acc str
+  m n = IterateeG (step n)
+  step acc (Chunk []) = return $ Cont (m acc) Nothing
+  step acc (Chunk xs) = return $ Cont (m $! foldl' (max . abs) acc xs) Nothing
+  step acc str = return $ Done acc str

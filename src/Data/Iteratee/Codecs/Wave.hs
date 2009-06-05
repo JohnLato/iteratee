@@ -2,7 +2,9 @@
 
 {-
 
-This module is not meant primarily for instructive and pedagogical purposes.  As such, it is not fully featured, and sacrifices performance and generality for clarity of code and commonly installed packages.
+This module is not meant primarily for instructive and pedagogical purposes.
+As such, it is not fully featured, and sacrifices performance and generality
+for clarity of code.
 
 -}
 
@@ -88,7 +90,6 @@ chunk_to_string WAVE_DATA = "data"
 chunk_to_string (WAVE_OTHER str) = str
 
 -- -----------------
--- throw this in here for now...
 data AudioFormat = AudioFormat {
   numberOfChannels :: NumChannels, -- ^Number of channels in the audio data
   sampleRate :: SampleRate, -- ^Sample rate of the audio

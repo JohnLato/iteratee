@@ -18,7 +18,7 @@ main = do
     [] -> putStrLn "Usage: wave_reader FileName"
     fname:xs -> do
       putStrLn $ "Reading file: " ++ fname
-      fileDriverRandom (wave_reader >>= test) fname
+      fileDriverRandom (waveReader >>= test) fname
       return ()
 
 -- Use the collection of [WAVEDE] returned from wave_reader to
@@ -30,9 +30,9 @@ main = do
 test :: Maybe (IM.IntMap [WAVEDE]) -> IterateeG [] Word8 IO ()
 test Nothing = lift $ putStrLn "No dictionary"
 test (Just dict) = do
-  fmtm <- dict_read_first_format dict
+  fmtm <- dictReadFirstFormat dict
   lift . putStrLn $ show fmtm
-  maxm <- dict_process_data 0 dict maxIter
+  maxm <- dictProcessData 0 dict maxIter
   lift . putStrLn $ show maxm
   return ()
 

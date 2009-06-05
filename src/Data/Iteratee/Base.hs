@@ -27,6 +27,7 @@ module Data.Iteratee.Base (
   break,
   --dropWhile,
   drop,
+  identity,
   head,
   heads,
   peek,
@@ -274,6 +275,10 @@ break cpred = IterateeG (step mempty)
       (str', tail') -> return $ Done (before `mappend` str') (Chunk tail')
   step before stream = return $ Done before stream
 
+-- |The identity iterator.  Doesn't do anything.
+identity :: (Monad m) => IterateeG s el m ()
+identity = IterateeG (return . Done ())
+
 
 -- |Attempt to read the next element of the stream and return it
 -- Raise a (recoverable) error if the stream is terminated
@@ -334,7 +339,7 @@ skipToEof = IterateeG step
 seek :: (Monad m) => FileOffset -> IterateeG s el m ()
 seek n = IterateeG step
   where
-  step (Chunk _) = return $ Cont (seek n) (Just (Seek n))
+  step (Chunk _) = return $ Cont identity (Just (Seek n))
   step s         = return $ Done () s
 
 

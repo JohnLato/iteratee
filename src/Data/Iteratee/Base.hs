@@ -179,7 +179,7 @@ checkIfDone _ (Cont _ (Just e)) = return . throwErr $ e
 -- This join function is useful when dealing with `derived iteratees'
 -- for embedded/nested streams.  In particular, joinI is useful to
 -- process the result of take, mapStream, or convStream below.
-joinI :: (SC.StreamChunk s el, SC.StreamChunk s' el', Monad m, Functor m) =>
+joinI :: (SC.StreamChunk s el, SC.StreamChunk s' el', Monad m) =>
          IterateeG s el m (IterateeG s' el' m a) ->
          IterateeG s el m a
 joinI m = IterateeG (\str -> runIter m str >>= docase)

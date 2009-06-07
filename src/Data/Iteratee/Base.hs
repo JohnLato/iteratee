@@ -22,7 +22,9 @@ module Data.Iteratee.Base (
   stream2list,
   checkIfDone,
   -- ** Error handling
+  setEOF,
   throwErr,
+  checkErr,
   -- ** Basic Iteratees
   break,
   --dropWhile,
@@ -58,7 +60,6 @@ import Data.Iteratee.IO.Base
 import Control.Monad
 import Control.Applicative
 import Control.Monad.Trans
-import Control.Applicative
 import Data.Monoid
 import Data.Maybe (fromMaybe)
 
@@ -248,6 +249,18 @@ throwErr e = IterateeG (\_ -> return $ Cont (throwErr e) (Just e))
 setEOF :: StreamG c el -> ErrMsg
 setEOF (EOF (Just e)) = e
 setEOF _              = Err "EOF"
+
+-- |Check if an iteratee produces an error.
+-- Returns 'Right a' if it completes without errors, otherwise 'Left ErrMsg'
+checkErr :: (Monad m, SC.StreamChunk s el) =>
+              IterateeG s el m a ->
+              IterateeG s el m (Either ErrMsg a)
+checkErr iter = IterateeG (\str -> runIter iter str >>= check)
+  where
+  check (Done a str) = return $ Done (Right a) str
+  check (Cont _ (Just err)) = return $ Done (Left err) mempty
+  check (Cont k Nothing) = return $ Cont (checkErr k) Nothing
+
 
 
 -- ------------------------------------------------------------------------

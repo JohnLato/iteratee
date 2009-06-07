@@ -186,7 +186,7 @@ readValue dict offset WAVE_DATA count = do
       return . Just . WEN_DUB $ \iter_dub -> return $ do
         Iter.seek (8 + fromIntegral offset)
         let iter = Iter.convStream (convFunc fmt) iter_dub
-        Iter.joinI $ Iter.joinI $ Iter.takeR count iter
+        joinI . joinI . takeR count $ iter
     Nothing -> do
       throwErr . Err $ "No valid format for data chunk at: " ++ show offset
       return Nothing
@@ -203,30 +203,25 @@ readValue _dict offset (WAVE_OTHER _str) count =
     Iter.seek (8 + fromIntegral offset)
     Iter.joinI $ Iter.takeR count iter
 
-unroller :: (Integral a, Monad m) =>
-            IterateeG L Word8 m a ->
-            IterateeG L Word8 m (StreamG L a)
-unroller iter = do
-  w1 <- iter
-  w2 <- iter
-  w3 <- iter
-  w4 <- iter
-  return $ Chunk [w1, w2, w3, w4]
 
 -- |Convert Word8s to Doubles
-convFunc :: AudioFormat -> IterateeG L Word8 IO (StreamG L Double)
+convFunc :: AudioFormat -> IterateeG L Word8 IO (Maybe (L Double))
 convFunc (AudioFormat _nc _sr 8) = (fmap . fmap)
-  (normalize 8 . (fromIntegral :: Word8 -> Int8)) (unroller Iter.head)
+  ((:[]) . normalize 8 . (fromIntegral :: Word8 -> Int8))
+    (fmap eitherToMaybe (checkErr Iter.head))
 convFunc (AudioFormat _nc _sr 16) = (fmap . fmap)
-  (normalize 16 . (fromIntegral :: Word16 -> Int16))
-    (unroller (endianRead2 LSB))
+  ((:[]) . normalize 16 . (fromIntegral :: Word16 -> Int16))
+    (fmap eitherToMaybe (checkErr $ endianRead2 LSB))
 convFunc (AudioFormat _nc _sr 24) = (fmap . fmap)
-  (normalize 24 . (fromIntegral :: Word32 -> Int32))
-    (unroller (endianRead3 LSB))
+  ((:[]) . normalize 24 . (fromIntegral :: Word32 -> Int32))
+    (fmap eitherToMaybe (checkErr $ endianRead3 LSB))
 convFunc (AudioFormat _nc _sr 32) = (fmap . fmap)
-  (normalize 32 . (fromIntegral :: Word32 -> Int32))
-    (unroller (endianRead4 LSB))
-convFunc _ = return $ EOF (Just $ Err "Invalid wave bit depth")
+  ((:[]) . normalize 32 . (fromIntegral :: Word32 -> Int32))
+    (fmap eitherToMaybe (checkErr $ endianRead4 LSB))
+convFunc _ = return Nothing
+
+eitherToMaybe :: Either a b -> Maybe b
+eitherToMaybe = either (const Nothing) Just
 
 -- |An Iteratee to read a wave format chunk
 sWaveFormat :: IterateeG L Word8 IO (Maybe AudioFormat)

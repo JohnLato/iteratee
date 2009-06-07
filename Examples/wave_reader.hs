@@ -37,7 +37,7 @@ test (Just dict) = do
   return ()
 
 -- an iteratee that calculates the maximum value found so far.
--- this could be written with snext as well, however it is more
+-- this could be written with head as well, however it is more
 -- efficient to operate on an entire chunk at once.
 maxIter :: IterateeG [] Double IO Double
 maxIter = m 0
@@ -46,3 +46,4 @@ maxIter = m 0
   step acc (Chunk []) = return $ Cont (m acc) Nothing
   step acc (Chunk xs) = return $ Cont (m $! foldl' (max . abs) acc xs) Nothing
   step acc str = return $ Done acc str
+

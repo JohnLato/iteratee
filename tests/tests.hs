@@ -180,14 +180,14 @@ prop_mapjoin xs i =
   where types = (i :: I, xs :: [Int])
 
 
-convId :: (SC.StreamChunk s el, Monad m) => IterateeG s el m (StreamG s el)
+convId :: (SC.StreamChunk s el, Monad m) => IterateeG s el m (Maybe (s el))
 convId = IterateeG (\str -> case str of
   s@(Chunk xs) | LL.null xs -> return $ Cont convId Nothing
-  s@(Chunk _) -> return $ Done s (Chunk mempty)
-  s@(EOF e)   -> return $ Done s (EOF e)
+  s@(Chunk xs) -> return $ Done (Just xs) (Chunk mempty)
+  s@(EOF e)   -> return $ Done Nothing (EOF e)
   )
 
-prop_convId xs = runner1 (enumPure1Chunk xs convId) == Chunk xs
+prop_convId xs = runner1 (enumPure1Chunk xs convId) == Just xs
   where types = xs :: [Int]
 
 prop_convstream xs i = length xs > 0 ==>

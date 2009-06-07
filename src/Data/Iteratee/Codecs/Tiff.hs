@@ -50,8 +50,8 @@
 
 module Data.Iteratee.Codecs.Tiff where
 
-import Data.Iteratee.Base (StreamG (..), IterateeG (..), IterateeGM, EnumeratorGMM, EnumeratorN, bindm, liftI, (==<<), (>.), (>>==), iterErr, enumErr, convStream, iterReportError, enumEof)
-import qualified Data.Iteratee.Base as Iter
+import Data.Iteratee
+import qualified Data.Iteratee as Iter
 import qualified Data.Iteratee.Base.StreamChunk as SC
 import Data.Iteratee.Binary
 import Control.Monad
@@ -81,8 +81,8 @@ import qualified Data.IntMap as IM
 
 -- Sample TIFF processing function
 process_tiff :: MonadIO m => Maybe (IM.IntMap TIFFDE) ->
-  IterateeGM [] Word8 m (Maybe String)
-process_tiff Nothing = return $ Just "No dictionary"
+  IterateeG [] Word8 m ()
+process_tiff Nothing = return ()
 process_tiff (Just dict) = do
   note ["dict size: ", show $ IM.size dict]
   -- Check tag values against the known values for the sample image
@@ -99,12 +99,12 @@ process_tiff (Just dict) = do
 
   (n,hist) <- compute_hist dict
   note ["computed histogram over ", show n, " values\n", show hist]
-  iterReportError >>= maybe (return ()) error
+  --iterReportError >>= maybe (return ()) error
   note ["Verifying values of sample pixels"]
   verify_pixel_vals dict [(0,255), (17,248)]
-  err <- iterReportError
-  maybe (return ()) error err
-  return err
+  --err <- iterReportError
+  --maybe (return ()) error err
+  --return err
  where check_tag tag action v = do
 	   vc <- action tag
 	   case vc of
@@ -116,14 +116,17 @@ process_tiff (Just dict) = do
 -- sample processing of the pixel matrix: computing the histogram
 compute_hist :: MonadIO m =>
                 TIFFDict ->
-                IterateeGM [] Word8 m (Int,IM.IntMap Int)
-compute_hist dict = Iter.joinI $ pixel_matrix_enum dict ==<< compute_hist' 0 IM.empty
+                IterateeG [] Word8 m (Int,IM.IntMap Int)
+compute_hist dict = Iter.joinI $ pixel_matrix_enum dict $ compute_hist' 0 IM.empty
  where
- compute_hist' count = liftI . Cont .step count
+ --compute_hist' count = liftI . Cont . step count
+ compute_hist' count hist = IterateeG (step count hist)
  step count hist (Chunk ch)
-   | SC.null ch  = compute_hist' count hist
-   | otherwise = compute_hist' (count + SC.length ch) (foldr accum hist ch)
- step count hist s        = liftI $ Done (count,hist) s
+   | SC.null ch  = return $ Cont (compute_hist' count hist) Nothing
+   | otherwise = return $ Cont
+                 (compute_hist' (count + SC.length ch) (foldr accum hist ch))
+                 Nothing
+ step count hist s        = return $ Done (count,hist) s
  accum e = IM.insertWith (+) (fromIntegral e) 1
 
 -- Another sample processor of the pixel matrix: verifying values of
@@ -131,22 +134,23 @@ compute_hist dict = Iter.joinI $ pixel_matrix_enum dict ==<< compute_hist' 0 IM.
 -- This processor does not read the whole matrix; it stops as soon
 -- as everything is verified or the error is detected
 verify_pixel_vals :: MonadIO m =>
-                     TIFFDict -> [(IM.Key, Word8)] -> IterateeGM [] Word8 m ()
-verify_pixel_vals dict pixels = Iter.joinI $ pixel_matrix_enum dict ==<< 
+                     TIFFDict -> [(IM.Key, Word8)] -> IterateeG [] Word8 m ()
+verify_pixel_vals dict pixels = Iter.joinI $ pixel_matrix_enum dict $ 
 				verify 0 (IM.fromList pixels)
  where
  verify _ m | IM.null m = return ()
- verify n m = liftI $ Cont (step n m)
+ verify n m = IterateeG (step n m)
  step n m (Chunk xs)
-   | SC.null xs = verify n m
+   | SC.null xs = return $ Cont (verify n m) Nothing
    | otherwise = let (h, t) = (SC.head xs, SC.tail xs) in
    case IM.updateLookupWithKey (\_k _e -> Nothing) n m of
     (Just v,m') -> if v == h then step (succ n) m' (Chunk t)
-		     else iterErr $ unwords ["Pixel #",show n,
+		     else let er = (unwords ["Pixel #",show n,
 					      "expected:",show v,
-					      "found", show h]
+					      "found", show h])
+                          in return $ Cont (throwErr . Err $ er) (Just $ Err er)
     (Nothing,m')->    step (succ n) m' (Chunk t)
- step _n _m s = liftI $ Done () s
+ step _n _m s = return $ Done () s
 
 
 -- ========================================================================
@@ -304,13 +308,13 @@ int_to_tag x = fromMaybe (TG_other x) $ IM.lookup x tag_map'
 
 
 -- The library function to read the TIFF dictionary
-tiff_reader :: IterateeGM [] Word8 IO (Maybe TIFFDict)
+tiff_reader :: IterateeG [] Word8 IO (Maybe TIFFDict)
 tiff_reader = do
   endian <- read_magic
   check_version
   case endian of
-    Just e -> bindm (endian_read4 e) $ \dict_offset -> do
-              Iter.seek (fromIntegral dict_offset)
+    Just e -> do
+              endianRead4 e >>= Iter.seek . fromIntegral
               load_dict e
     Nothing -> return Nothing
  where
@@ -319,18 +323,18 @@ tiff_reader = do
      c1 <- Iter.head
      c2 <- Iter.head
      case (c1,c2) of
-      (Just 0x4d, Just 0x4d) -> return $ Just MSB
-      (Just 0x49, Just 0x49) -> return $ Just LSB
-      _ -> (iterErr $ "Bad TIFF magic word: " ++ show [c1,c2])
+      (0x4d, 0x4d) -> return $ Just MSB
+      (0x49, 0x49) -> return $ Just LSB
+      _ -> (throwErr .Err $ "Bad TIFF magic word: " ++ show [c1,c2])
            >> return Nothing
 
    -- Check the version in the header. It is always ...
    tiff_version = 42
    check_version = do
-     v <- endian_read2 MSB
-     case v of
-      Just v' | v' == tiff_version -> return ()
-      _ -> iterErr $ "Bad TIFF version: " ++ show v
+     v <- endianRead2 MSB
+     if v == tiff_version
+       then return ()
+       else throwErr (Err $ "Bad TIFF version: " ++ show v)
 
 -- A few conversion procedures
 u32_to_float :: Word32 -> Double
@@ -354,27 +358,27 @@ u8_to_s8 = fromIntegral
 -- u8_to_s8 128 == -128
 -- u8_to_s8 255 == -1
 
-note :: (MonadIO m) => [String] -> IterateeGM [] el m ()
-note = lift . liftIO . putStrLn . concat
+note :: (MonadIO m) => [String] -> IterateeG [] el m ()
+note = liftIO . putStrLn . concat
 
 -- An internal function to load the dictionary. It assumes that the stream
 -- is positioned to read the dictionary
-load_dict :: MonadIO m => Endian -> IterateeGM [] Word8 m (Maybe TIFFDict)
-load_dict e =
-  bindm (endian_read2 e) $ \nentries -> do
-   dict <- foldr (const read_entry) (return (Just IM.empty)) [1..nentries]
-   bindm (endian_read4 e) $ \next_dict -> do
-   when (next_dict > 0) $
+load_dict :: MonadIO m => Endian -> IterateeG [] Word8 m (Maybe TIFFDict)
+load_dict e = do
+  nentries <- endianRead2 e
+  dict <- foldr (const read_entry) (return (Just IM.empty)) [1..nentries]
+  next_dict <- endianRead4 e
+  when (next_dict > 0) $
       note ["The TIFF file contains several images, ",
 	         "only the first one will be considered"]
-   return dict
+  return dict
  where
-  read_entry dictM =
-    bindm dictM $ \dict ->
-     bindm (endian_read2 e) $ \tag ->    
-     bindm (endian_read2 e) $ \typ' ->    
-     bindm (convert_type (fromIntegral typ')) $ \typ ->    
-     bindm (endian_read4 e) $ \count -> do
+  read_entry dictM = dictM >>=
+     maybe (return Nothing) (\dict -> do
+     tag <- endianRead2 e
+     typ' <- endianRead2 e
+     typ <- convert_type (fromIntegral typ')
+     count <- endianRead4 e
       -- we read the val-offset later. We need to check the size and the type
       -- of the datum, because val-offset may contain the value itself,
       -- in its lower-numbered bytes, regardless of the big/little endian
@@ -382,40 +386,42 @@ load_dict e =
 
      note ["TIFFEntry: tag ",show . int_to_tag . fromIntegral $ tag, 
 	   " type ", show typ, " count ", show count]
-     enum_m <- read_value typ e (fromIntegral count)
+     enum_m <- maybe (return Nothing)
+                     (\t -> read_value t e (fromIntegral count)) typ
      case enum_m of
       Just enum ->
        return . Just $ IM.insert (fromIntegral tag) 
 		                 (TIFFDE (fromIntegral count) enum) dict
       _ -> return (Just dict)
+     )
 
-  convert_type :: (Monad m) => Int -> IterateeGM [] el m (Maybe TIFF_TYPE)
+  convert_type :: (Monad m) => Int -> IterateeG [] el m (Maybe TIFF_TYPE)
   convert_type typ | typ > 0 && typ <= fromEnum (maxBound::TIFF_TYPE)
       = return . Just . toEnum $ typ
   convert_type typ = do
-      iterErr $ "Bad type of entry: " ++ show typ
+      throwErr . Err $ "Bad type of entry: " ++ show typ
       return Nothing
 
   read_value :: MonadIO m => TIFF_TYPE -> Endian -> Int -> 
-                IterateeGM [] Word8 m (Maybe TIFFDE_ENUM)
+                IterateeG [] Word8 m (Maybe TIFFDE_ENUM)
 
-  read_value typ e' 0 =
-    bindm (endian_read4 e') $ \_offset -> do
-      iterErr $ "Zero count in the entry of type: " ++ show typ
-      return Nothing
+  read_value typ e' 0 = do
+    endianRead4 e'
+    throwErr . Err $ "Zero count in the entry of type: " ++ show typ
+    return Nothing
 
             		-- Read an ascii string from the offset in the
 			-- dictionary. The last byte of
             		-- an ascii string is always zero, which is
             		-- included in 'count' but we don't need to read it
-  read_value TT_ascii e' count | count > 4 = -- for sure, val-offset is offset
-    bindm (endian_read4 e') $ \offset ->
-      return . Just . TEN_CHAR $ \iter_char -> do
+  read_value TT_ascii e' count | count > 4 = do -- val-offset is offset
+      offset <- endianRead4 e'
+      return . Just . TEN_CHAR $ \iter_char -> return $ do
             Iter.seek (fromIntegral offset)
             let iter = convStream 
-                         (bindm Iter.head (return. Just .(:[]). chr . fromIntegral))
+                         (checkErr Iter.head >>= return . either (const Nothing) (Just . (:[]) . chr . fromIntegral))
                          iter_char
-            Iter.joinI $ Iter.joinI $ Iter.takeR (pred count) ==<< iter
+            Iter.joinI $ Iter.joinI $ Iter.takeR (pred count) iter
 
 			-- Read the string of 0 to 3 characters long
                         -- The zero terminator is included in count, but
@@ -423,138 +429,123 @@ load_dict e =
   read_value TT_ascii _e count = do	-- count is within 1..4
     let len = pred count		-- string length
     let loop acc 0 = return . Just . reverse $ acc
-        loop acc n = bindm Iter.head (\v -> loop ((chr . fromIntegral $ v):acc)
+        loop acc n = Iter.head >>= (\v -> loop ((chr . fromIntegral $ v):acc)
                                              (pred n))
-    bindm (loop [] len) $ \str -> do
-      Iter.drop (4-len)
-      return . Just . TEN_CHAR $ immed_value str
+    str <- loop [] len
+    Iter.drop (4-len)
+    case str of
+      Just str' -> return . Just . TEN_CHAR $ immed_value str'
+      Nothing   -> return Nothing
 
 			-- Read the array of signed or unsigned bytes
-  read_value typ e' count | count > 4 && typ == TT_byte || typ == TT_sbyte =
-    bindm (endian_read4 e') $ \offset ->
-      return . Just . TEN_INT $ \iter_int -> do
+  read_value typ e' count | count > 4 && typ == TT_byte || typ == TT_sbyte = do
+      offset <- endianRead4 e'
+      return . Just . TEN_INT $ \iter_int -> return $ do
             Iter.seek (fromIntegral offset)
             let iter = convStream 
-                         (bindm Iter.head (return . Just . (:[]) . conv_byte typ))
+                         (checkErr Iter.head >>= return . either (const Nothing) (Just . (:[]) . conv_byte typ))
                          iter_int
-            Iter.joinI $ Iter.joinI $ Iter.takeR count ==<< iter
+            Iter.joinI $ Iter.joinI $ Iter.takeR count iter
 
 			-- Read the array of 1 to 4 bytes
   read_value typ _e count | typ == TT_byte || typ == TT_sbyte = do
     let loop acc 0 = return . Just . reverse $ acc
-        loop acc n = bindm Iter.head (\v -> loop (conv_byte typ v:acc)
+        loop acc n = Iter.head >>= (\v -> loop (conv_byte typ v:acc)
                                              (pred n))
-    bindm (loop [] count) $ \str -> do
-      Iter.drop (4-count)
-      return . Just . TEN_INT $ immed_value str
+    str <- (loop [] count)
+    Iter.drop (4-count)
+    case str of
+      Just str' -> return . Just . TEN_INT $ immed_value str'
+      Nothing   -> return Nothing
 
 			-- Read the array of Word8
-  read_value TT_undefined e' count | count > 4 =
-    bindm (endian_read4 e') $ \offset ->
-      return . Just . TEN_BYTE $ \iter -> do
-            Iter.seek (fromIntegral offset)
-            Iter.joinI $ Iter.takeR count iter
+  read_value TT_undefined e' count | count > 4 = do
+    offset <- endianRead4 e'
+    return . Just . TEN_BYTE $ \iter -> return $ do
+          Iter.seek (fromIntegral offset)
+          Iter.joinI $ Iter.takeR count iter
 
 			-- Read the array of Word8 of 1..4 elements,
 			-- packed in the offset field
   read_value TT_undefined _e count = do 
     let loop acc 0 = return . Just . reverse $ acc
-        loop acc n = bindm Iter.head (\v -> loop (v:acc) (pred n))
-    bindm (loop [] count) $ \str -> do
-      Iter.drop (4-count)
-      return . Just . TEN_BYTE $ immed_value str
+        loop acc n = Iter.head >>= (\v -> loop (v:acc) (pred n))
+    str <- loop [] count
+    Iter.drop (4-count)
+    case str of
+      Just str' -> return . Just . TEN_BYTE $ immed_value str'
+      Nothing   -> return Nothing
+    --return . Just . TEN_BYTE $ immed_value str
 
 			-- Read the array of short integers
 
 			-- of 1 element: the offset field contains the value
-  read_value typ e' 1 | typ == TT_short || typ == TT_sshort =
-    bindm (endian_read2 e') $ \item -> do
-      Iter.drop 2				-- skip the padding
-      return . Just . TEN_INT $ immed_value [conv_short typ item]
+  read_value typ e' 1 | typ == TT_short || typ == TT_sshort = do
+    item <- endianRead2 e'
+    Iter.drop 2				-- skip the padding
+    return . Just . TEN_INT $ immed_value [conv_short typ item]
 
 			-- of 2 elements: the offset field contains the value
-  read_value typ e' 2 | typ == TT_short || typ == TT_sshort =
-    bindm (endian_read2 e') $ \i1 -> 
-     bindm (endian_read2 e') $ \i2 ->
-      return . Just . TEN_INT $ 
+  read_value typ e' 2 | typ == TT_short || typ == TT_sshort = do
+    i1 <- endianRead2 e'
+    i2 <- endianRead2 e'
+    return . Just . TEN_INT $ 
 	     immed_value [conv_short typ i1, conv_short typ i2]
 
 			-- of n elements
-  read_value typ e' count | typ == TT_short || typ == TT_sshort =
-    bindm (endian_read4 e') $ \offset ->
-      return . Just . TEN_INT $ \iter_int -> do
-            Iter.seek (fromIntegral offset)
-            let iter = convStream 
-                         (bindm (endian_read2 e') 
-			  (return . Just . (:[]) . conv_short typ))
+  read_value typ e' count | typ == TT_short || typ == TT_sshort = do
+    offset <- endianRead4 e'
+    return . Just . TEN_INT $ \iter_int -> return $ do
+          Iter.seek (fromIntegral offset)
+          let iter = convStream 
+                         (checkErr (endianRead2 e') >>=
+                           return . either (const Nothing) (Just . (:[]) . conv_short typ))
                          iter_int
-            Iter.joinI $ Iter.joinI $ Iter.takeR (2*count) ==<< iter
+          Iter.joinI $ Iter.joinI $ Iter.takeR (2*count) iter
 
 
 			-- Read the array of long integers
 			-- of 1 element: the offset field contains the value
-  read_value typ e' 1 | typ == TT_long || typ == TT_slong =
-    bindm (endian_read4 e') $ \item ->
-      return . Just . TEN_INT $ immed_value [conv_long typ item]
+  read_value typ e' 1 | typ == TT_long || typ == TT_slong = do
+    item <-  endianRead4 e'
+    return . Just . TEN_INT $ immed_value [conv_long typ item]
 
 			-- of n elements
-  read_value typ e' count | typ == TT_long || typ == TT_slong =
-    bindm (endian_read4 e') $ \offset ->
-      return . Just . TEN_INT $ \iter_int -> do
+  read_value typ e' count | typ == TT_long || typ == TT_slong = do
+      offset <- endianRead4 e'
+      return . Just . TEN_INT $ \iter_int -> return $ do
             Iter.seek (fromIntegral offset)
             let iter = convStream 
-                         (bindm (endian_read4 e')  
-			  (return . Just . (:[]) . conv_long typ))
+                         (checkErr (endianRead4 e') >>=
+                           return . either (const Nothing) (Just . (:[]) . conv_long typ))
                          iter_int
-            Iter.joinI $ Iter.joinI $ Iter.takeR (4*count) ==<< iter
-
-			-- Read the array of rationals. A rational can't
-			-- be packed into the offset field
-{-
-  read_value typ e count | typ == TT_rational || typ == TT_srational = do 
-    bindm (endian_read4 e) $ \offset ->
-      return . Just . TEN_RAT $ \iter_rat -> do
-            Iter.seek (fromIntegral offset)
-            let iter = convStream 
-                         (bindm (endian_read4 e) $ \i1 ->
-			   bindm (endian_read4 e) $ \i2 ->
-			    (return . Just . (:[]) $ conv_rat typ i1 i2))
-                         iter_rat
-            Iter.joinI $ Iter.joinI $ Iter.takeR (8*count) ==<< iter
--}
+            Iter.joinI $ Iter.joinI $ Iter.takeR (4*count) iter
 
 
-  read_value typ e' count = -- stub
-    bindm (endian_read4 e') $ \_offset -> do
+  read_value typ e' count = do -- stub
+     _offset <- endianRead4 e'
      note ["unhandled type: ", show typ, " with count ", show count]
      return Nothing
 
   immed_value :: (Monad m) => [el] -> EnumeratorGMM [] Word8 [] el m a
   immed_value item iter =
-     (Iter.enumPure1Chunk item >. enumEof) iter >>== Iter.joinI . return
+     --(Iter.enumPure1Chunk item >. enumEof) iter >>== Iter.joinI . return
+     return . joinI . return . joinIM $ (enumPure1Chunk item >. enumEof) iter
 
   conv_byte :: TIFF_TYPE -> Word8 -> Int
   conv_byte TT_byte  = fromIntegral
   conv_byte TT_sbyte = fromIntegral . u8_to_s8
-  conv_byte _ = error "This should never happen"
+  conv_byte _ = error "conv_byte called with non-byte type"
 
   conv_short :: TIFF_TYPE -> Word16 -> Int
   conv_short TT_short  = fromIntegral
   conv_short TT_sshort = fromIntegral . u16_to_s16
-  conv_short _ = error "This should never happen"
+  conv_short _ = error "conv_short called with non-short type"
 
   conv_long :: TIFF_TYPE -> Word32 -> Int
   conv_long TT_long  = fromIntegral
   conv_long TT_slong = fromIntegral . u32_to_s32
-  conv_long _ = error "This should never happen"
-
-{- this code is never used...
-  conv_rat :: TIFF_TYPE -> Word32 -> Word32 -> Rational
-  conv_rat TT_rational v1 v2 = (fromIntegral v1) % (fromIntegral v2)
-  conv_rat TT_srational v1 v2 = (fromIntegral (u32_to_s32 v1)) % 
-				(fromIntegral (u32_to_s32 v2))
-  conv_rat _tt _ _ = error "This should never happen"
--}
+  conv_long _ = error "conv_long called with non-long type"
 
 -- Reading the pixel matrix
 -- For simplicity, we assume no compression and 8-bit pixels
@@ -562,34 +553,34 @@ pixel_matrix_enum :: MonadIO m => TIFFDict -> EnumeratorN [] Word8 [] Word8 m a
 pixel_matrix_enum dict iter = validate_dict >>= proceed
  where
    -- Make sure we can handle this particular TIFF image
-   validate_dict =
-      dict_assert TG_COMPRESSION 1         `bindm`  \() ->
-      dict_assert TG_SAMPLESPERPIXEL 1    `bindm`  \() ->
-      dict_assert TG_BITSPERSAMPLE 8      `bindm`  \() ->
-      dict_read_int TG_IMAGEWIDTH dict    `bindm`  \ncols ->
-      dict_read_int TG_IMAGELENGTH dict   `bindm`  \nrows ->
-      dict_read_ints TG_STRIPOFFSETS dict `bindm`  \strip_offsets -> do
-        rps <- liftM (fromMaybe nrows) (dict_read_int TG_ROWSPERSTRIP dict)
-	if ncols > 0 && nrows > 0 && rps > 0 
-	   then return $ Just (ncols,nrows,rps,strip_offsets)
-	   else return Nothing
+   validate_dict = do
+      dict_assert TG_COMPRESSION 1
+      dict_assert TG_SAMPLESPERPIXEL 1
+      dict_assert TG_BITSPERSAMPLE 8
+      ncols <- liftM (fromMaybe 0) $ dict_read_int TG_IMAGEWIDTH dict
+      nrows <- liftM (fromMaybe 0) $ dict_read_int TG_IMAGELENGTH dict
+      strip_offsets <- liftM (fromMaybe [0]) $
+                       dict_read_ints TG_STRIPOFFSETS dict
+      rps <- liftM (fromMaybe nrows) (dict_read_int TG_ROWSPERSTRIP dict)
+      if ncols > 0 && nrows > 0 && rps > 0 
+        then return $ Just (ncols,nrows,rps,strip_offsets)
+        else return Nothing
 	   
    dict_assert tag v = do
       vfound <- dict_read_int tag dict
       case vfound of
         Just v' | v' == v -> return $ Just ()
-	_ -> iterErr (unwords ["dict_assert: tag:", show tag,
-				"expected:", show v, "found:", show vfound]) >>
+	_ -> throwErr (Err (unwords ["dict_assert: tag:", show tag,
+				"expected:", show v, "found:", show vfound])) >>
              return Nothing
 
-   proceed Nothing = enumErr "Can't handle this TIFF" iter >>== return
+   proceed Nothing = throwErr $ Err "Can't handle this TIFF"
 
    proceed (Just (ncols,nrows,rows_per_strip,strip_offsets)) = do
      let strip_size = rows_per_strip * ncols
 	 image_size = nrows * ncols
      note ["Processing the pixel matrix, ", show image_size, " bytes"]
-     let loop _pos _ iter'@Done{} = return iter'
-         loop _pos [] iter'          = return iter'
+     let loop _pos [] iter'          = return iter'
          loop pos (strip:strips) iter' = do
 	   Iter.seek (fromIntegral strip)
 	   let len = min strip_size (image_size - pos)
@@ -601,7 +592,7 @@ pixel_matrix_enum dict iter = validate_dict >>= proceed
 -- A few helpers for getting data from TIFF dictionary
 
 dict_read_int :: Monad m => TIFF_TAG -> TIFFDict ->
-                 IterateeGM [] Word8 m (Maybe Int)
+                 IterateeG [] Word8 m (Maybe Int)
 dict_read_int tag dict = do
   els <- dict_read_ints tag dict
   case els of
@@ -609,28 +600,28 @@ dict_read_int tag dict = do
    _          -> return Nothing
 
 dict_read_ints :: Monad m => TIFF_TAG -> TIFFDict -> 
-		  IterateeGM [] Word8 m (Maybe [Int])
+		  IterateeG [] Word8 m (Maybe [Int])
 dict_read_ints tag dict = 
   case IM.lookup (tag_to_int tag) dict of
       Just (TIFFDE _ (TEN_INT enum)) -> do
-	     e <- enum  ==<< Iter.stream2list
+	     e <- joinIM $ enum stream2list
 	     return (Just e)
       _ -> return Nothing
 
 dict_read_rat :: Monad m => TIFF_TAG -> TIFFDict ->
-                 IterateeGM [] Word8 m (Maybe (Ratio Int))
+                 IterateeG [] Word8 m (Maybe (Ratio Int))
 dict_read_rat tag dict = 
   case IM.lookup (tag_to_int tag) dict of
       Just (TIFFDE 1 (TEN_RAT enum)) -> do
-	     [e] <- enum  ==<< Iter.stream2list
+	     [e] <- joinIM $ enum stream2list
 	     return (Just e)
       _ -> return Nothing
 
 dict_read_string :: Monad m => TIFF_TAG -> TIFFDict ->
-                    IterateeGM [] Word8 m (Maybe String)
+                    IterateeG [] Word8 m (Maybe String)
 dict_read_string tag dict = 
   case IM.lookup (tag_to_int tag) dict of
       Just (TIFFDE _ (TEN_CHAR enum)) -> do
-	     e <- enum  ==<< Iter.stream2list
+	     e <- joinIM $ enum stream2list
 	     return (Just e)
       _ -> return Nothing

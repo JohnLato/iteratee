@@ -47,7 +47,7 @@ Library
                         Data.Iteratee.Binary
                         Data.Iteratee.Char
                         Data.Iteratee.Codecs.Wave
-                        --Data.Iteratee.Codecs.Tiff
+                        Data.Iteratee.Codecs.Tiff
                         Data.Iteratee.IO
                         Data.Iteratee.IO.Base
                         Data.Iteratee.WrappedByteString

@@ -15,7 +15,7 @@ category:       System, Data
 build-type:     Simple
 cabal-version:  >= 1.2
 tested-with:    GHC == 6.10.3
-extra-source-files: README LICENSE CONTRIBUTORS Examples/headers.hs Examples/test_full1.txt Examples/test_full2.txt Examples/test_full3.txt Examples/wave_reader.hs
+extra-source-files: README LICENSE CONTRIBUTORS Examples/headers.hs Examples/test_full1.txt Examples/test_full2.txt Examples/test_full3.txt Examples/wave_reader.hs Examples/short.wav
 
 flag splitBase
   description: Choose the new split-up base package.

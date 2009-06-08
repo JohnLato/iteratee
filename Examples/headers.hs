@@ -65,7 +65,7 @@ enum_chunk_decoded iter = return read_size
 
   frame_err e iter = IterateeG (\_ ->
                      return $ Cont (joinIM $ enumErr e $ iter)
-                     (Just "Frame error"))
+                     (Just $ Err "Frame error"))
 
 -- ------------------------------------------------------------------------
 -- Tests

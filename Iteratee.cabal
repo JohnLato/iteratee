@@ -26,7 +26,7 @@ flag buildTests
 
 Library
  Hs-Source-Dirs:        src
- ghc-options:           -O2 -Wall -fexcess-precision -fno-method-sharing
+ ghc-options:           -Wall -fexcess-precision -fno-method-sharing
  if flag(splitBase)
    build-depends:       base >= 3, base < 5
  else

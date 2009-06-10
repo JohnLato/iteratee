@@ -27,6 +27,7 @@ module Data.Iteratee.Codecs.Wave (
 )
 where
 
+import Prelude as P
 import Data.Iteratee.Base
 import qualified Data.Iteratee.Base as Iter
 import Data.Iteratee.Binary
@@ -154,7 +155,7 @@ findChunks n = findChunks' 12 []
 
 loadDict :: [(Int, WAVE_CHUNK, Int)] ->
                IterateeG L Word8 IO (Maybe WAVEDict)
-loadDict = foldl read_entry (return (Just IM.empty))
+loadDict = P.foldl read_entry (return (Just IM.empty))
   where
   read_entry dictM (offset, typ, count) = dictM >>=
     maybe (return Nothing) (\dict -> do

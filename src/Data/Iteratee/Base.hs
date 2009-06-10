@@ -40,6 +40,10 @@ module Data.Iteratee.Base (
   takeR,
   mapStream,
   convStream,
+  -- ** Folds
+  foldl,
+  foldl',
+  foldl1,
   -- * Enumerators
   enumEof,
   enumErr,
@@ -51,11 +55,12 @@ module Data.Iteratee.Base (
 )
 where
 
-import Prelude hiding (head, drop, dropWhile, take, break)
+import Prelude hiding (head, drop, dropWhile, take, break, foldl, foldl1)
 import qualified Prelude as P
 
 import qualified Data.Iteratee.Base.StreamChunk as SC
 import qualified Data.ListLike as LL
+import qualified Data.ListLike.FoldableLL as FLL
 import Data.Iteratee.IO.Base
 import Control.Monad
 import Control.Applicative
@@ -464,6 +469,43 @@ convStream fi iter = fi >>= check
   docase (Cont _ (Just e)) = return $ throwErr e
 
 {-# SPECIALIZE convStream :: IterateeG s el IO (Maybe (s' el')) -> EnumeratorN s el s' el' IO a #-}
+
+
+-- ------------------------------------------------------------------------
+-- Folds
+
+-- | Left-associative fold.
+foldl :: (LL.ListLike (s el) el, FLL.FoldableLL (s el) el, Monad m) =>
+         (a -> el -> a) ->
+         a ->
+         IterateeG s el m a
+foldl f i = IterateeG step
+  where
+  step (Chunk xs) | LL.null xs = return $ Cont (foldl f i) Nothing
+  step (Chunk xs) = return $ Cont (foldl f (FLL.foldl f i xs)) Nothing
+  step stream     = return $ Done i stream
+
+-- | Left-associative fold that is strict in the accumulator.
+foldl' :: (LL.ListLike (s el) el, FLL.FoldableLL (s el) el, Monad m) =>
+          (a -> el -> a) ->
+          a ->
+          IterateeG s el m a
+foldl' f i = IterateeG step
+  where
+  step (Chunk xs) | LL.null xs = return $ Cont (foldl' f i) Nothing
+  step (Chunk xs) = return $ Cont (foldl' f $! FLL.foldl' f i xs) Nothing
+  step stream     = return $ Done i stream
+
+-- | Variant of foldl with no base case.  Requires at least one element
+--   in the stream.
+foldl1 :: (LL.ListLike (s el) el, FLL.FoldableLL (s el) el, Monad m) =>
+          (el -> el -> el) ->
+          IterateeG s el m el
+foldl1 f = IterateeG step
+  where
+  step (Chunk xs) | LL.null xs = return $ Cont (foldl1 f) Nothing
+  step (Chunk xs) = return $ Cont (foldl f (FLL.foldl1 f xs)) Nothing
+  step stream     = return $ Cont (foldl1 f) (Just (setEOF stream))
 
 -- ------------------------------------------------------------------------
 -- Enumerators

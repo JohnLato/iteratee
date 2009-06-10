@@ -143,6 +143,7 @@ newtype IterateeG c el m a = IterateeG{
 
 -- Useful combinators for implementing iteratees and enumerators
 
+-- | Lift an IterGV result into an 'IterateeG'
 liftI :: (Monad m, SC.StreamChunk s el) =>
          IterGV s el m a -> IterateeG s el m a
 liftI (Cont k Nothing)     = k
@@ -153,12 +154,15 @@ liftI (Done a (Chunk st )) = IterateeG (check st)
   check str (Chunk str') = return $ Done a (Chunk $ str `mappend` str')
   check _str e@(EOF _)   = return $ Done a e
 
+-- | Run an 'IterateeG' and get the result.  An 'EOF' is sent to the
+-- iteratee as it is run.
 run :: (Monad m, SC.StreamChunk s el) => IterateeG s el m a -> m a
 run iter = runIter iter (EOF Nothing) >>= \res ->
   case res of
     Done x _ -> return x
     Cont _ e -> error $ "control message: " ++ show e
 
+-- | Check if a stream has finished ('EOF').
 isFinished :: (SC.StreamChunk s el, Monad m) =>
               IterateeG s el m (Maybe ErrMsg)
 isFinished = IterateeG check
@@ -166,8 +170,8 @@ isFinished = IterateeG check
   check s@(EOF e) = return $ Done (Just $ fromMaybe (Err "EOF") e) s
   check s         = return $ Done Nothing s
 
--- |If the iteratee (IterGV) has finished, return its value.  If it has not
--- finished then apply it to the given EnumeratorGM.
+-- |If the iteratee ('IterGV') has finished, return its value.  If it has not
+-- finished then apply it to the given 'EnumeratorGM'.
 -- If in error, throw the error.
 checkIfDone :: (SC.StreamChunk s el, Monad m) =>
                (IterateeG s el m a -> m (IterateeG s el m a)) ->
@@ -259,6 +263,9 @@ setEOF _              = Err "EOF"
 
 -- |Check if an iteratee produces an error.
 -- Returns 'Right a' if it completes without errors, otherwise 'Left ErrMsg'
+-- checkErr is useful for iteratees that may not terminate, such as 'head'
+-- with an empty stream.  In particular, it enables them to be used with
+-- 'convStream'.
 checkErr :: (Monad m, SC.StreamChunk s el) =>
               IterateeG s el m a ->
               IterateeG s el m (Either ErrMsg a)

@@ -35,7 +35,7 @@ module Data.Iteratee.Base (
   peek,
   skipToEof,
   seek,
-  -- ** Advanced iteratee combinators
+  -- ** Nested iteratee combinators
   take,
   takeR,
   mapStream,

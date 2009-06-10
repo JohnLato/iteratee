@@ -304,7 +304,7 @@ break cpred = IterateeG (step mempty)
 
 -- |The identity iterator.  Doesn't do anything.
 identity :: (Monad m) => IterateeG s el m ()
-identity = IterateeG (return . Done ())
+identity = return ()
 
 
 -- |Attempt to read the next element of the stream and return it

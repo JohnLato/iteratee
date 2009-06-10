@@ -1,5 +1,5 @@
 Name:		iteratee
-Version:        0.2.1
+Version:        0.2.3
 Cabal-Version:  >= 1.2
 Description:	The IterateeGM monad provides strict, safe, and functional
                 I/O.  In addition to pure Iteratee processors, file IO and 
@@ -53,4 +53,18 @@ Library
                         Data.Iteratee.WrappedByteString
  other-modules:         Data.Iteratee.IO.Fd
                         Data.Iteratee.IO.Handle
+
+Executable testIteratee
+  Hs-Source-Dirs:  src, tests
+  Main-Is:         testIteratee.hs
+  Other-Modules:   QCUtils
+  if flag(buildTests)
+    Build-Depends: QuickCheck >= 2 && < 3, test-framework >= 0.2 && < 0.3, test-framework-quickcheck2 >= 0.2 && < 0.3
+  Else
+    Executable:    False
+    Buildable:     False
+  If flag(splitBase)
+    Build-Depends: base >= 3 && < 5
+  Else
+    Build-Depends: base >= 1 && < 2
 

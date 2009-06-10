@@ -81,7 +81,7 @@ waveChunk :: String -> Maybe WAVE_CHUNK
 waveChunk str
   | str == "fmt " = Just WAVE_FMT
   | str == "data" = Just WAVE_DATA
-  | length str == 4 = Just $ WAVE_OTHER str
+  | P.length str == 4 = Just $ WAVE_OTHER str
   | otherwise = Nothing
 
 -- |Convert a WAVE_CHUNK to the representative string

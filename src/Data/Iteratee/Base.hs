@@ -34,12 +34,13 @@ module Data.Iteratee.Base (
   heads,
   peek,
   skipToEof,
-  seek,
+  length,
   -- ** Nested iteratee combinators
   take,
   takeR,
   mapStream,
   convStream,
+  filter,
   -- ** Folds
   foldl,
   foldl',
@@ -51,11 +52,12 @@ module Data.Iteratee.Base (
   enumPure1Chunk,
   enumPureNChunk,
   -- * Misc.
+  seek,
   FileOffset
 )
 where
 
-import Prelude hiding (head, drop, dropWhile, take, break, foldl, foldl1)
+import Prelude hiding (head, drop, dropWhile, take, break, foldl, foldl1, length, filter)
 import qualified Prelude as P
 
 import qualified Data.Iteratee.Base.StreamChunk as SC
@@ -373,6 +375,18 @@ drop n = IterateeG step
   step (Chunk str)       = return $ Done () (Chunk (LL.drop n str))
   step stream            = return $ Done () stream
 
+
+-- |Return the total length of the stream
+length :: (Num a, LL.ListLike (s el) el, Monad m) => IterateeG s el m a
+length = length' 0
+  where
+  length' = IterateeG . step
+  step i (Chunk xs) = return $ Cont
+                               (length' $! i + fromIntegral (LL.length xs))
+                               Nothing
+  step i stream     = return $ Done i stream
+
+
 -- ---------------------------------------------------
 -- The converters show a different way of composing two iteratees:
 -- `vertical' rather than `horizontal'
@@ -470,6 +484,18 @@ convStream fi iter = fi >>= check
 
 {-# SPECIALIZE convStream :: IterateeG s el IO (Maybe (s' el')) -> EnumeratorN s el s' el' IO a #-}
 
+
+-- |Creates an enumerator with only elements from the stream that
+-- satisfy the predicate function.
+filter :: (LL.ListLike (s el) el, Monad m) =>
+          (el -> Bool) ->
+          EnumeratorN s el s el m a
+filter p = convStream f'
+  where
+  f' = IterateeG step
+  step (Chunk xs) | LL.null xs = return $ Cont f' Nothing
+  step (Chunk xs) = return $ Done (Just $ LL.filter p xs) mempty
+  step stream     = return $ Done Nothing stream
 
 -- ------------------------------------------------------------------------
 -- Folds

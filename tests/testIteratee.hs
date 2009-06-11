@@ -1,6 +1,8 @@
 {-# OPTIONS_GHC -O #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 
+import Prelude as P
+
 import QCUtils
 
 import Test.Framework (defaultMain, testGroup)
@@ -94,13 +96,13 @@ prop_break f xs = runner1 (enumPure1Chunk xs (Iter.break f)) == fst (break f xs)
 prop_break2 f xs = runner1 (enumPure1Chunk xs (Iter.break f >> stream2list)) == snd (break f xs)
   where types = xs :: [Int]
 
-prop_head xs = length xs > 0 ==> runner1 (enumPure1Chunk xs Iter.head) == head xs
+prop_head xs = P.length xs > 0 ==> runner1 (enumPure1Chunk xs Iter.head) == head xs
   where types = xs :: [Int]
 
-prop_head2 xs = length xs > 0 ==> runner1 (enumPure1Chunk xs (Iter.head >> stream2list)) == tail xs
+prop_head2 xs = P.length xs > 0 ==> runner1 (enumPure1Chunk xs (Iter.head >> stream2list)) == tail xs
   where types = xs :: [Int]
 
-prop_heads xs = runner1 (enumPure1Chunk xs $ heads xs) == length xs
+prop_heads xs = runner1 (enumPure1Chunk xs $ heads xs) == P.length xs
   where types = xs :: [Int]
 
 prop_heads2 xs = runner1 (enumPure1Chunk xs $ heads [] >>= \c ->
@@ -154,7 +156,7 @@ prop_null xs i = runner1 (enumPure1Chunk xs =<< enumPure1Chunk [] i)
                  == runner1 (enumPure1Chunk xs i)
   where types = (xs :: [Int], i :: I)
 
-prop_nullH xs = length xs > 0 ==>
+prop_nullH xs = P.length xs > 0 ==>
                 runner1 (enumPure1Chunk xs =<< enumPure1Chunk [] Iter.head)
                 == runner1 (enumPure1Chunk xs Iter.head)
   where types = (xs :: [Int])
@@ -190,29 +192,29 @@ convId = IterateeG (\str -> case str of
 prop_convId xs = runner1 (enumPure1Chunk xs convId) == Just xs
   where types = xs :: [Int]
 
-prop_convstream xs i = length xs > 0 ==>
+prop_convstream xs i = P.length xs > 0 ==>
                        runner2 (enumPure1Chunk xs $ convStream convId i)
                        == runner1 (enumPure1Chunk xs i)
   where types = (xs :: [Int], i :: I)
 
-prop_convstream2 xs = length xs > 0 ==>
+prop_convstream2 xs = P.length xs > 0 ==>
                       runner2 (enumPure1Chunk xs $ convStream convId Iter.head)
                       == runner1 (enumPure1Chunk xs Iter.head)
   where types = (xs :: [Int])
 
-prop_convstream3 xs = length xs > 0 ==>
+prop_convstream3 xs = P.length xs > 0 ==>
                       runner2 (enumPure1Chunk xs $ convStream convId stream2list)
                       == runner1 (enumPure1Chunk xs stream2list)
   where types = (xs :: [Int])
 
 prop_take xs n = n >= 0 ==>
                  runner2 (enumPure1Chunk xs $ Iter.take n stream2list)
-                 == runner1 (enumPure1Chunk (Prelude.take n xs) stream2list)
+                 == runner1 (enumPure1Chunk (P.take n xs) stream2list)
   where types = (xs :: [Int])
 
 prop_take2 xs n = n > 0 ==>
                   runner2 (enumPure1Chunk xs $ Iter.take n peek)
-                  == runner1 (enumPure1Chunk (Prelude.take n xs) peek)
+                  == runner1 (enumPure1Chunk (P.take n xs) peek)
   where types = (xs :: [Int])
 
 prop_takeR xs n = n >= 0 ==>
@@ -226,7 +228,7 @@ prop_takeR xs n = n >= 0 ==>
 {-
 -- this isn't true, since lines "\r" returns ["\r"], and IC.line should
 -- return Right "".  Not sure what a real test would be...
-prop_line xs = length xs > 0 ==>
+prop_line xs = P.length xs > 0 ==>
                fromEither (runner1 (enumPure1Chunk xs $ IC.line))
                == head (lines xs)
   where

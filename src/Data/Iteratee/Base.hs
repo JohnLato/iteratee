@@ -537,6 +537,8 @@ foldl1 :: (LL.ListLike (s el) el, FLL.FoldableLL (s el) el, Monad m) =>
 foldl1 f = IterateeG step
   where
   step (Chunk xs) | LL.null xs = return $ Cont (foldl1 f) Nothing
+  -- After the first chunk, just use regular foldl in order to account for
+  -- the accumulator.
   step (Chunk xs) = return $ Cont (foldl f (FLL.foldl1 f xs)) Nothing
   step stream     = return $ Cont (foldl1 f) (Just (setEOF stream))
 

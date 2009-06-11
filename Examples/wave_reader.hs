@@ -3,7 +3,7 @@
 {-# LANGUAGE BangPatterns #-}
 module Main where
 
-import Data.Iteratee
+import Data.Iteratee as Iter
 import Data.Iteratee.Codecs.Wave
 import qualified Data.IntMap as IM
 import Data.List (foldl')
@@ -38,12 +38,7 @@ test (Just dict) = do
 
 -- an iteratee that calculates the maximum value found so far.
 -- this could be written with head as well, however it is more
--- efficient to operate on an entire chunk at once.
+-- efficient to use foldl'
 maxIter :: IterateeG [] Double IO Double
-maxIter = m 0
-  where
-  m n = IterateeG (step n)
-  step acc (Chunk []) = return $ Cont (m acc) Nothing
-  step acc (Chunk xs) = return $ Cont (m $! foldl' (max . abs) acc xs) Nothing
-  step acc str = return $ Done acc str
+maxIter = Iter.foldl' (flip (max . abs)) 0
 

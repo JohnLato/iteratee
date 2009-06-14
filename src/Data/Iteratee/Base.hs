@@ -489,8 +489,7 @@ convStream fi iter = fi >>= check
   docase (Cont k Nothing)  = convStream fi k
   docase (Cont _ (Just e)) = return $ throwErr e
 
-{-# SPECIALIZE convStream :: IterateeG s el IO (Maybe (s' el')) -> EnumeratorN s el s' el' IO a #-}
-
+{-# INLINE convStream #-}
 
 -- |Creates an enumerator with only elements from the stream that
 -- satisfy the predicate function.

@@ -26,7 +26,7 @@ flag buildTests
 
 Library
  Hs-Source-Dirs:        src
- ghc-options:           -Wall -fexcess-precision
+ ghc-options:           -Wall
  if flag(splitBase)
    build-depends:       base >= 3, base < 5
  else

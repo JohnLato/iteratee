@@ -194,9 +194,9 @@ checkIfDone _ (Cont _ (Just e)) = return . throwErr $ e
 joinI :: (SC.StreamChunk s el, SC.StreamChunk s' el', Monad m) =>
          IterateeG s el m (IterateeG s' el' m a) ->
          IterateeG s el m a
-joinI m = IterateeG (\str -> runIter m str >>= docase)
+joinI m = IterateeG (docase <=< runIter m)
   where
-  docase (Done ma str) = run ma >>= \a -> return (Done a str)
+  docase (Done ma str) = liftM (flip Done str) (run ma)
   docase (Cont k mErr) = return $ Cont (joinI k) mErr
 
 -- It turns out, IterateeG form a monad. We can use the familiar do
@@ -210,7 +210,7 @@ iterBind :: (Monad m ) =>
              IterateeG s el m a ->
              (a -> IterateeG s el m b) ->
              IterateeG s el m b
-iterBind m f = IterateeG $ \str -> (runIter m str >>= docase)
+iterBind m f = IterateeG (docase <=< runIter m)
   where
   docase (Done a str)  = runIter (f a) str
   docase (Cont k mErr) = return $ Cont (k `iterBind` f) mErr
@@ -219,7 +219,7 @@ iterBind m f = IterateeG $ \str -> (runIter m str >>= docase)
 
 instance (Monad m, Functor m) =>
   Functor (IterateeG s el m) where
-  fmap f m = IterateeG $ \str -> runIter m str >>= docase
+  fmap f m = IterateeG (docase <=< runIter m)
     where
     -- docase :: IterGV s el m a -> m (IterGV s el m a)
     docase (Done a stream) = return $ Done (f a) stream
@@ -227,10 +227,10 @@ instance (Monad m, Functor m) =>
 
 instance (Monad m, Functor m) => Applicative (IterateeG s el m) where
   pure    = return
-  m <*> a = m >>= \f -> fmap f a
+  m <*> a = m >>= flip fmap a
 
 instance MonadTrans (IterateeG s el) where
-  lift m = IterateeG $ \str -> m >>= \a -> return $ Done a str
+  lift m = IterateeG $ \str -> liftM (flip Done str) m
 
 instance (MonadIO m) => MonadIO (IterateeG s el m) where
   liftIO = lift . liftIO
@@ -269,7 +269,7 @@ setEOF _              = Err "EOF"
 checkErr :: (Monad m, SC.StreamChunk s el) =>
               IterateeG s el m a ->
               IterateeG s el m (Either ErrMsg a)
-checkErr iter = IterateeG (\str -> runIter iter str >>= check)
+checkErr iter = IterateeG (check <=< runIter iter)
   where
   check (Done a str) = return $ Done (Right a) str
   check (Cont _ (Just err)) = return $ Done (Left err) mempty
@@ -425,8 +425,7 @@ take n' iter = IterateeG (step n')
   check n (Done x _)        = drop n >> (return $ return x)
   check n (Cont x Nothing)  = take n x
   check n (Cont _ (Just e)) = drop n >> throwErr e
-  done s1 s2 = runIter iter s1 >>= checkIfDone return >>= \i' ->
-               return (Done i' s2)
+  done s1 s2 = liftM (flip Done s2) (runIter iter s1 >>= checkIfDone return)
 
 
 -- |Read n elements from a stream and apply the given iteratee to the
@@ -450,8 +449,7 @@ takeR n iter = IterateeG (step n)
   step _n str            = done str str
   check _n' (Done a str)   = return $ Done (return a) str
   check n'  (Cont k mErr)  = return $ Cont (takeR n' k) mErr
-  done s1 s2 = runIter iter s1 >>= checkIfDone return >>= \i' ->
-               return (Done i' s2)
+  done s1 s2 = liftM (flip Done s2) (runIter iter s1 >>= checkIfDone return)
 
 
 -- |Map the stream: yet another iteratee transformer
@@ -463,8 +461,7 @@ takeR n iter = IterateeG (step n)
 mapStream :: (SC.StreamChunk s el, SC.StreamChunk s el', Monad m) =>
               (el -> el') ->
               EnumeratorN s el s el' m a
-mapStream f iter = IterateeG (\str -> runIter iter (strMap (SC.cMap f) str) >>=
-                   check)
+mapStream f iter = IterateeG ((check <=< runIter iter) . strMap (SC.cMap f))
   where
   check (Done a _) = return $ Done (return a) (Chunk LL.empty)
   check (Cont k mErr) = return $ Cont (mapStream f k) mErr
@@ -586,7 +583,7 @@ enumErr e iter = runIter iter (EOF (Just (Err e))) >>= check
 
 (>.):: (SC.StreamChunk s el, Monad m) =>
        EnumeratorGM s el m a -> EnumeratorGM s el m a -> EnumeratorGM s el m a
-(>.) e1 e2 i1 = e1 i1 >>= e2
+(>.) e1 e2 = e2 <=< e1
 
 -- |The pure 1-chunk enumerator
 -- It passes a given list of elements to the iteratee in one chunk

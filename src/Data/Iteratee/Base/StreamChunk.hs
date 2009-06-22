@@ -77,7 +77,8 @@ listmap f = foldr (LL.cons . f) LL.empty
 
 -- |Class of streams which can be filled from a 'Ptr'.  Typically these
 -- are streams which can be read from a file.
-class StreamChunk s el => ReadableChunk s el where
+-- The Int parameter is the length of the data in bytes.
+class (StreamChunk s el, Storable el) => ReadableChunk s el where
   readFromPtr :: Ptr (el) -> Int -> IO (s el)
 
 instance (Storable el) => ReadableChunk [] el where

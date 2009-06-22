@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP, ScopedTypeVariables #-}
 
 -- |Random and Binary IO with generic Iteratees, using File Descriptors for IO.
 -- when available, these are the preferred functions for performing IO as they
@@ -26,6 +26,7 @@ import Data.Iteratee.IO.Base
 
 import Foreign.Ptr
 import Foreign.Marshal.Alloc
+import Foreign.Storable
 
 import System.IO (SeekMode(..))
 
@@ -37,10 +38,10 @@ import System.Posix hiding (FileOffset)
 -- |The enumerator of a POSIX File Descriptor.  This version enumerates
 -- over the entire contents of a file, in order, unless stopped by
 -- the iteratee.  In particular, seeking is not supported.
-enumFd :: ReadableChunk s el => Fd -> EnumeratorGM s el IO a
+enumFd :: forall a s el.(ReadableChunk s el) => Fd -> EnumeratorGM s el IO a
 enumFd fd iter' = allocaBytes (fromIntegral buffer_size) $ loop iter'
   where
-    buffer_size = 4096
+    buffer_size = fromIntegral $ 2048 - (mod 2048 $ sizeOf (undefined :: el))
     loop iter p = do
       n <- myfdRead fd (castPtr p) buffer_size
       case n of
@@ -56,13 +57,13 @@ enumFd fd iter' = allocaBytes (fromIntegral buffer_size) $ loop iter'
 
 -- |The enumerator of a POSIX File Descriptor: a variation of enumFd that
 -- supports RandomIO (seek requests)
-enumFdRandom :: ReadableChunk s el => Fd -> EnumeratorGM s el IO a
+enumFdRandom :: forall a s el.(ReadableChunk s el) => Fd -> EnumeratorGM s el IO a
 enumFdRandom fd iter =
  allocaBytes (fromIntegral buffer_size) (loop (0,0) iter)
  where
   -- this can be usefully varied.  Values between 512 and 4096 seem
   -- to provide the best performance for most cases.
-  buffer_size = 4096
+  buffer_size = fromIntegral $ 4096 - (mod 4096 $ sizeOf (undefined :: el))
   -- the first argument of loop is (off,len), describing which part
   -- of the file is currently in the buffer 'p'
 {-

@@ -1,3 +1,5 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+
 -- |Random and Binary IO with generic Iteratees.  These functions use Handles
 -- for IO operations, and are provided for compatibility.  When available,
 -- the File Descriptor based functions are preferred as these wastefully
@@ -23,6 +25,7 @@ import Control.Exception.Extensible
 
 import Foreign.Ptr
 import Foreign.Marshal.Alloc
+import Foreign.Storable
 
 import System.IO
 
@@ -33,10 +36,10 @@ import System.IO
 -- |The enumerator of a file Handle.  This version enumerates
 -- over the entire contents of a file, in order, unless stopped by
 -- the iteratee.  In particular, seeking is not supported.
-enumHandle :: ReadableChunk s el => Handle -> EnumeratorGM s el IO a
+enumHandle :: forall a s el.(ReadableChunk s el) => Handle -> EnumeratorGM s el IO a
 enumHandle h i = allocaBytes (fromIntegral buffer_size) $ loop i
   where
-    buffer_size = 4096
+    buffer_size = 4096 - (mod 4096 $ sizeOf (undefined :: el))
     loop iter p = do
       n <- (try $ hGetBuf h p buffer_size) :: IO (Either SomeException Int)
       case n of
@@ -53,13 +56,13 @@ enumHandle h i = allocaBytes (fromIntegral buffer_size) $ loop i
 
 -- |The enumerator of a Handle: a variation of enumHandle that
 -- supports RandomIO (seek requests)
-enumHandleRandom :: ReadableChunk s el => Handle -> EnumeratorGM s el IO a
+enumHandleRandom :: forall a s el.(ReadableChunk s el) => Handle -> EnumeratorGM s el IO a
 enumHandleRandom h iter =
  allocaBytes (fromIntegral buffer_size) (loop (0,0) iter)
  where
   -- this can be usefully varied.  Values between 512 and 4096 seem
   -- to provide the best performance for most cases.
-  buffer_size = 4096
+  buffer_size = 4096 - (mod 4096 $ sizeOf (undefined :: el))
   -- the first argument of loop is (off,len), describing which part
   -- of the file is currently in the buffer 'p'
 {-

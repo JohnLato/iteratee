@@ -518,9 +518,10 @@ foldl :: (LL.ListLike (s el) el, FLL.FoldableLL (s el) el, Monad m) =>
          (a -> el -> a) ->
          a ->
          IterateeG s el m a
-foldl f i = IterateeG step
+foldl f i = iter
   where
-  step (Chunk xs) | LL.null xs = return $ Cont (foldl f i) Nothing
+  iter = IterateeG step
+  step (Chunk xs) | LL.null xs = return $ Cont (iter) Nothing
   step (Chunk xs) = return $ Cont (foldl f (FLL.foldl f i xs)) Nothing
   step stream     = return $ Done i stream
 
@@ -529,9 +530,10 @@ foldl' :: (LL.ListLike (s el) el, FLL.FoldableLL (s el) el, Monad m) =>
           (a -> el -> a) ->
           a ->
           IterateeG s el m a
-foldl' f i = IterateeG step
+foldl' f i = iter
   where
-  step (Chunk xs) | LL.null xs = return $ Cont (foldl' f i) Nothing
+  iter = IterateeG step
+  step (Chunk xs) | LL.null xs = return $ Cont (iter) Nothing
   step (Chunk xs) = return $ Cont (foldl' f $! FLL.foldl' f i xs) Nothing
   step stream     = return $ Done i stream
 

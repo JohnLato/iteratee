@@ -46,11 +46,14 @@ module Data.Iteratee.Base (
   foldl',
   foldl1,
   -- * Enumerators
+  -- ** Basic enumerators
   enumEof,
   enumErr,
-  (>.),
   enumPure1Chunk,
   enumPureNChunk,
+  -- ** Enumerator Combinators
+  (>.),
+  enumPair,
   -- * Misc.
   seek,
   FileOffset
@@ -111,6 +114,13 @@ strMap _ (EOF mErr) = EOF mErr
 data ErrMsg = Err String
               | Seek FileOffset
               deriving (Show, Eq)
+
+instance Monoid ErrMsg where
+  mempty = Err ""
+  mappend (Err s1) (Err s2)  = Err (s1 ++ s2)
+  mappend e@(Err _) _        = e
+  mappend _        e@(Err _) = e
+  mappend (Seek _) (Seek b)  = Seek b
 
 -- |Iteratee -- a generic stream processor, what is being folded over
 -- a stream
@@ -537,6 +547,31 @@ foldl1 f = IterateeG step
   -- the accumulator.
   step (Chunk xs) = return $ Cont (foldl f (FLL.foldl1 f xs)) Nothing
   step stream     = return $ Cont (foldl1 f) (Just (setEOF stream))
+
+-- ------------------------------------------------------------------------
+-- Zips
+
+-- |Enumerate two iteratees over a single stream simultaneously.
+enumPair :: (LL.ListLike (s el) el, Monad m) =>
+       IterateeG s el m a ->
+       IterateeG s el m b ->
+       IterateeG s el m (a,b)
+enumPair i1 i2 = IterateeG step
+  where
+  longest c1@(Chunk xs) c2@(Chunk ys) = if LL.length xs > LL.length ys
+                                        then c1 else c2
+  longest e@(EOF _)  _          = e
+  longest _          e@(EOF _)  = e
+  step (Chunk xs) | LL.null xs = return $ Cont (IterateeG step) Nothing
+  step str = do
+    ia <- runIter i1 str
+    ib <- runIter i2 str
+    case (ia, ib) of
+      (Done a astr, Done b bstr)  -> return $ Done (a,b) $ longest astr bstr
+      (Done a _astr, Cont k mErr) -> return $ Cont (enumPair (return a) k) mErr
+      (Cont k mErr, Done b _bstr) -> return $ Cont (enumPair k (return b)) mErr
+      (Cont a aEr,  Cont b bEr)   -> return $ Cont (enumPair a b)
+                                                   (aEr `mappend` bEr)
 
 -- ------------------------------------------------------------------------
 -- Enumerators

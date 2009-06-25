@@ -420,7 +420,7 @@ load_dict e = do
       return . Just . TEN_CHAR $ \iter_char -> return $ do
             Iter.seek (fromIntegral offset)
             let iter = convStream
-                         (checkErr Iter.head >>= return . either (const Nothing) (Just . (:[]) . chr . fromIntegral))
+                         (liftM (either (const Nothing) (Just . (:[]) . chr . fromIntegral)) (checkErr Iter.head))
                          iter_char
             Iter.joinI $ Iter.joinI $ Iter.takeR (pred count) iter
 
@@ -444,7 +444,7 @@ load_dict e = do
       return . Just . TEN_INT $ \iter_int -> return $ do
             Iter.seek (fromIntegral offset)
             let iter = convStream
-                         (checkErr Iter.head >>= return . either (const Nothing) (Just . (:[]) . conv_byte typ))
+                         (liftM (either (const Nothing) (Just . (:[]) . conv_byte typ)) (checkErr Iter.head))
                          iter_int
             Iter.joinI $ Iter.joinI $ Iter.takeR count iter
 
@@ -499,8 +499,7 @@ load_dict e = do
     return . Just . TEN_INT $ \iter_int -> return $ do
           Iter.seek (fromIntegral offset)
           let iter = convStream
-                         (checkErr (endianRead2 e') >>=
-                           return . either (const Nothing) (Just . (:[]) . conv_short typ))
+                         (liftM (either (const Nothing) (Just . (:[]) . conv_short typ)) (checkErr (endianRead2 e')))
                          iter_int
           Iter.joinI $ Iter.joinI $ Iter.takeR (2*count) iter
 
@@ -517,8 +516,7 @@ load_dict e = do
       return . Just . TEN_INT $ \iter_int -> return $ do
             Iter.seek (fromIntegral offset)
             let iter = convStream
-                         (checkErr (endianRead4 e') >>=
-                           return . either (const Nothing) (Just . (:[]) . conv_long typ))
+                         (liftM (either (const Nothing) (Just . (:[]) . conv_long typ)) (checkErr (endianRead4 e')))
                          iter_int
             Iter.joinI $ Iter.joinI $ Iter.takeR (4*count) iter
 

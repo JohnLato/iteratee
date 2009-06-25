@@ -64,7 +64,7 @@ enum_chunk_decoded iter = return read_size
   read_hex acc _ = Nothing
 
   frame_err e iter = IterateeG (\_ ->
-                     return $ Cont (joinIM $ enumErr e $ iter)
+                     return $ Cont (joinIM $ enumErr e iter)
                      (Just $ Err "Frame error"))
 
 -- ------------------------------------------------------------------------

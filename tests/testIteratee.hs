@@ -30,7 +30,7 @@ instance Show (a -> b) where
 type ST = StreamG [] Int
 
 prop_eq str = str == str
-  where types = (str :: ST)
+  where types = str :: ST
 
 prop_mempty = mempty == (Chunk [] :: StreamG [] Int)
 
@@ -44,7 +44,7 @@ prop_functor str@(Chunk xs) f = fmap f str == Chunk (fmap f xs)
   where types = (str :: ST, f :: Int -> Integer)
 
 prop_mappend2 str = str `mappend` mempty == mempty `mappend` str
-  where types = (str :: ST)
+  where types = str :: ST
 
 
 isChunk (Chunk _) = True
@@ -159,7 +159,7 @@ prop_null xs i = runner1 (enumPure1Chunk xs =<< enumPure1Chunk [] i)
 prop_nullH xs = P.length xs > 0 ==>
                 runner1 (enumPure1Chunk xs =<< enumPure1Chunk [] Iter.head)
                 == runner1 (enumPure1Chunk xs Iter.head)
-  where types = (xs :: [Int])
+  where types = xs :: [Int]
 -- ---------------------------------------------
 -- Nested Iteratees
 
@@ -200,27 +200,27 @@ prop_convstream xs i = P.length xs > 0 ==>
 prop_convstream2 xs = P.length xs > 0 ==>
                       runner2 (enumPure1Chunk xs $ convStream convId Iter.head)
                       == runner1 (enumPure1Chunk xs Iter.head)
-  where types = (xs :: [Int])
+  where types = xs :: [Int]
 
 prop_convstream3 xs = P.length xs > 0 ==>
                       runner2 (enumPure1Chunk xs $ convStream convId stream2list)
                       == runner1 (enumPure1Chunk xs stream2list)
-  where types = (xs :: [Int])
+  where types = xs :: [Int]
 
 prop_take xs n = n >= 0 ==>
                  runner2 (enumPure1Chunk xs $ Iter.take n stream2list)
                  == runner1 (enumPure1Chunk (P.take n xs) stream2list)
-  where types = (xs :: [Int])
+  where types = xs :: [Int]
 
 prop_take2 xs n = n > 0 ==>
                   runner2 (enumPure1Chunk xs $ Iter.take n peek)
                   == runner1 (enumPure1Chunk (P.take n xs) peek)
-  where types = (xs :: [Int])
+  where types = xs :: [Int]
 
 prop_takeR xs n = n >= 0 ==>
                   runner2 (enumPure1Chunk xs $ Iter.take n stream2list)
                   == runner2 (enumPure1Chunk xs $ takeR n stream2list)
-  where types = (xs :: [Int])
+  where types = xs :: [Int]
 
 -- ---------------------------------------------
 -- Data.Iteratee.Char

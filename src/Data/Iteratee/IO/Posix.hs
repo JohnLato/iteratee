@@ -86,16 +86,13 @@ unFd (Fd x) = x
 -- Return the list of read-pending descriptors
 select'read'pending :: [Fd] -> IO (Either Errno [Fd])
 select'read'pending mfd =
-    withArray ([0,1]::[TIMEVAL]) ( -- holdover...
-    \_timeout ->
-      withArray fds (
-       \readfs ->
-         do
-         rc <- c_select (fdmax+1) readfs nullPtr nullPtr nullPtr
-         if rc == -1 then liftM Left getErrno
-         -- because the wait was indefinite, rc must be positive!
-            else peekArray (length fds) readfs >>=
-                 return . Right . map Fd . fds2mfd))
+    withArray ([0,1]::[TIMEVAL]) $ \_timeout ->
+      withArray fds $ \readfs -> do
+          rc <- c_select (fdmax+1) readfs nullPtr nullPtr nullPtr
+          if rc == -1
+            then liftM Left getErrno
+            -- because the wait was indefinite, rc must be positive!
+            else liftM (Right . map Fd . fds2mfd) (peekArray (length fds) readfs)
   where
     fds :: [FDSET]
     fds  = foldr ormax [] (map (fd2fds . unFd) mfd)

@@ -1,5 +1,5 @@
 Name:		iteratee
-Version:        0.2.4
+Version:        0.2.3
 Cabal-Version:  >= 1.2
 Description:	The IterateeGM monad provides strict, safe, and functional
                 I/O.  In addition to pure Iteratee processors, file IO and 
@@ -18,51 +18,88 @@ tested-with:    GHC == 6.10.3
 extra-source-files: README LICENSE CONTRIBUTORS Examples/headers.hs Examples/test_full1.txt Examples/test_full2.txt Examples/test_full3.txt Examples/wave_reader.hs Examples/short.wav
 
 flag splitBase
-  description: Choose the new split-up base package.
+  description: Use the new split-up base package.
 
 flag buildTests
-  description: build test executables
+  description: Build test executables.
   default:     False
 
-Library
- Hs-Source-Dirs:        src
- ghc-options:           -Wall
- if flag(splitBase)
-   build-depends:       base >= 3, base < 5
- else
-   build-depends:       base < 3
- if os(windows)
-   cpp-options:         -DUSE_WINDOWS
-   other-modules:       Data.Iteratee.IO.Windows
- else
-   cpp-options:         -DUSE_POSIX
-   other-modules:       Data.Iteratee.IO.Posix
-   build-depends:       unix
- build-depends:         haskell98, containers >= 0.2 && < 0.3, bytestring >= 0.9 && < 0.10, extensible-exceptions >= 0.1 && < 0.2, transformers >= 0.1.4 && < 0.2, ListLike >= 1.0 && < 2
- exposed-modules:       Data.Iteratee
-                        Data.Iteratee.Base
-                        Data.Iteratee.Base.StreamChunk
-                        Data.Iteratee.Binary
-                        Data.Iteratee.Char
-                        Data.Iteratee.Codecs.Wave
-                        Data.Iteratee.Codecs.Tiff
-                        Data.Iteratee.IO
-                        Data.Iteratee.IO.Base
-                        Data.Iteratee.WrappedByteString
- other-modules:         Data.Iteratee.IO.Fd
-                        Data.Iteratee.IO.Handle
+library
+  hs-source-dirs:
+    src
 
-Executable testIteratee
-  Hs-Source-Dirs:  src, tests
-  Main-Is:         testIteratee.hs
-  Other-Modules:   QCUtils
+  if flag(splitBase)
+    build-depends:
+      base >= 3 && < 5
+  else
+    build-depends:
+      base < 3
+
+  if os(windows)
+    cpp-options: -DUSE_WINDOWS
+    other-modules:
+      Data.Iteratee.IO.Windows
+  else
+    cpp-options: -DUSE_POSIX
+    other-modules:
+      Data.Iteratee.IO.Posix
+    build-depends:
+      unix >= 2 && < 3
+
+  build-depends:
+    ListLike              >= 1.0   && < 2,
+    bytestring            >= 0.9   && < 0.10,
+    containers            >= 0.2   && < 0.3,
+    extensible-exceptions >= 0.1   && < 0.2,
+    haskell98             >= 1     && < 2,
+    transformers          >= 0.1.4 && < 0.2
+
+  exposed-modules:
+    Data.Iteratee
+    Data.Iteratee.Base
+    Data.Iteratee.Base.StreamChunk
+    Data.Iteratee.Binary
+    Data.Iteratee.Char
+    Data.Iteratee.Codecs.Tiff
+    Data.Iteratee.Codecs.Wave
+    Data.Iteratee.IO
+    Data.Iteratee.IO.Base
+    Data.Iteratee.WrappedByteString
+
+  other-modules:
+    Data.Iteratee.IO.Fd
+    Data.Iteratee.IO.Handle
+
+  ghc-options:   -Wall
+  if impl(ghc >= 6.8)
+    ghc-options: -fwarn-tabs
+
+executable testIteratee
+  hs-source-dirs:
+    src
+    tests
+
+  main-is: testIteratee.hs
+
+  other-modules:
+    QCUtils
+
   if flag(buildTests)
-    Build-Depends: QuickCheck >= 2 && < 3, test-framework >= 0.2 && < 0.3, test-framework-quickcheck2 >= 0.2 && < 0.3
-  Else
-    Executable:    False
-    Buildable:     False
-  If flag(splitBase)
-    Build-Depends: base >= 3 && < 5
-  Else
-    Build-Depends: base >= 1 && < 2
+    build-depends:
+      QuickCheck                 >= 2   && < 3,
+      test-framework             >= 0.2 && < 0.3,
+      test-framework-quickcheck2 >= 0.2 && < 0.3
+  else
+    executable: False
+    buildable:  False
 
+  if flag(splitBase)
+    build-depends:
+      base >= 3 && < 5
+  else
+    build-depends:
+      base < 3
+
+source-repository head
+  type:     darcs
+  location: http://inmachina.net/~jwlato/haskell/iteratee

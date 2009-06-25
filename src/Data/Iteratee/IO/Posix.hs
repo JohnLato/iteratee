@@ -1,6 +1,6 @@
 {-# LANGUAGE CPP, ForeignFunctionInterface #-}
 
--- Low-level IO operations 
+-- Low-level IO operations
 -- These operations are either missing from the GHC run-time library,
 -- or implemented suboptimally or heavy-handedly
 
@@ -23,8 +23,8 @@ import Foreign.Ptr
 import System.Posix
 import System.IO (SeekMode(..))
 import Control.Monad
-import Data.Bits			-- for select
-import Foreign.Marshal.Array		-- for select
+import Data.Bits                        -- for select
+import Foreign.Marshal.Array            -- for select
 
 -- |Alas, GHC provides no function to read from Fd to an allocated buffer.
 -- The library function fdRead is not appropriate as it returns a string
@@ -49,7 +49,7 @@ myfdSeek (Fd fd) mode off = do
   n' <- cLSeek fd off (mode2Int mode)
   if n' == -1 then liftM Left getErrno
      else return . Right  $ n'
- where mode2Int :: SeekMode -> CInt	-- From GHC source
+ where mode2Int :: SeekMode -> CInt     -- From GHC source
        mode2Int AbsoluteSeek = 0
        mode2Int RelativeSeek = 1
        mode2Int SeekFromEnd  = 2
@@ -58,7 +58,7 @@ foreign import ccall unsafe "unistd.h lseek" cLSeek
   :: CInt -> FileOffset -> CInt -> IO FileOffset
 
 
--- Darn! GHC doesn't provide the real select over several descriptors! 
+-- Darn! GHC doesn't provide the real select over several descriptors!
 -- We have to implement it ourselves
 
 type FDSET = CUInt
@@ -74,9 +74,9 @@ fd2fds fd = replicate nb 0 ++ [setBit 0 off]
     (nb,off) = quotRem (fromIntegral fd) (bitSize (undefined::FDSET))
 
 fds2mfd :: [FDSET] -> [CInt]
-fds2mfd fds = [fromIntegral (j+i*bitsize) | 
-	       (afds,i) <- zip fds [0..], j <- [0..bitsize],
-	       testBit afds j]
+fds2mfd fds = [fromIntegral (j+i*bitsize) |
+               (afds,i) <- zip fds [0..], j <- [0..bitsize],
+               testBit afds j]
   where bitsize = bitSize (undefined::FDSET)
 
 unFd :: Fd -> CInt

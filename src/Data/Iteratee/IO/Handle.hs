@@ -68,8 +68,8 @@ enumHandleRandom h iter =
 {-
   loop :: (ReadableChunk s el) =>
           (FileOffset,Int) ->
-          IterateeG s el IO a -> 
-	  Ptr el ->
+          IterateeG s el IO a ->
+          Ptr el ->
           IO (IterateeG s el IO a)
 -}
   -- Otherwise, the `off + fromIntegral len' below accumulates thunks
@@ -82,9 +82,9 @@ enumHandleRandom h iter =
     Right n' -> do
          s <- readFromPtr p (fromIntegral n')
          igv <- runIter iter' (Chunk s)
-	 check (off + fromIntegral len,fromIntegral n') p igv
+         check (off + fromIntegral len,fromIntegral n') p igv
   seekTo pos@(off, len) off' iter' p
-    | off <= off' && off' < off + fromIntegral len =	-- Seek within buffer
+    | off <= off' && off' < off + fromIntegral len =    -- Seek within buffer
     do
     let local_off = fromIntegral $ off' - off
     s <- readFromPtr (p `plusPtr` local_off) (len - local_off)
@@ -127,4 +127,3 @@ fileDriverRandomHandle iter filepath = do
   result <- enumHandleRandom h iter >>= run
   hClose h
   return result
-

@@ -39,4 +39,3 @@ instance (Num a, Ord a, Arbitrary a, Monad m) => Arbitrary (IterateeG [] a m [a]
               ,I.heads ns >> stream2list
               ,I.peek >> stream2list
               ]
-

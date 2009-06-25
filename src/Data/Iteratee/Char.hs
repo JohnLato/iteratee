@@ -43,7 +43,7 @@ type Iteratee = IterateeG [] Char
 
 -- Useful combinators for implementing iteratees and enumerators
 
-type Line = String	-- The line of text, terminators are not included
+type Line = String      -- The line of text, terminators are not included
 
 -- |Read the line of text from the stream
 -- The line can be terminated by CR, LF or CRLF.
@@ -124,7 +124,7 @@ enumLines iter = line >>= check iter
 -- function.
 
 enumWords :: (Functor m, Monad m) =>
-	     IterateeG [] String m a ->
+             IterateeG [] String m a ->
              IterateeG [] Char m (IterateeG [] String m a)
 enumWords iter = Iter.break isSpace >>= check iter
   where
@@ -138,4 +138,3 @@ enumWords iter = Iter.break isSpace >>= check iter
 -- Enumerators
 
 type EnumeratorM m a = EnumeratorGM [] Char m a
-

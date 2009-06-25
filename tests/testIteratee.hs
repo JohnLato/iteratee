@@ -296,4 +296,3 @@ tests = [
 -- The entry point
 
 main = defaultMain tests
-

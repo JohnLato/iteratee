@@ -84,4 +84,3 @@ class (StreamChunk s el, Storable el) => ReadableChunk s el where
 
 instance (Storable el) => ReadableChunk [] el where
   readFromPtr = flip peekArray
-

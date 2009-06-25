@@ -16,4 +16,3 @@ where
 import Data.Iteratee.Base
 import Data.Iteratee.Binary
 import Data.Iteratee.IO
-

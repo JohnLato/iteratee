@@ -323,4 +323,3 @@ normalize bd a = case (a > 0) of
   where
     divPos = fromIntegral (1 `shiftL` fromIntegral (bd - 1) :: Int) - 1
     divNeg = fromIntegral (1 `shiftL` fromIntegral (bd - 1) :: Int)
-

@@ -23,7 +23,7 @@ main = do
 
 -- Use the collection of [WAVEDE] returned from wave_reader to
 -- do further processing.  The IntMap has an entry for each type of chunk
--- in the wave file.  Read the first format chunk and disply the 
+-- in the wave file.  Read the first format chunk and disply the
 -- format information, then use the dict_process_data function
 -- to enumerate over the maxIter iteratee to find the maximum value
 -- (peak amplitude) in the file.
@@ -41,4 +41,3 @@ test (Just dict) = do
 -- efficient to use foldl'
 maxIter :: IterateeG [] Double IO Double
 maxIter = Iter.foldl' (flip (max . abs)) 0
-

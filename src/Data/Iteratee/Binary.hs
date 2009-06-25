@@ -65,15 +65,13 @@ endianRead4 e = do
   c3 <- It.head
   c4 <- It.head
   case e of
-    MSB -> return $ 
-	       (((((fromIntegral c1
-		`shiftL` 8) .|. fromIntegral c2)
-	        `shiftL` 8) .|. fromIntegral c3)
-	        `shiftL` 8) .|. fromIntegral c4
-    LSB -> return $ 
-	       (((((fromIntegral c4
-		`shiftL` 8) .|. fromIntegral c3)
-	        `shiftL` 8) .|. fromIntegral c2)
-	        `shiftL` 8) .|. fromIntegral c1
-
-
+    MSB -> return $
+               (((((fromIntegral c1
+                `shiftL` 8) .|. fromIntegral c2)
+                `shiftL` 8) .|. fromIntegral c3)
+                `shiftL` 8) .|. fromIntegral c4
+    LSB -> return $
+               (((((fromIntegral c4
+                `shiftL` 8) .|. fromIntegral c3)
+                `shiftL` 8) .|. fromIntegral c2)
+                `shiftL` 8) .|. fromIntegral c1

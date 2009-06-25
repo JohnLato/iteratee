@@ -21,4 +21,3 @@ import Data.Iteratee.IO.Posix
 #else
 type FileOffset = Integer
 #endif
-

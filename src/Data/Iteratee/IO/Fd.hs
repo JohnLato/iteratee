@@ -69,8 +69,8 @@ enumFdRandom fd iter =
 {-
   loop :: (ReadableChunk s el) =>
           (FileOffset,Int) ->
-          IterateeG s el IO a -> 
-	  Ptr el ->
+          IterateeG s el IO a ->
+          Ptr el ->
           IO (IterateeG s el IO a)
 -}
     -- Thanks to John Lato for the strictness annotation
@@ -126,4 +126,3 @@ fileDriverRandomFd iter filepath = do
   return result
 
 #endif
-

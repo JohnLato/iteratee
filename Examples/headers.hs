@@ -11,7 +11,7 @@ import Data.Word
 -- HTTP chunk decoding
 -- Each chunk has the following format:
 --
--- 	  <chunk-size> CRLF <chunk-data> CRLF
+--        <chunk-size> CRLF <chunk-data> CRLF
 --
 -- where <chunk-size> is the hexadecimal number; <chunk-data> is a
 -- sequence of <chunk-size> bytes.
@@ -89,7 +89,7 @@ testp1 =
          enumPure1Chunk test_str1 read_lines_rest
     in
     lines == ["header1: v1","header2: v2","header3: v3","header4: v4",
-	     "header5: v5","header6: v6","header7: v7"]
+             "header5: v5","header6: v6","header7: v7"]
     && rest == "rest\n"
 
 testp2 :: Bool
@@ -98,7 +98,7 @@ testp2 =
                               enumPureNChunk test_str1 5 read_lines_rest
     in
     lines == ["header1: v1","header2: v2","header3: v3","header4: v4",
-	     "header5: v5","header6: v6","header7: v7"]
+             "header5: v5","header6: v6","header7: v7"]
     && rest == "rest\n"
 
 
@@ -141,4 +141,3 @@ test32 = test_driver_full "test_full2.txt"
 test33 = test_driver_full "test_full3.txt"
 
 test34 = test_driver_full "test_full3.txt"
-

@@ -650,4 +650,3 @@ enumPureNChunk _ n _ = error $ "enumPureNChunk called with n==" ++ show n
 joinIM :: (Monad m) =>
           m (IterateeG s el m a) -> IterateeG s el m a
 joinIM m = IterateeG (\str -> m >>= flip runIter str)
-

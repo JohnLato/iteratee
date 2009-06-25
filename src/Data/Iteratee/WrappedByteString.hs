@@ -28,6 +28,8 @@ instance LL.FoldableLL (WrappedByteString Word8) Word8 where
   foldl f z = BW.foldl f z . unWrap
   foldr f z = BW.foldr f z . unWrap
 
+-- Thanks to Echo Nolan for indicating that the bytestring must copy
+-- data to a new ptr to preserve referential transparency.
 instance SC.ReadableChunk WrappedByteString Word8 where
   readFromPtr buf l = liftM WrapBS $! BBase.create l $ \newp ->
                     copyArray newp buf l -- must copy from the buffer

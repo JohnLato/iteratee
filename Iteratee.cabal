@@ -1,21 +1,27 @@
-Name:		iteratee
-Version:        0.2.3
-Cabal-Version:  >= 1.2
-Description:	The IterateeGM monad provides strict, safe, and functional
-                I/O.  In addition to pure Iteratee processors, file IO and 
-                combinator functions are provided.
-License:	BSD3
-License-file:	LICENSE
-Author:		Oleg Kiselyov
-Maintainer:	John W. Lato, jwlato@gmail.com
-homepage:       http://inmachina.net/~jwlato/haskell/iteratee
-Stability:	experimental
-synopsis:       Iteratee-based I/O
-category:       System, Data
-build-type:     Simple
-cabal-version:  >= 1.2
-tested-with:    GHC == 6.10.3
-extra-source-files: README LICENSE CONTRIBUTORS Examples/headers.hs Examples/test_full1.txt Examples/test_full2.txt Examples/test_full3.txt Examples/wave_reader.hs Examples/short.wav
+name:          iteratee
+version:       0.2.4
+synopsis:      Iteratee-based I/O
+description:
+  The IterateeGM monad provides strict, safe, and functional I/O. In addition
+  to pure Iteratee processors, file IO and combinator functions are provided.
+category:      System, Data
+author:        Oleg Kiselyov
+maintainer:    John W. Lato <jwlato@gmail.com>
+license:       BSD3
+license-file:  LICENSE
+homepage:      http://inmachina.net/~jwlato/haskell/iteratee
+tested-with:   GHC == 6.10.3
+stability:     experimental
+
+cabal-version: >= 1.2
+build-type:    Simple
+
+extra-source-files:
+  CONTRIBUTORS
+  README
+  Examples/*.hs
+  Examples/*.txt
+  Examples/*.wav
 
 flag splitBase
   description: Use the new split-up base package.

@@ -1,5 +1,4 @@
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses, FlexibleInstances, BangPatterns #-}
 
 module Data.Iteratee.WrappedByteString (
   WrappedByteString (..)
@@ -14,7 +13,9 @@ import qualified Data.ByteString.Internal as BBase
 import qualified Data.ListLike as LL
 import Data.Word
 import Data.Monoid
-import Foreign.ForeignPtr
+import Foreign.Ptr
+import Foreign.Marshal.Array
+import Control.Monad
 
 -- |Wrap a Data.ByteString ByteString
 newtype WrappedByteString a = WrapBS { unWrap :: BBase.ByteString }
@@ -28,14 +29,12 @@ instance LL.FoldableLL (WrappedByteString Word8) Word8 where
   foldr f z = BW.foldr f z . unWrap
 
 instance SC.ReadableChunk WrappedByteString Word8 where
-  readFromPtr p l = do
-    fptr <- newForeignPtr_ p
-    return . WrapBS $ BBase.fromForeignPtr fptr 0 l
+  readFromPtr buf l = liftM WrapBS $! BBase.create l $ \newp ->
+                    copyArray newp buf l -- must copy from the buffer
 
 instance SC.ReadableChunk WrappedByteString Char where
-  readFromPtr p l = do
-    fptr <- newForeignPtr_ p
-    return . WrapBS $ BBase.fromForeignPtr (castForeignPtr fptr) 0 l
+  readFromPtr buf l = liftM WrapBS $! BBase.create l $ \newp ->
+                    copyArray newp (castPtr buf) l --must copy data from buffer
 
 instance LL.ListLike (WrappedByteString Word8) Word8 where
   length        = BW.length . unWrap

@@ -14,7 +14,6 @@ import qualified Data.ListLike as LL
 import Data.Word
 import Data.Monoid
 import Foreign.Ptr
-import Foreign.Marshal.Array
 import Control.Monad
 
 -- |Wrap a Data.ByteString ByteString
@@ -31,12 +30,12 @@ instance LL.FoldableLL (WrappedByteString Word8) Word8 where
 -- Thanks to Echo Nolan for indicating that the bytestring must copy
 -- data to a new ptr to preserve referential transparency.
 instance SC.ReadableChunk WrappedByteString Word8 where
-  readFromPtr buf l = liftM WrapBS $! BBase.create l $ \newp ->
-                    copyArray newp buf l -- must copy from the buffer
+  readFromPtr buf l = let csl = (castPtr buf, l) in
+                      liftM WrapBS $ BW.packCStringLen csl
 
 instance SC.ReadableChunk WrappedByteString Char where
-  readFromPtr buf l = liftM WrapBS $! BBase.create l $ \newp ->
-                    copyArray newp (castPtr buf) l --must copy data from buffer
+  readFromPtr buf l = let csl = (castPtr buf, l) in
+                      liftM WrapBS $ BC.packCStringLen csl
 
 instance LL.ListLike (WrappedByteString Word8) Word8 where
   length        = BW.length . unWrap

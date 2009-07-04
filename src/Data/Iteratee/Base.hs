@@ -432,7 +432,7 @@ take n' iter = IterateeG (step n')
   step n (Chunk str) = done (Chunk s1) (Chunk s2)
     where (s1, s2) = SC.splitAt n str
   step _n stream            = done stream stream
-  check n (Done x _)        = drop n >> (return $ return x)
+  check n (Done x _)        = drop n >> return (return x)
   check n (Cont x Nothing)  = take n x
   check n (Cont _ (Just e)) = drop n >> throwErr e
   done s1 s2 = liftM (flip Done s2) (runIter iter s1 >>= checkIfDone return)
@@ -533,7 +533,7 @@ foldl' :: (LL.ListLike (s el) el, FLL.FoldableLL (s el) el, Monad m) =>
 foldl' f i = iter
   where
   iter = IterateeG step
-  step (Chunk xs) | LL.null xs = return $ Cont (iter) Nothing
+  step (Chunk xs) | LL.null xs = return $ Cont iter Nothing
   step (Chunk xs) = return $ Cont (foldl' f $! FLL.foldl' f i xs) Nothing
   step stream     = return $ Done i stream
 

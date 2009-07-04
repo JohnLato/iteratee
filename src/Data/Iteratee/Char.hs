@@ -113,7 +113,7 @@ enumLines iter = line >>= check iter
   --check :: Either Line Line -> IterateeG [] Char m (IterateeG [] Line m a)
   check iter' (Left l)  = runLine iter' l
   check iter' (Right l) = runLine iter' l
-  runLine i' l = return . joinIM . fmap Iter.liftI $ (runIter i' $ Chunk [l])
+  runLine i' l = return . joinIM . fmap Iter.liftI $ runIter i' (Chunk [l])
 
 
 -- |Convert the stream of characters to the stream of words, and
@@ -130,8 +130,7 @@ enumWords iter = Iter.break isSpace >>= check iter
   where
   --check :: String -> IterateeG [] Char m (IterateeG [] String m a)
   check iter' "" = return iter'
-  check iter' w  = return . joinIM . fmap Iter.liftI $
-                   (runIter iter' $ Chunk [w])
+  check iter' w  = return . joinIM . fmap Iter.liftI $ runIter iter' (Chunk [w])
 
 
 -- ------------------------------------------------------------------------

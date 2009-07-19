@@ -27,7 +27,7 @@ module Data.Iteratee.Base (
   checkErr,
   -- ** Basic Iteratees
   break,
-  --dropWhile,
+  dropWhile,
   drop,
   identity,
   head,
@@ -391,6 +391,19 @@ drop n = IterateeG step
     | SC.length str <= n = return $ Cont (drop (n - SC.length str)) Nothing
   step (Chunk str)       = return $ Done () (Chunk (LL.drop n str))
   step stream            = return $ Done () stream
+
+-- |Skip all elements while the predicate is true.
+-- This is the analogue of List.dropWhile
+dropWhile :: (SC.StreamChunk s el, Monad m) =>
+  (el -> Bool) ->
+  IterateeG s el m ()
+dropWhile p = (IterateeG step)
+  where
+  step (Chunk str) = let dropped = LL.dropWhile p str
+                     in if LL.null dropped
+                       then return $ Cont (dropWhile p) Nothing
+                       else return $ Done () (Chunk dropped)
+  step stream      = return $ Done () stream
 
 
 -- |Return the total length of the stream

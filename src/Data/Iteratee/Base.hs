@@ -13,7 +13,7 @@ module Data.Iteratee.Base (
   EnumeratorGM,
   EnumeratorGMM,
   -- * Iteratees
-  -- ** Iteratee Combinators
+  -- ** Iteratee Utilities
   joinI,
   liftI,
   isFinished,
@@ -21,6 +21,7 @@ module Data.Iteratee.Base (
   joinIM,
   stream2list,
   checkIfDone,
+  liftInner,
   -- ** Error handling
   setEOF,
   throwErr,
@@ -208,6 +209,18 @@ joinI m = IterateeG (docase <=< runIter m)
   where
   docase (Done ma str) = liftM (flip Done str) (run ma)
   docase (Cont k mErr) = return $ Cont (joinI k) mErr
+
+-- |Layer a monad transformer over the inner monad.
+liftInner :: (Monad m, MonadTrans t, Monad (t m)) =>
+  IterateeG s el m a ->
+  IterateeG s el (t m) a
+liftInner iter = IterateeG step
+  where
+  step str = do
+    igv <- lift $ runIter iter str
+    case igv of
+      Done a res  -> return $ Done a res
+      Cont k mErr -> return $ Cont (liftInner k) mErr
 
 -- It turns out, IterateeG form a monad. We can use the familiar do
 -- notation for composing Iteratees

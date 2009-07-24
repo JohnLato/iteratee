@@ -20,6 +20,7 @@ module Data.Iteratee.Base (
   run,
   joinIM,
   stream2list,
+  stream2stream,
   checkIfDone,
   liftInner,
   -- ** Error handling
@@ -272,6 +273,18 @@ stream2list = IterateeG (step mempty)
                                  (IterateeG (step (acc `mappend` ls)))
                                  Nothing
   step acc str        = return $ Done (SC.toList acc) str
+
+-- |Read a stream to the end and return all of its elements as a stream
+stream2stream :: (SC.StreamChunk s el, Monad m) => IterateeG s el m (s el)
+stream2stream = IterateeG (step mempty)
+  where
+  step acc (Chunk ls)
+    | SC.null ls      = return $ Cont (IterateeG (step acc)) Nothing
+  step acc (Chunk ls) = return $ Cont
+                                 (IterateeG (step (acc `mappend` ls)))
+                                 Nothing
+  step acc str        = return $ Done acc str
+
 
 -- |Report and propagate an error.  Disregard the input first and then
 -- propagate the error.

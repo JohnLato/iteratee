@@ -43,12 +43,13 @@ library
 
   if os(windows)
     cpp-options: -DUSE_WINDOWS
-    other-modules:
+    exposed-modules:
       Data.Iteratee.IO.Windows
   else
     cpp-options: -DUSE_POSIX
-    other-modules:
+    exposed-modules:
       Data.Iteratee.IO.Posix
+      Data.Iteratee.IO.Fd
     build-depends:
       unix >= 2 && < 3
 
@@ -69,12 +70,11 @@ library
     Data.Iteratee.Codecs.Tiff
     Data.Iteratee.Codecs.Wave
     Data.Iteratee.IO
-    Data.Iteratee.IO.Base
+    Data.Iteratee.IO.Handle
     Data.Iteratee.WrappedByteString
 
   other-modules:
-    Data.Iteratee.IO.Fd
-    Data.Iteratee.IO.Handle
+    Data.Iteratee.IO.Base
 
   ghc-options:   -Wall
   if impl(ghc >= 6.8)

@@ -13,6 +13,8 @@ module Data.Iteratee.IO(
   enumFdRandom,
 #endif
   -- * Iteratee drivers
+  --   These are FileDescriptor-based on POSIX systems, otherwise they are
+  --   Handle-based.
   fileDriver,
   fileDriverRandom,
 )

@@ -16,6 +16,8 @@ where
 import Data.Iteratee.IO.Windows
 #endif
 
+-- Provide the FileOffset type, which is available in Posix modules
+-- and maybe Windows
 #if defined(USE_POSIX)
 import Data.Iteratee.IO.Posix
 #else

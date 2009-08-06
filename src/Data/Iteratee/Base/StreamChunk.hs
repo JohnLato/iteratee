@@ -64,16 +64,11 @@ class LL.ListLike (c el) el => StreamChunk c el where
   toList = LL.toList
 
   -- |Map a computation over the stream.
-  cMap :: (StreamChunk c' el') => (el -> el') -> c el -> c' el'
+  cMap :: (StreamChunk c el') => (el -> el') -> c el -> c el'
   cMap f = LL.foldr (LL.cons . f) LL.empty
 
 instance StreamChunk [] el where
-  cMap       = listmap
-
-listmap :: (StreamChunk s' el') => (el -> el') -> [el] -> s' el'
-listmap f = foldr (LL.cons . f) LL.empty
-
-{-# RULES "listmap/map" listmap = map #-}
+  cMap       = map
 
 -- |Class of streams which can be filled from a 'Ptr'.  Typically these
 -- are streams which can be read from a file.

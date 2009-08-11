@@ -65,6 +65,7 @@ library
     Data.Iteratee
     Data.Iteratee.Base
     Data.Iteratee.Base.StreamChunk
+    Data.Iteratee.Base.LooseMap
     Data.Iteratee.Binary
     Data.Iteratee.Char
     Data.Iteratee.Codecs.Tiff

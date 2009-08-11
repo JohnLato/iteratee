@@ -41,6 +41,8 @@ module Data.Iteratee.Base (
   take,
   takeR,
   mapStream,
+  rigidMapStream,
+  looseMapStream,
   convStream,
   filter,
   -- ** Folds
@@ -58,7 +60,9 @@ module Data.Iteratee.Base (
   enumPair,
   -- * Misc.
   seek,
-  FileOffset
+  FileOffset,
+  -- * Classes
+  module Data.Iteratee.Base.LooseMap
 )
 where
 
@@ -68,6 +72,7 @@ import qualified Prelude as P
 import qualified Data.Iteratee.Base.StreamChunk as SC
 import qualified Data.ListLike as LL
 import qualified Data.ListLike.FoldableLL as FLL
+import Data.Iteratee.Base.LooseMap
 import Data.Iteratee.IO.Base
 import Control.Monad
 import Control.Applicative
@@ -508,12 +513,41 @@ takeR n iter = IterateeG (step n)
 -- Note the contravariance
 
 mapStream :: (SC.StreamChunk s el, SC.StreamChunk s el', Monad m) =>
-              (el -> el') ->
-              EnumeratorN s el s el' m a
-mapStream f iter = IterateeG ((check <=< runIter iter) . strMap (SC.cMap f))
+ (el -> el')
+  -> EnumeratorN s el s el' m a
+mapStream f i = IterateeG ((check <=< runIter i) . strMap (SC.cMap f))
   where
-  check (Done a _) = return $ Done (return a) (Chunk LL.empty)
-  check (Cont k mErr) = return $ Cont (mapStream f k) mErr
+    go iter = IterateeG ((check <=< runIter iter) . strMap (SC.cMap f))
+    check (Done a _)    = return $ Done (return a) (Chunk LL.empty)
+    check (Cont k mErr) = return $ Cont (go k) mErr
+
+-- |Map a stream without changing the element type.  For StreamChunks
+-- with limited element types (e.g. bytestrings)
+-- this can be much more efficient than regular mapStream
+rigidMapStream :: (SC.StreamChunk s el, Monad m) =>
+  (el -> el)
+  -> EnumeratorN s el s el m a
+rigidMapStream f i =  go i
+  where
+    go iter = IterateeG ((check <=< runIter iter) . strMap (LL.rigidMap f))
+    check (Done a _)    = return $ Done (return a) (Chunk LL.empty)
+    check (Cont k mErr) = return $ Cont (go k) mErr
+
+-- |Yet another stream mapping function.  For container instances with
+-- class contexts, such as uvector or storablevector, this allows
+-- the native map function to be used  and is likely to be much
+-- more efficient than the standard mapStream.
+looseMapStream :: (SC.StreamChunk s el,
+    SC.StreamChunk s el',
+    LooseMap s el el',
+    Monad m) =>
+  (el -> el')
+  -> EnumeratorN s el s el' m a
+looseMapStream f i =  go i
+  where
+    go iter = IterateeG ((check <=< runIter iter) . strMap (looseMap f))
+    check (Done a _)    = return $ Done (return a) (Chunk LL.empty)
+    check (Cont k mErr) = return $ Cont (go k) mErr
 
 
 -- |Convert one stream into another, not necessarily in `lockstep'

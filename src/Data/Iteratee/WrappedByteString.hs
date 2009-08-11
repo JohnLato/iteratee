@@ -50,27 +50,22 @@ instance LL.ListLike (WrappedByteString Word8) Word8 where
   dropWhile p   = WrapBS . BW.dropWhile p . unWrap
   fromList      = WrapBS . BW.pack
   toList        = BW.unpack . unWrap
+  rigidMap f    = WrapBS . BW.map f . unWrap
 
 instance SC.StreamChunk WrappedByteString Word8 where
   cMap          = bwmap
 
 bwmap :: (SC.StreamChunk s' el') =>
-         (Word8 -> el') ->
-         WrappedByteString Word8 ->
-         s' el'
+  (Word8 -> el')
+  -> WrappedByteString Word8
+  -> s' el'
 bwmap f xs = step xs
   where
   step bs
     | LL.null bs = mempty
     | True     = f (LL.head bs) `LL.cons` step (LL.tail bs)
 
--- a specialized version to use in the RULE
-bwmap' :: (Word8 -> Word8) ->
-          WrappedByteString Word8 ->
-          WrappedByteString Word8
-bwmap' f = WrapBS . BW.map f . unWrap
-
-{-# RULES "bwmap/map" forall s (f :: Word8 -> Word8). bwmap f s = bwmap' f s #-}
+-- Now the Char instance
 
 instance Monoid (WrappedByteString Char) where
     mempty = WrapBS BW.empty
@@ -93,24 +88,17 @@ instance LL.ListLike (WrappedByteString Char) Char where
   dropWhile p   = WrapBS . BC.dropWhile p . unWrap
   fromList      = WrapBS . BC.pack
   toList        = BC.unpack . unWrap
+  rigidMap f    = WrapBS . BC.map f . unWrap
 
 instance SC.StreamChunk WrappedByteString Char where
   cMap          = bcmap
 
 bcmap :: (SC.StreamChunk s' el') =>
-         (Char -> el') ->
-         WrappedByteString Char ->
-         s' el'
+  (Char -> el')
+   -> WrappedByteString Char
+   -> s' el'
 bcmap f xs = step xs
   where
   step bs
     | LL.null bs = mempty
     | True     = f (LL.head bs) `LL.cons` step (LL.tail bs)
-
--- a specialized version to use in the RULE
-bcmap' :: (Char -> Char) ->
-          WrappedByteString Char ->
-          WrappedByteString Char
-bcmap' f = WrapBS . BC.map f . unWrap
-
-{-# RULES "bcmap/map" forall s (f :: Char -> Char). bcmap f s = bcmap' f s #-}

@@ -591,24 +591,26 @@ foldl :: (LL.ListLike (s el) el, FLL.FoldableLL (s el) el, Monad m) =>
          (a -> el -> a) ->
          a ->
          IterateeG s el m a
-foldl f i = iter
+foldl f i = iter i
   where
-  iter = IterateeG step
-  step (Chunk xs) | LL.null xs = return $ Cont iter Nothing
-  step (Chunk xs) = return $ Cont (foldl f (FLL.foldl f i xs)) Nothing
-  step stream     = return $ Done i stream
+  iter ac = IterateeG step
+    where
+      step (Chunk xs) | LL.null xs = return $ Cont (iter ac) Nothing
+      step (Chunk xs) = return $ Cont (iter (FLL.foldl f ac xs)) Nothing
+      step stream     = return $ Done ac stream
 
 -- | Left-associative fold that is strict in the accumulator.
 foldl' :: (LL.ListLike (s el) el, FLL.FoldableLL (s el) el, Monad m) =>
           (a -> el -> a) ->
           a ->
           IterateeG s el m a
-foldl' f i = iter
+foldl' f i = iter i
   where
-  iter = IterateeG step
-  step (Chunk xs) | LL.null xs = return $ Cont iter Nothing
-  step (Chunk xs) = return $ Cont (foldl' f $! FLL.foldl' f i xs) Nothing
-  step stream     = return $ Done i stream
+  iter ac = IterateeG step
+    where
+      step (Chunk xs) | LL.null xs = return $ Cont (iter ac) Nothing
+      step (Chunk xs) = return $ Cont (iter $! FLL.foldl' f ac xs) Nothing
+      step stream     = return $ Done ac stream
 
 -- | Variant of foldl with no base case.  Requires at least one element
 --   in the stream.

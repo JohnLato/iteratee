@@ -1,5 +1,5 @@
 name:          iteratee
-version:       0.2.4
+version:       0.3
 synopsis:      Iteratee-based I/O
 description:
   The IterateeGM monad provides strict, safe, and functional I/O. In addition

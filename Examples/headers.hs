@@ -136,8 +136,39 @@ test_driver_full filepath = do
     status <- isFinished
     return (headers, body, status)
 
-test31 = test_driver_full "test_full1.txt"
-test32 = test_driver_full "test_full2.txt"
-test33 = test_driver_full "test_full3.txt"
+test31 = do
+  putStrLn "Expected result is:"
+  putStrLn "About to read headers"
+  putStrLn "Finished reading"
+  putStrLn "Complete headers"
+  putStrLn "[\"header1: v1\",\"header2: v2\",\"header3: v3\",\"header4: v4\"]"
+  putStrLn "Problem Just (Err \"EOF\")"
+  putStrLn "Incomplete body"
+  putStrLn "[\"body line 1\",\"body line    2\",\"body line       3\",\"body line          4\"]"
+  putStrLn ""
+  putStrLn "Actual result is:"
+  test_driver_full "test_full1.txt"
 
-test34 = test_driver_full "test_full3.txt"
+test32 = do
+  putStrLn "Expected result is:"
+  putStrLn "About to read headers"
+  putStrLn "*** Exception: control message: Just (Err \"Frame error\")"
+
+  putStrLn ""
+  putStrLn "Actual result is:"
+  test_driver_full "test_full2.txt"
+
+test33 = do
+  putStrLn "Expected result is:"
+  putStrLn "About to read headers"
+  putStrLn "Finished reading"
+  putStrLn "Complete headers"
+  putStrLn "[\"header1: v1\",\"header2: v2\",\"header3: v3\",\"header4: v4\"]"
+  putStrLn "Problem Just (Err \"EOF\")"
+  putStrLn "Incomplete body"
+  putStrLn "[\"body line 1\",\"body line    2\",\"body line       3\",\"body line          4\",\"body line             5\"]"
+
+  putStrLn ""
+  putStrLn "Actual result is:"
+  test_driver_full "test_full3.txt"
+

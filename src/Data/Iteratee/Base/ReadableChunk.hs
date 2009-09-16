@@ -35,5 +35,4 @@ instance (Storable el) => ReadableChunk [el] el where
   readFromPtr = flip peekArray
 
 instance ReadableChunk B.ByteString Word8 where
-  readFromPtr buf l = let csl = (castPtr buf, l)
-                      in B.packCStringLen csl
+  readFromPtr buf l = B.packCStringLen (castPtr buf, l)

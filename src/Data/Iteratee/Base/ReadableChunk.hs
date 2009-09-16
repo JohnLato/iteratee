@@ -13,6 +13,9 @@ import Prelude hiding (head, tail, dropWhile, length, splitAt )
 import qualified Prelude as P
 
 import qualified Data.ListLike as LL
+import qualified Data.ByteString as B
+import Data.Word
+import Foreign.C
 import Foreign.Ptr
 import Foreign.Storable
 import Foreign.Marshal.Array
@@ -27,3 +30,7 @@ class (LL.ListLike c el, Storable el) => ReadableChunk c el where
 
 instance (Storable el) => ReadableChunk [el] el where
   readFromPtr = flip peekArray
+
+instance ReadableChunk B.ByteString Word8 where
+  readFromPtr buf l = let csl = (castPtr buf, l)
+                      in B.packCStringLen csl

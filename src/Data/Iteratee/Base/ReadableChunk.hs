@@ -1,4 +1,4 @@
-{-# LANGUAGE MultiParamTypeClasses, FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses, FlexibleInstances, OverlappingInstances #-}
 
 -- |Monadic and General Iteratees:
 -- incremental input parsers, processors and transformers
@@ -27,6 +27,9 @@ import System.IO
 -- N.B. The pointer must not be returned or used after readFromPtr completes.
 class (LL.ListLike c el, Storable el) => ReadableChunk c el where
   readFromPtr :: Ptr (el) -> Int -> IO c
+
+instance ReadableChunk [Char] Char where
+  readFromPtr buf l = peekCAStringLen (castPtr buf, l)
 
 instance (Storable el) => ReadableChunk [el] el where
   readFromPtr = flip peekArray

@@ -106,7 +106,7 @@ testp2 =
 
 test_driver_full filepath = do
   putStrLn "About to read headers"
-  result <- fileDriver (mapStream mapfn read_headers_body) filepath >>= run
+  result <- fileDriver read_headers_body filepath
   putStrLn "Finished reading"
   case result of
     (Right headers, Right body, _) ->
@@ -128,8 +128,6 @@ test_driver_full filepath = do
       putStrLn "Incomplete body"
       print body
  where
-  mapfn :: Word8 -> Char
-  mapfn = chr . fromIntegral
   read_headers_body = do
     headers <- readLines
     body <- joinIM $ enum_chunk_decoded readLines

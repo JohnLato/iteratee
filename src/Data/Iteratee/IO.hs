@@ -21,7 +21,7 @@ module Data.Iteratee.IO(
 
 where
 
-import Data.Iteratee.Base.StreamChunk (ReadableChunk (..))
+import Data.Iteratee.Base.ReadableChunk
 import Data.Iteratee.Base
 import Data.Iteratee.Binary()
 import Data.Iteratee.IO.Handle
@@ -37,7 +37,7 @@ import Control.Monad.Trans
 
 -- |Process a file using the given IterateeG.  This function wraps
 -- enumFd as a convenience.
-fileDriver :: (MonadIO m, ReadableChunk s el) =>
+fileDriver :: (MonadIO m, ReadableChunk (s el) el) =>
   IterateeG s el m a ->
   FilePath ->
   m a
@@ -45,7 +45,7 @@ fileDriver = fileDriverFd
 
 -- |Process a file using the given IterateeG.  This function wraps
 -- enumFdRandom as a convenience.
-fileDriverRandom :: (MonadIO m, ReadableChunk s el) =>
+fileDriverRandom :: (MonadIO m, ReadableChunk (s el) el) =>
   IterateeG s el m a ->
   FilePath ->
   m a
@@ -58,7 +58,7 @@ fileDriverRandom = fileDriverRandomFd
 
 -- |Process a file using the given IterateeG.  This function wraps
 -- enumHandle as a convenience.
-fileDriver :: (MonadIO m, ReadableChunk s el) =>
+fileDriver :: (MonadIO m, ReadableChunk (s el) el) =>
   IterateeG s el m a ->
   FilePath ->
   m a
@@ -66,7 +66,7 @@ fileDriver = fileDriverHandle
 
 -- |Process a file using the given IterateeG.  This function wraps
 -- enumFdHandle as a convenience.
-fileDriverRandom :: (MonadIO m, ReadableChunk s el) =>
+fileDriverRandom :: (MonadIO m, ReadableChunk (s el) el) =>
   IterateeG s el m a ->
   FilePath ->
   m a

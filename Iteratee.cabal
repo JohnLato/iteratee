@@ -64,7 +64,7 @@ library
   exposed-modules:
     Data.Iteratee
     Data.Iteratee.Base
-    Data.Iteratee.Base.StreamChunk
+    Data.Iteratee.Base.ReadableChunk
     Data.Iteratee.Base.LooseMap
     Data.Iteratee.Binary
     Data.Iteratee.Char

@@ -6,7 +6,7 @@ module Data.Iteratee.WrappedByteString (
 
 where
 
-import qualified Data.Iteratee.Base.StreamChunk as SC
+import Data.Iteratee.Base.ReadableChunk
 import qualified Data.ByteString as BW
 import qualified Data.ByteString.Char8 as BC
 import qualified Data.ByteString.Internal as BBase
@@ -29,11 +29,11 @@ instance LL.FoldableLL (WrappedByteString Word8) Word8 where
 
 -- Thanks to Echo Nolan for indicating that the bytestring must copy
 -- data to a new ptr to preserve referential transparency.
-instance SC.ReadableChunk WrappedByteString Word8 where
+instance ReadableChunk (WrappedByteString Word8) Word8 where
   readFromPtr buf l = let csl = (castPtr buf, l) in
                       liftM WrapBS $ BW.packCStringLen csl
 
-instance SC.ReadableChunk WrappedByteString Char where
+instance ReadableChunk (WrappedByteString Char) Char where
   readFromPtr buf l = let csl = (castPtr buf, l) in
                       liftM WrapBS $ BC.packCStringLen csl
 
@@ -51,19 +51,6 @@ instance LL.ListLike (WrappedByteString Word8) Word8 where
   fromList      = WrapBS . BW.pack
   toList        = BW.unpack . unWrap
   rigidMap f    = WrapBS . BW.map f . unWrap
-
-instance SC.StreamChunk WrappedByteString Word8 where
-  cMap          = bwmap
-
-bwmap :: (SC.StreamChunk s' el') =>
-  (Word8 -> el')
-  -> WrappedByteString Word8
-  -> s' el'
-bwmap f xs = step xs
-  where
-  step bs
-    | LL.null bs = mempty
-    | True     = f (LL.head bs) `LL.cons` step (LL.tail bs)
 
 -- Now the Char instance
 
@@ -89,16 +76,3 @@ instance LL.ListLike (WrappedByteString Char) Char where
   fromList      = WrapBS . BC.pack
   toList        = BC.unpack . unWrap
   rigidMap f    = WrapBS . BC.map f . unWrap
-
-instance SC.StreamChunk WrappedByteString Char where
-  cMap          = bcmap
-
-bcmap :: (SC.StreamChunk s' el') =>
-  (Char -> el')
-   -> WrappedByteString Char
-   -> s' el'
-bcmap f xs = step xs
-  where
-  step bs
-    | LL.null bs = mempty
-    | True     = f (LL.head bs) `LL.cons` step (LL.tail bs)

@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleInstances, FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances, FlexibleContexts, UndecidableInstances #-}
 
 module QCUtils where
 
@@ -8,11 +8,11 @@ import Test.QuickCheck.Gen
 
 import Data.Iteratee
 import qualified Data.Iteratee as I
-import Data.Iteratee.Base.StreamChunk (StreamChunk)
+import qualified Data.ListLike as LL
 import Control.Monad.Identity
 
 -- Show instance
-instance (Show a, StreamChunk s el) => Show (IterateeG s el Identity a) where
+instance (Show a, LL.ListLike (s el) el) => Show (IterateeG s el Identity a) where
   show = (++) "<<Iteratee>> " . show . runIdentity . run
 
 -- Arbitrary instances

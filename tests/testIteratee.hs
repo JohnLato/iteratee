@@ -13,7 +13,6 @@ import Test.QuickCheck
 import Data.Iteratee hiding (head, break)
 import qualified Data.Iteratee.Char as IC
 import qualified Data.Iteratee as Iter
-import qualified Data.Iteratee.Base.StreamChunk as SC
 import Control.Monad.Identity
 import Data.Monoid
 import qualified Data.ListLike as LL
@@ -182,7 +181,7 @@ prop_mapjoin xs i =
   where types = (i :: I, xs :: [Int])
 
 
-convId :: (SC.StreamChunk s el, Monad m) => IterateeG s el m (Maybe (s el))
+convId :: (LL.ListLike (s el) el, Monad m) => IterateeG s el m (Maybe (s el))
 convId = IterateeG (\str -> case str of
   s@(Chunk xs) | LL.null xs -> return $ Cont convId Nothing
   s@(Chunk xs) -> return $ Done (Just xs) (Chunk mempty)

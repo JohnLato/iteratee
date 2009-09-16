@@ -11,8 +11,8 @@ module Data.Iteratee.Binary (
 )
 where
 
-import Data.Iteratee.Base.StreamChunk (StreamChunk)
 import qualified Data.Iteratee.Base as It
+import qualified Data.ListLike as LL
 import Data.Word
 import Data.Bits
 import Data.Int
@@ -28,7 +28,7 @@ data Endian = MSB -- ^ Most Significant Byte is first (big-endian)
   | LSB           -- ^ Least Significan Byte is first (little-endian)
   deriving (Eq, Ord, Show, Enum)
 
-endianRead2 :: (StreamChunk s Word8, Monad m) => Endian ->
+endianRead2 :: (LL.ListLike (s Word8) Word8, Monad m) => Endian ->
                 It.IterateeG s Word8 m Word16
 endianRead2 e = do
   c1 <- It.head
@@ -40,7 +40,7 @@ endianRead2 e = do
 -- |read 3 bytes in an endian manner.  If the first bit is set (negative),
 -- set the entire first byte so the Word32 can be properly set negative as
 -- well.
-endianRead3 :: (StreamChunk s Word8, Monad m) => Endian ->
+endianRead3 :: (LL.ListLike (s Word8) Word8, Monad m) => Endian ->
                 It.IterateeG s Word8 m Word32
 endianRead3 e = do
   c1 <- It.head
@@ -57,7 +57,7 @@ endianRead3 e = do
                         `shiftL` 8) .|. fromIntegral c2)
                         `shiftL` 8) .|. fromIntegral m
 
-endianRead4 :: (StreamChunk s Word8, Monad m) => Endian ->
+endianRead4 :: (LL.ListLike (s Word8) Word8, Monad m) => Endian ->
                 It.IterateeG s Word8 m Word32
 endianRead4 e = do
   c1 <- It.head

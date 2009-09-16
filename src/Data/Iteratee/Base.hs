@@ -42,7 +42,6 @@ module Data.Iteratee.Base (
   takeR,
   mapStream,
   rigidMapStream,
-  looseMapStream,
   convStream,
   filter,
   -- ** Folds
@@ -69,7 +68,6 @@ where
 import Prelude hiding (head, drop, dropWhile, take, break, foldl, foldl1, length, filter)
 import qualified Prelude as P
 
-import qualified Data.Iteratee.Base.StreamChunk as SC
 import qualified Data.ListLike as LL
 import qualified Data.ListLike.FoldableLL as FLL
 import Data.Iteratee.Base.LooseMap
@@ -161,7 +159,7 @@ newtype IterateeG c el m a = IterateeG{
 -- Useful combinators for implementing iteratees and enumerators
 
 -- | Lift an IterGV result into an 'IterateeG'
-liftI :: (Monad m, SC.StreamChunk s el) =>
+liftI :: (Monad m, LL.ListLike (s el) el) =>
          IterGV s el m a -> IterateeG s el m a
 liftI (Cont k Nothing)     = k
 liftI (Cont _k (Just err)) = throwErr err
@@ -173,14 +171,14 @@ liftI (Done a (Chunk st )) = IterateeG (check st)
 
 -- | Run an 'IterateeG' and get the result.  An 'EOF' is sent to the
 -- iteratee as it is run.
-run :: (Monad m, SC.StreamChunk s el) => IterateeG s el m a -> m a
+run :: (Monad m, LL.ListLike (s el) el) => IterateeG s el m a -> m a
 run iter = runIter iter (EOF Nothing) >>= \res ->
   case res of
     Done x _ -> return x
     Cont _ e -> error $ "control message: " ++ show e
 
 -- | Check if a stream has finished ('EOF').
-isFinished :: (SC.StreamChunk s el, Monad m) =>
+isFinished :: (LL.ListLike (s el) el, Monad m) =>
               IterateeG s el m (Maybe ErrMsg)
 isFinished = IterateeG check
   where
@@ -190,7 +188,7 @@ isFinished = IterateeG check
 -- |If the iteratee ('IterGV') has finished, return its value.  If it has not
 -- finished then apply it to the given 'EnumeratorGM'.
 -- If in error, throw the error.
-checkIfDone :: (SC.StreamChunk s el, Monad m) =>
+checkIfDone :: (LL.ListLike (s el) el, Monad m) =>
                (IterateeG s el m a -> m (IterateeG s el m a)) ->
                IterGV s el m a ->
                m (IterateeG s el m a)
@@ -208,7 +206,7 @@ checkIfDone _ (Cont _ (Just e)) = return . throwErr $ e
 -- This join function is useful when dealing with `derived iteratees'
 -- for embedded/nested streams.  In particular, joinI is useful to
 -- process the result of take, mapStream, or convStream below.
-joinI :: (SC.StreamChunk s el, SC.StreamChunk s' el', Monad m) =>
+joinI :: (LL.ListLike (s el) el, LL.ListLike (s' el') el', Monad m) =>
          IterateeG s el m (IterateeG s' el' m a) ->
          IterateeG s el m a
 joinI m = IterateeG (docase <=< runIter m)
@@ -268,23 +266,23 @@ instance (MonadIO m) => MonadIO (IterateeG s el m) where
 -- Primitive iteratees
 
 -- |Read a stream to the end and return all of its elements as a list
-stream2list :: (SC.StreamChunk s el, Monad m) => IterateeG s el m [el]
+stream2list :: (LL.ListLike (s el) el, Monad m) => IterateeG s el m [el]
 stream2list = IterateeG (step mempty)
   where
   -- step :: s el -> StreamG s el -> m (IterGV s el m [el])
   step acc (Chunk ls)
-    | SC.null ls      = return $ Cont (IterateeG (step acc)) Nothing
+    | LL.null ls      = return $ Cont (IterateeG (step acc)) Nothing
   step acc (Chunk ls) = return $ Cont
                                  (IterateeG (step (acc `mappend` ls)))
                                  Nothing
-  step acc str        = return $ Done (SC.toList acc) str
+  step acc str        = return $ Done (LL.toList acc) str
 
 -- |Read a stream to the end and return all of its elements as a stream
-stream2stream :: (SC.StreamChunk s el, Monad m) => IterateeG s el m (s el)
+stream2stream :: (LL.ListLike (s el) el, Monad m) => IterateeG s el m (s el)
 stream2stream = IterateeG (step mempty)
   where
   step acc (Chunk ls)
-    | SC.null ls      = return $ Cont (IterateeG (step acc)) Nothing
+    | LL.null ls      = return $ Cont (IterateeG (step acc)) Nothing
   step acc (Chunk ls) = return $ Cont
                                  (IterateeG (step (acc `mappend` ls)))
                                  Nothing
@@ -307,7 +305,7 @@ setEOF _              = Err "EOF"
 -- checkErr is useful for iteratees that may not terminate, such as 'head'
 -- with an empty stream.  In particular, it enables them to be used with
 -- 'convStream'.
-checkErr :: (Monad m, SC.StreamChunk s el) =>
+checkErr :: (Monad m, LL.ListLike (s el) el) =>
               IterateeG s el m a ->
               IterateeG s el m (Either ErrMsg a)
 checkErr iter = IterateeG (check <=< runIter iter)
@@ -328,16 +326,16 @@ checkErr iter = IterateeG (check <=< runIter iter)
 -- If the stream is not terminated, the first character on the stream
 -- satisfies the predicate.
 
-break :: (SC.StreamChunk s el, Monad m) =>
+break :: (LL.ListLike (s el) el, Monad m) =>
           (el -> Bool) ->
           IterateeG s el m (s el)
 break cpred = IterateeG (step mempty)
   where
-  step before (Chunk str) | SC.null str = return $
+  step before (Chunk str) | LL.null str = return $
     Cont (IterateeG (step before)) Nothing
   step before (Chunk str) =
     case LL.break cpred str of
-      (_, tail') | SC.null tail' -> return $ Cont
+      (_, tail') | LL.null tail' -> return $ Cont
                               (IterateeG (step (before `mappend` str)))
                               Nothing
       (str', tail') -> return $ Done (before `mappend` str') (Chunk tail')
@@ -350,12 +348,12 @@ identity = return ()
 
 -- |Attempt to read the next element of the stream and return it
 -- Raise a (recoverable) error if the stream is terminated
-head :: (SC.StreamChunk s el, Monad m) => IterateeG s el m el
+head :: (LL.ListLike (s el) el, Monad m) => IterateeG s el m el
 head = IterateeG step
   where
   step (Chunk vec)
-    | SC.null vec  = return $ Cont head Nothing
-    | otherwise    = return $ Done (SC.head vec) (Chunk $ SC.tail vec)
+    | LL.null vec  = return $ Cont head Nothing
+    | otherwise    = return $ Done (LL.head vec) (Chunk $ LL.tail vec)
   step stream      = return $ Cont head (Just (setEOF stream))
 
 
@@ -365,19 +363,19 @@ head = IterateeG step
 -- stream.
 -- For example, if the stream contains "abd", then (heads "abc")
 -- will remove the characters "ab" and return 2.
-heads :: (SC.StreamChunk s el, Monad m, Eq el) =>
+heads :: (LL.ListLike (s el) el, Monad m, Eq el) =>
          s el ->
          IterateeG s el m Int
-heads st | SC.null st = return 0
+heads st | LL.null st = return 0
 heads st = loop 0 st
   where
-  loop cnt xs | SC.null xs = return cnt
+  loop cnt xs | LL.null xs = return cnt
   loop cnt xs              = IterateeG (step cnt xs)
-  step cnt str (Chunk xs) | SC.null xs  = return $ Cont (loop cnt str) Nothing
-  step cnt str stream     | SC.null str = return $ Done cnt stream
+  step cnt str (Chunk xs) | LL.null xs  = return $ Cont (loop cnt str) Nothing
+  step cnt str stream     | LL.null str = return $ Done cnt stream
   step cnt str s@(Chunk xs) =
-    if SC.head str == SC.head xs
-       then step (succ cnt) (SC.tail str) (Chunk $ SC.tail xs)
+    if LL.head str == LL.head xs
+       then step (succ cnt) (LL.tail str) (Chunk $ LL.tail xs)
        else return $ Done cnt s
   step cnt _ stream         = return $ Done cnt stream
 
@@ -386,12 +384,12 @@ heads st = loop 0 st
 -- it from the stream.
 -- Return (Just c) if successful, return Nothing if the stream is
 -- terminated (by EOF or an error)
-peek :: (SC.StreamChunk s el, Monad m) => IterateeG s el m (Maybe el)
+peek :: (LL.ListLike (s el) el, Monad m) => IterateeG s el m (Maybe el)
 peek = IterateeG step
   where
   step s@(Chunk vec)
-    | SC.null vec = return $ Cont peek Nothing
-    | otherwise = return $ Done (Just $ SC.head vec) s
+    | LL.null vec = return $ Cont peek Nothing
+    | otherwise = return $ Done (Just $ LL.head vec) s
   step stream   = return $ Done Nothing stream
 
 
@@ -414,18 +412,18 @@ seek n = IterateeG step
 
 -- |Skip n elements of the stream, if there are that many
 -- This is the analogue of List.drop
-drop :: (SC.StreamChunk s el, Monad m) => Int -> IterateeG s el m ()
+drop :: (LL.ListLike (s el) el, Monad m) => Int -> IterateeG s el m ()
 drop 0 = return ()
 drop n = IterateeG step
   where
   step (Chunk str)
-    | SC.length str <= n = return $ Cont (drop (n - SC.length str)) Nothing
+    | LL.length str <= n = return $ Cont (drop (n - LL.length str)) Nothing
   step (Chunk str)       = return $ Done () (Chunk (LL.drop n str))
   step stream            = return $ Done () stream
 
 -- |Skip all elements while the predicate is true.
 -- This is the analogue of List.dropWhile
-dropWhile :: (SC.StreamChunk s el, Monad m) =>
+dropWhile :: (LL.ListLike (s el) el, Monad m) =>
   (el -> Bool) ->
   IterateeG s el m ()
 dropWhile p = IterateeG step
@@ -463,18 +461,18 @@ type EnumeratorN s_outer el_outer s_inner el_inner m a =
 -- |Read n elements from a stream and apply the given iteratee to the
 -- stream of the read elements. Unless the stream is terminated early, we
 -- read exactly n elements (even if the iteratee has accepted fewer).
-take :: (SC.StreamChunk s el, Monad m) =>
+take :: (LL.ListLike (s el) el, Monad m) =>
         Int ->
         EnumeratorN s el s el m a
 take 0 iter = return iter
 take n' iter = IterateeG (step n')
   where
   step n chk@(Chunk str)
-    | SC.null str = return $ Cont (take n iter) Nothing
-    | SC.length str <= n = return $ Cont (joinIM inner) Nothing
-      where inner = liftM (check (n - SC.length str)) (runIter iter chk)
+    | LL.null str = return $ Cont (take n iter) Nothing
+    | LL.length str <= n = return $ Cont (joinIM inner) Nothing
+      where inner = liftM (check (n - LL.length str)) (runIter iter chk)
   step n (Chunk str) = done (Chunk s1) (Chunk s2)
-    where (s1, s2) = SC.splitAt n str
+    where (s1, s2) = LL.splitAt n str
   step _n stream            = done stream stream
   check n (Done x _)        = drop n >> return (return x)
   check n (Cont x Nothing)  = take n x
@@ -488,7 +486,7 @@ take n' iter = IterateeG (step n')
 -- This is the variation of `take' with the early termination
 -- of processing of the outer stream once the processing of the inner stream
 -- finished early.
-takeR :: (SC.StreamChunk s el, Monad m) =>
+takeR :: (LL.ListLike (s el) el, Monad m) =>
          Int ->
          IterateeG s el m a ->
          IterateeG s el m (IterateeG s el m a)
@@ -512,19 +510,22 @@ takeR n iter = IterateeG (step n)
 -- given iteratee to it.
 -- Note the contravariance
 
-mapStream :: (SC.StreamChunk s el, SC.StreamChunk s el', Monad m) =>
+mapStream :: (LL.ListLike (s el) el,
+    LL.ListLike (s el') el',
+    LooseMap s el el',
+    Monad m) =>
  (el -> el')
   -> EnumeratorN s el s el' m a
-mapStream f i = IterateeG ((check <=< runIter i) . strMap (SC.cMap f))
+mapStream f i = go i
   where
-    go iter = IterateeG ((check <=< runIter iter) . strMap (SC.cMap f))
+    go iter = IterateeG ((check <=< runIter iter) . strMap (lMap f))
     check (Done a _)    = return $ Done (return a) (Chunk LL.empty)
     check (Cont k mErr) = return $ Cont (go k) mErr
 
 -- |Map a stream without changing the element type.  For StreamChunks
 -- with limited element types (e.g. bytestrings)
 -- this can be much more efficient than regular mapStream
-rigidMapStream :: (SC.StreamChunk s el, Monad m) =>
+rigidMapStream :: (LL.ListLike (s el) el, Monad m) =>
   (el -> el)
   -> EnumeratorN s el s el m a
 rigidMapStream f i =  go i
@@ -532,23 +533,6 @@ rigidMapStream f i =  go i
     go iter = IterateeG ((check <=< runIter iter) . strMap (LL.rigidMap f))
     check (Done a _)    = return $ Done (return a) (Chunk LL.empty)
     check (Cont k mErr) = return $ Cont (go k) mErr
-
--- |Yet another stream mapping function.  For container instances with
--- class contexts, such as uvector or storablevector, this allows
--- the native map function to be used  and is likely to be much
--- more efficient than the standard mapStream.
-looseMapStream :: (SC.StreamChunk s el,
-    SC.StreamChunk s el',
-    LooseMap s el el',
-    Monad m) =>
-  (el -> el')
-  -> EnumeratorN s el s el' m a
-looseMapStream f i =  go i
-  where
-    go iter = IterateeG ((check <=< runIter iter) . strMap (looseMap f))
-    check (Done a _)    = return $ Done (return a) (Chunk LL.empty)
-    check (Cont k mErr) = return $ Cont (go k) mErr
-
 
 -- |Convert one stream into another, not necessarily in `lockstep'
 -- The transformer mapStream maps one element of the outer stream
@@ -680,7 +664,7 @@ enumEof iter = runIter iter (EOF Nothing) >>= check
   check (Cont _ e) = return $ throwErr (fromMaybe (Err "Divergent Iteratee") e)
 
 -- |Another primitive enumerator: report an error
-enumErr :: (SC.StreamChunk s el, Monad m) =>
+enumErr :: (LL.ListLike (s el) el, Monad m) =>
            String ->
            EnumeratorGM s el m a
 enumErr e iter = runIter iter (EOF (Just (Err e))) >>= check
@@ -693,14 +677,14 @@ enumErr e iter = runIter iter (EOF (Just (Err e))) >>= check
 -- It is convenient to flip the order of the arguments of the composition
 -- though: in e1 >. e2, e1 is executed first
 
-(>.):: (SC.StreamChunk s el, Monad m) =>
+(>.):: (LL.ListLike (s el) el, Monad m) =>
        EnumeratorGM s el m a -> EnumeratorGM s el m a -> EnumeratorGM s el m a
 (>.) e1 e2 = e2 <=< e1
 
 -- |The pure 1-chunk enumerator
 -- It passes a given list of elements to the iteratee in one chunk
 -- This enumerator does no IO and is useful for testing of base parsing
-enumPure1Chunk :: (SC.StreamChunk s el, Monad m) =>
+enumPure1Chunk :: (LL.ListLike (s el) el, Monad m) =>
                     s el ->
                     EnumeratorGM s el m a
 enumPure1Chunk str iter = runIter iter (Chunk str) >>= checkIfDone return
@@ -710,15 +694,15 @@ enumPure1Chunk str iter = runIter iter (Chunk str) >>= checkIfDone return
 -- It passes a given chunk of elements to the iteratee in n chunks
 -- This enumerator does no IO and is useful for testing of base parsing
 -- and handling of chunk boundaries
-enumPureNChunk :: (SC.StreamChunk s el, Monad m) =>
+enumPureNChunk :: (LL.ListLike (s el) el, Monad m) =>
                     s el ->
                     Int ->
                     EnumeratorGM s el m a
-enumPureNChunk str _ iter | SC.null str = return iter
+enumPureNChunk str _ iter | LL.null str = return iter
 enumPureNChunk str n iter | n > 0 = runIter iter (Chunk s1) >>=
                                     checkIfDone (enumPureNChunk s2 n)
   where
-  (s1, s2) = SC.splitAt n str
+  (s1, s2) = LL.splitAt n str
 enumPureNChunk _ n _ = error $ "enumPureNChunk called with n==" ++ show n
 
 -- |A variant of join for Iteratees in a monad.

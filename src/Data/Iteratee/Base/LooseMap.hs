@@ -1,4 +1,4 @@
-{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE MultiParamTypeClasses, FlexibleInstances #-}
 module Data.Iteratee.Base.LooseMap (
   LooseMap (..)
 )
@@ -6,7 +6,9 @@ module Data.Iteratee.Base.LooseMap (
 where
 
 -- |Enable map functions for containers that require class contexts on the
--- element types.  There's really no reason to ever use this with
--- types that are fully polymorphic, such as Lists.
+-- element types.  For lists, this is identical to plain `map`.
 class LooseMap c el el' where
-  looseMap :: (el -> el') -> c el -> c el'
+  lMap :: (el -> el') -> c el -> c el'
+
+instance LooseMap [] el el' where
+  lMap = map

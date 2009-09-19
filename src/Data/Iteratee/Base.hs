@@ -588,13 +588,15 @@ foldl' :: (LL.ListLike (s el) el, FLL.FoldableLL (s el) el, Monad m) =>
           (a -> el -> a) ->
           a ->
           IterateeG s el m a
-foldl' f i = iter i
+foldl' f i = IterateeG (step i)
   where
-  iter ac = IterateeG step
-    where
-      step (Chunk xs) | LL.null xs = return $ Cont (iter ac) Nothing
-      step (Chunk xs) = return $ Cont (iter $! FLL.foldl' f ac xs) Nothing
-      step stream     = return $ Done ac stream
+    step ac (Chunk xs) | LL.null xs = return $ Cont (IterateeG (step ac))
+                                               Nothing
+    step ac (Chunk xs) = return $ Cont (IterateeG (step $! FLL.foldl' f ac xs))
+                                       Nothing
+    step ac stream     = return $ Done ac stream
+
+{-# INLINE foldl' #-}
 
 -- | Variant of foldl with no base case.  Requires at least one element
 --   in the stream.

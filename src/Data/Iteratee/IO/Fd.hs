@@ -47,7 +47,7 @@ enumFd :: forall s el m a.(ReadableChunk (s el) el, MonadIO m) =>
 enumFd fd iter' =
   liftIO (mallocForeignPtrBytes (fromIntegral buffer_size)) >>= loop iter'
   where
-    buffer_size = fromIntegral $ 2048 - mod 2048 (sizeOf (undefined :: el))
+    buffer_size = fromIntegral $ 4096 - mod 4096 (sizeOf (undefined :: el))
     loop iter fp = do
       s <- liftIO . withForeignPtr fp $ \p -> do
         n <- myfdRead fd (castPtr p) buffer_size

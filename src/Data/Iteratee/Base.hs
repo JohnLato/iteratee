@@ -48,6 +48,9 @@ module Data.Iteratee.Base (
   foldl,
   foldl',
   foldl1,
+  -- ** Special Folds
+  sum,
+  product,
   -- * Enumerators
   -- ** Basic enumerators
   enumEof,
@@ -65,7 +68,7 @@ module Data.Iteratee.Base (
 )
 where
 
-import Prelude hiding (head, drop, dropWhile, take, break, foldl, foldl1, length, filter)
+import Prelude hiding (head, drop, dropWhile, take, break, foldl, foldl1, length, filter, sum, product)
 import qualified Prelude as P
 
 import qualified Data.ListLike as LL
@@ -610,6 +613,29 @@ foldl1 f = IterateeG step
   -- the accumulator.
   step (Chunk xs) = return $ Cont (foldl f (FLL.foldl1 f xs)) Nothing
   step stream     = return $ Cont (foldl1 f) (Just (setEOF stream))
+
+-- | Sum of a stream.
+sum :: (LL.ListLike (s el) el, Num el, Monad m) =>
+  IterateeG s el m el
+sum = IterateeG (step 0)
+  where
+    step acc (Chunk xs)
+      | LL.null xs = return $ Cont (IterateeG (step acc)) Nothing
+    step acc (Chunk xs) = return $ Cont (IterateeG . step $! acc + (LL.sum xs))
+                                        Nothing
+    step acc str = return $ Done acc str
+
+-- | Product of a stream
+product :: (LL.ListLike (s el) el, Num el, Monad m) =>
+  IterateeG s el m el
+product = IterateeG (step 1)
+  where
+    step acc (Chunk xs)
+      | LL.null xs = return $ Cont (IterateeG (step acc)) Nothing
+    step acc (Chunk xs) = return $ Cont (IterateeG . step $! acc *
+                                          (LL.product xs))
+                                        Nothing
+    step acc str = return $ Done acc str
 
 -- ------------------------------------------------------------------------
 -- Zips

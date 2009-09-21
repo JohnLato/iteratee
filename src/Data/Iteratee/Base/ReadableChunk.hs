@@ -1,4 +1,4 @@
-{-# LANGUAGE MultiParamTypeClasses, FlexibleInstances, OverlappingInstances #-}
+{-# LANGUAGE MultiParamTypeClasses, FlexibleInstances #-}
 
 -- |Monadic and General Iteratees:
 -- incremental input parsers, processors and transformers
@@ -31,7 +31,13 @@ class (LL.ListLike c el, Storable el) => ReadableChunk c el where
 instance ReadableChunk [Char] Char where
   readFromPtr buf l = peekCAStringLen (castPtr buf, l)
 
-instance (Storable el) => ReadableChunk [el] el where
+instance ReadableChunk [Word8] Word8 where
+  readFromPtr = flip peekArray
+instance ReadableChunk [Word16] Word16 where
+  readFromPtr = flip peekArray
+instance ReadableChunk [Word32] Word32 where
+  readFromPtr = flip peekArray
+instance ReadableChunk [Word] Word where
   readFromPtr = flip peekArray
 
 instance ReadableChunk B.ByteString Word8 where

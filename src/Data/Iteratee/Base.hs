@@ -616,7 +616,7 @@ sum = IterateeG (step 0)
   where
     step acc (Chunk xs)
       | LL.null xs = return $ Cont (IterateeG (step acc)) Nothing
-    step acc (Chunk xs) = return $ Cont (IterateeG . step $! acc + (LL.sum xs))
+    step acc (Chunk xs) = return $ Cont (IterateeG . step $! acc + LL.sum xs)
                                         Nothing
     step acc str = return $ Done acc str
 
@@ -628,7 +628,7 @@ product = IterateeG (step 1)
     step acc (Chunk xs)
       | LL.null xs = return $ Cont (IterateeG (step acc)) Nothing
     step acc (Chunk xs) = return $ Cont (IterateeG . step $! acc *
-                                          (LL.product xs))
+                                          LL.product xs)
                                         Nothing
     step acc str = return $ Done acc str
 
@@ -702,7 +702,7 @@ enumErr e iter = runIter iter (EOF (Just (Err e))) >>= check
 
 (>.):: (LL.ListLike s el, Monad m) =>
   EnumeratorGM s el m a -> EnumeratorGM s el m a -> EnumeratorGM s el m a
-(>.) e1 e2 = e2 <=< e1
+(>.) = (>=>)
 
 -- |The pure 1-chunk enumerator
 -- It passes a given list of elements to the iteratee in one chunk

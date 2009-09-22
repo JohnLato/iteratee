@@ -1,4 +1,4 @@
-{-# LANGUAGE MultiParamTypeClasses, FlexibleInstances, BangPatterns #-}
+{-# LANGUAGE MultiParamTypeClasses, FlexibleInstances #-}
 
 module Data.Iteratee.Instances.WrappedByteString (
   WrappedByteString (..)

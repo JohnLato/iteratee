@@ -58,7 +58,7 @@ fileDriverRandom = fileDriverRandomFd
 
 -- |Process a file using the given IterateeG.  This function wraps
 -- enumHandle as a convenience.
-fileDriver :: (MonadIO m, ReadableChunk (s el) el) =>
+fileDriver :: (MonadIO m, ReadableChunk s el) =>
   IterateeG s el m a ->
   FilePath ->
   m a
@@ -66,7 +66,7 @@ fileDriver = fileDriverHandle
 
 -- |Process a file using the given IterateeG.  This function wraps
 -- enumFdHandle as a convenience.
-fileDriverRandom :: (MonadIO m, ReadableChunk (s el) el) =>
+fileDriverRandom :: (MonadIO m, ReadableChunk s el) =>
   IterateeG s el m a ->
   FilePath ->
   m a

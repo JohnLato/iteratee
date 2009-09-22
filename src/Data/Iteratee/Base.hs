@@ -158,8 +158,7 @@ newtype IterateeG c el m a = IterateeG{
 -- Useful combinators for implementing iteratees and enumerators
 
 -- | Lift an IterGV result into an 'IterateeG'
-liftI :: (Monad m, SC.StreamChunk s el) =>
-         IterGV s el m a -> IterateeG s el m a
+liftI :: (Monad m, LL.ListLike s el) => IterGV s el m a -> IterateeG s el m a
 liftI (Cont k Nothing)     = k
 liftI (Cont _k (Just err)) = throwErr err
 liftI i@(Done _ (EOF _  )) = IterateeG (const (return i))
@@ -177,8 +176,8 @@ run iter = runIter iter (EOF Nothing) >>= \res ->
     Cont _ e -> error $ "control message: " ++ show e
 
 -- | Check if a stream has finished ('EOF').
-isFinished :: (LL.ListLike (s el) el, Monad m) =>
-              IterateeG s el m (Maybe ErrMsg)
+isFinished :: (LL.ListLike s el, Monad m) =>
+  IterateeG s el m (Maybe ErrMsg)
 isFinished = IterateeG check
   where
   check s@(EOF e) = return $ Done (Just $ fromMaybe (Err "EOF") e) s
@@ -187,10 +186,10 @@ isFinished = IterateeG check
 -- |If the iteratee ('IterGV') has finished, return its value.  If it has not
 -- finished then apply it to the given 'EnumeratorGM'.
 -- If in error, throw the error.
-checkIfDone :: (LL.ListLike (s el) el, Monad m) =>
-               (IterateeG s el m a -> m (IterateeG s el m a)) ->
-               IterGV s el m a ->
-               m (IterateeG s el m a)
+checkIfDone :: (LL.ListLike s el, Monad m) =>
+  (IterateeG s el m a -> m (IterateeG s el m a)) ->
+  IterGV s el m a ->
+  m (IterateeG s el m a)
 checkIfDone _ (Done x _)        = return . return $ x
 checkIfDone k (Cont x Nothing)  = k x
 checkIfDone _ (Cont _ (Just e)) = return . throwErr $ e
@@ -205,9 +204,9 @@ checkIfDone _ (Cont _ (Just e)) = return . throwErr $ e
 -- This join function is useful when dealing with `derived iteratees'
 -- for embedded/nested streams.  In particular, joinI is useful to
 -- process the result of take, mapStream, or convStream below.
-joinI :: (LL.ListLike (s el) el, LL.ListLike (s' el') el', Monad m) =>
-         IterateeG s el m (IterateeG s' el' m a) ->
-         IterateeG s el m a
+joinI :: (LL.ListLike s el, LL.ListLike s' el', Monad m) =>
+  IterateeG s el m (IterateeG s' el' m a) ->
+  IterateeG s el m a
 joinI m = IterateeG (docase <=< runIter m)
   where
   docase (Done ma str) = liftM (flip Done str) (run ma)
@@ -304,9 +303,9 @@ setEOF _              = Err "EOF"
 -- checkErr is useful for iteratees that may not terminate, such as 'head'
 -- with an empty stream.  In particular, it enables them to be used with
 -- 'convStream'.
-checkErr :: (Monad m, LL.ListLike (s el) el) =>
-              IterateeG s el m a ->
-              IterateeG s el m (Either ErrMsg a)
+checkErr :: (Monad m, LL.ListLike s el) =>
+  IterateeG s el m a ->
+  IterateeG s el m (Either ErrMsg a)
 checkErr iter = IterateeG (check <=< runIter iter)
   where
   check (Done a str) = return $ Done (Right a) str
@@ -325,9 +324,9 @@ checkErr iter = IterateeG (check <=< runIter iter)
 -- If the stream is not terminated, the first character on the stream
 -- satisfies the predicate.
 
-break :: (LL.ListLike (s el) el, Monad m) =>
-          (el -> Bool) ->
-          IterateeG s el m (s el)
+break :: (LL.ListLike s el, Monad m) =>
+  (el -> Bool) ->
+  IterateeG s el m s
 break cpred = IterateeG (step mempty)
   where
   step before (Chunk str) | LL.null str = return $
@@ -362,9 +361,9 @@ head = IterateeG step
 -- stream.
 -- For example, if the stream contains "abd", then (heads "abc")
 -- will remove the characters "ab" and return 2.
-heads :: (LL.ListLike (s el) el, Monad m, Eq el) =>
-         s el ->
-         IterateeG s el m Int
+heads :: (LL.ListLike s el, Monad m, Eq el) =>
+  s ->
+  IterateeG s el m Int
 heads st | LL.null st = return 0
 heads st = loop 0 st
   where
@@ -460,9 +459,9 @@ type EnumeratorN s_outer el_outer s_inner el_inner m a =
 -- |Read n elements from a stream and apply the given iteratee to the
 -- stream of the read elements. Unless the stream is terminated early, we
 -- read exactly n elements (even if the iteratee has accepted fewer).
-take :: (LL.ListLike (s el) el, Monad m) =>
-        Int ->
-        EnumeratorN s el s el m a
+take :: (LL.ListLike s el, Monad m) =>
+  Int ->
+  EnumeratorN s el s el m a
 take 0 iter = return iter
 take n' iter = IterateeG (step n')
   where
@@ -485,10 +484,10 @@ take n' iter = IterateeG (step n')
 -- This is the variation of `take' with the early termination
 -- of processing of the outer stream once the processing of the inner stream
 -- finished early.
-takeR :: (LL.ListLike (s el) el, Monad m) =>
-         Int ->
-         IterateeG s el m a ->
-         IterateeG s el m (IterateeG s el m a)
+takeR :: (LL.ListLike s el, Monad m) =>
+  Int ->
+  IterateeG s el m a ->
+  IterateeG s el m (IterateeG s el m a)
 takeR 0 iter = return iter
 takeR n iter = IterateeG (step n)
   where
@@ -556,9 +555,9 @@ convStream fi iter = fi >>= check
 
 -- |Creates an enumerator with only elements from the stream that
 -- satisfy the predicate function.
-filter :: (LL.ListLike (s el) el, Monad m) =>
-          (el -> Bool) ->
-          EnumeratorN s el s el m a
+filter :: (LL.ListLike s el, Monad m) =>
+  (el -> Bool) ->
+  EnumeratorN s el s el m a
 filter p = convStream f'
   where
   f' = IterateeG step
@@ -570,10 +569,10 @@ filter p = convStream f'
 -- Folds
 
 -- | Left-associative fold.
-foldl :: (LL.ListLike (s el) el, FLL.FoldableLL (s el) el, Monad m) =>
-         (a -> el -> a) ->
-         a ->
-         IterateeG s el m a
+foldl :: (LL.ListLike s el, FLL.FoldableLL s el, Monad m) =>
+  (a -> el -> a) ->
+  a ->
+  IterateeG s el m a
 foldl f i = iter i
   where
   iter ac = IterateeG step
@@ -583,10 +582,10 @@ foldl f i = iter i
       step stream     = return $ Done ac stream
 
 -- | Left-associative fold that is strict in the accumulator.
-foldl' :: (LL.ListLike (s el) el, FLL.FoldableLL (s el) el, Monad m) =>
-          (a -> el -> a) ->
-          a ->
-          IterateeG s el m a
+foldl' :: (LL.ListLike s el, FLL.FoldableLL s el, Monad m) =>
+  (a -> el -> a) ->
+  a ->
+  IterateeG s el m a
 foldl' f i = IterateeG (step i)
   where
     step ac (Chunk xs) | LL.null xs = return $ Cont (IterateeG (step ac))
@@ -599,9 +598,9 @@ foldl' f i = IterateeG (step i)
 
 -- | Variant of foldl with no base case.  Requires at least one element
 --   in the stream.
-foldl1 :: (LL.ListLike (s el) el, FLL.FoldableLL (s el) el, Monad m) =>
-          (el -> el -> el) ->
-          IterateeG s el m el
+foldl1 :: (LL.ListLike s el, FLL.FoldableLL s el, Monad m) =>
+  (el -> el -> el) ->
+  IterateeG s el m el
 foldl1 f = IterateeG step
   where
   step (Chunk xs) | LL.null xs = return $ Cont (foldl1 f) Nothing
@@ -637,10 +636,10 @@ product = IterateeG (step 1)
 -- Zips
 
 -- |Enumerate two iteratees over a single stream simultaneously.
-enumPair :: (LL.ListLike (s el) el, Monad m) =>
-       IterateeG s el m a ->
-       IterateeG s el m b ->
-       IterateeG s el m (a,b)
+enumPair :: (LL.ListLike s el, Monad m) =>
+  IterateeG s el m a ->
+  IterateeG s el m b ->
+  IterateeG s el m (a,b)
 enumPair i1 i2 = IterateeG step
   where
   longest c1@(Chunk xs) c2@(Chunk ys) = if LL.length xs > LL.length ys
@@ -688,9 +687,9 @@ enumEof iter = runIter iter (EOF Nothing) >>= check
   check (Cont _ e) = return $ throwErr (fromMaybe (Err "Divergent Iteratee") e)
 
 -- |Another primitive enumerator: report an error
-enumErr :: (LL.ListLike (s el) el, Monad m) =>
-           String ->
-           EnumeratorGM s el m a
+enumErr :: (LL.ListLike s el, Monad m) =>
+  String ->
+  EnumeratorGM s el m a
 enumErr e iter = runIter iter (EOF (Just (Err e))) >>= check
   where
   check (Done x _)  = return $ IterateeG (return . Done x)
@@ -701,16 +700,16 @@ enumErr e iter = runIter iter (EOF (Just (Err e))) >>= check
 -- It is convenient to flip the order of the arguments of the composition
 -- though: in e1 >. e2, e1 is executed first
 
-(>.):: (LL.ListLike (s el) el, Monad m) =>
-       EnumeratorGM s el m a -> EnumeratorGM s el m a -> EnumeratorGM s el m a
+(>.):: (LL.ListLike s el, Monad m) =>
+  EnumeratorGM s el m a -> EnumeratorGM s el m a -> EnumeratorGM s el m a
 (>.) e1 e2 = e2 <=< e1
 
 -- |The pure 1-chunk enumerator
 -- It passes a given list of elements to the iteratee in one chunk
 -- This enumerator does no IO and is useful for testing of base parsing
-enumPure1Chunk :: (LL.ListLike (s el) el, Monad m) =>
-                    s el ->
-                    EnumeratorGM s el m a
+enumPure1Chunk :: (LL.ListLike s el, Monad m) =>
+  s ->
+  EnumeratorGM s el m a
 enumPure1Chunk str iter = runIter iter (Chunk str) >>= checkIfDone return
 
 
@@ -718,10 +717,10 @@ enumPure1Chunk str iter = runIter iter (Chunk str) >>= checkIfDone return
 -- It passes a given chunk of elements to the iteratee in n chunks
 -- This enumerator does no IO and is useful for testing of base parsing
 -- and handling of chunk boundaries
-enumPureNChunk :: (LL.ListLike (s el) el, Monad m) =>
-                    s el ->
-                    Int ->
-                    EnumeratorGM s el m a
+enumPureNChunk :: (LL.ListLike s el, Monad m) =>
+  s ->
+  Int ->
+  EnumeratorGM s el m a
 enumPureNChunk str _ iter | LL.null str = return iter
 enumPureNChunk str n iter | n > 0 = runIter iter (Chunk s1) >>=
                                     checkIfDone (enumPureNChunk s2 n)

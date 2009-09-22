@@ -106,8 +106,8 @@ readLines = lines' []
 -- character stream and the enumerator of the line stream.
 
 enumLines :: (Functor m, Monad m) =>
-             IterateeG [Line] Line m a ->
-             IterateeG String Char m (IterateeG [Line] Line m a)
+             IterateeG [] Line m a ->
+             IterateeG [] Char m (IterateeG [] Line m a)
 enumLines iter = line >>= check iter
   where
   --check :: Either Line Line -> IterateeG String Char m (IterateeG [Line] Line m a)
@@ -124,8 +124,8 @@ enumLines iter = line >>= check iter
 -- function.
 
 enumWords :: (Functor m, Monad m) =>
-             IterateeG [String] String m a ->
-             IterateeG String Char m (IterateeG [String] String m a)
+             IterateeG [] String m a ->
+             IterateeG [] Char m (IterateeG [] String m a)
 enumWords iter = Iter.break isSpace >>= check iter
   where
   --check :: String -> IterateeG String Char m (IterateeG [String] String m a)

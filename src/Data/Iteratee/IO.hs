@@ -37,7 +37,7 @@ import Control.Monad.Trans
 
 -- |Process a file using the given IterateeG.  This function wraps
 -- enumFd as a convenience.
-fileDriver :: (MonadIO m, ReadableChunk (s el) el) =>
+fileDriver :: (MonadIO m, ReadableChunk s el) =>
   IterateeG s el m a ->
   FilePath ->
   m a
@@ -45,7 +45,7 @@ fileDriver = fileDriverFd
 
 -- |Process a file using the given IterateeG.  This function wraps
 -- enumFdRandom as a convenience.
-fileDriverRandom :: (MonadIO m, ReadableChunk (s el) el) =>
+fileDriverRandom :: (MonadIO m, ReadableChunk s el) =>
   IterateeG s el m a ->
   FilePath ->
   m a

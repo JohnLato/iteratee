@@ -38,7 +38,7 @@ import System.IO
 -- |The enumerator of a file Handle.  This version enumerates
 -- over the entire contents of a file, in order, unless stopped by
 -- the iteratee.  In particular, seeking is not supported.
-enumHandle :: forall s el m a.(ReadableChunk (s el) el, MonadIO m) =>
+enumHandle :: forall s el m a.(ReadableChunk s el, MonadIO m) =>
   Handle ->
   EnumeratorGM s el m a
 enumHandle h i =
@@ -62,7 +62,7 @@ enumHandle h i =
 
 -- |The enumerator of a Handle: a variation of enumHandle that
 -- supports RandomIO (seek requests)
-enumHandleRandom :: forall s el m a.(ReadableChunk (s el) el, MonadIO m) =>
+enumHandleRandom :: forall s el m a.(ReadableChunk s el, MonadIO m) =>
   Handle ->
   EnumeratorGM s el m a
 enumHandleRandom h i =
@@ -115,7 +115,7 @@ enumHandleRandom h i =
 
 -- |Process a file using the given IterateeGM.  This function wraps
 -- enumHandle as a convenience.
-fileDriverHandle :: (MonadIO m, ReadableChunk (s el) el) =>
+fileDriverHandle :: (MonadIO m, ReadableChunk s el) =>
   IterateeG s el m a ->
   FilePath ->
   m a
@@ -127,7 +127,7 @@ fileDriverHandle iter filepath = do
 
 -- |Process a file using the given IterateeGM.  This function wraps
 -- enumHandleRandom as a convenience.
-fileDriverRandomHandle :: (MonadIO m, ReadableChunk (s el) el) =>
+fileDriverRandomHandle :: (MonadIO m, ReadableChunk s el) =>
                           IterateeG s el m a ->
                           FilePath ->
                           m a

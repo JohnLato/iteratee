@@ -41,7 +41,7 @@ import System.Posix hiding (FileOffset)
 -- |The enumerator of a POSIX File Descriptor.  This version enumerates
 -- over the entire contents of a file, in order, unless stopped by
 -- the iteratee.  In particular, seeking is not supported.
-enumFd :: forall s el m a.(ReadableChunk (s el) el, MonadIO m) =>
+enumFd :: forall s el m a.(ReadableChunk s el, MonadIO m) =>
   Fd ->
   EnumeratorGM s el m a
 enumFd fd iter' =
@@ -65,7 +65,7 @@ enumFd fd iter' =
 
 -- |The enumerator of a POSIX File Descriptor: a variation of enumFd that
 -- supports RandomIO (seek requests)
-enumFdRandom :: forall s el m a.(ReadableChunk (s el) el, MonadIO m) =>
+enumFdRandom :: forall s el m a.(ReadableChunk s el, MonadIO m) =>
   Fd ->
   EnumeratorGM s el m a
 enumFdRandom fd iter' =
@@ -117,7 +117,7 @@ enumFdRandom fd iter' =
 
 -- |Process a file using the given IterateeGM.  This function wraps
 -- enumFd as a convenience.
-fileDriverFd :: (MonadIO m, ReadableChunk (s el) el) =>
+fileDriverFd :: (MonadIO m, ReadableChunk s el) =>
   IterateeG s el m a ->
   FilePath ->
   m a
@@ -129,7 +129,7 @@ fileDriverFd iter filepath = do
 
 -- |Process a file using the given IterateeGM.  This function wraps
 -- enumFdRandom as a convenience.
-fileDriverRandomFd :: (MonadIO m, ReadableChunk (s el) el) =>
+fileDriverRandomFd :: (MonadIO m, ReadableChunk s el) =>
   IterateeG s el m a ->
   FilePath ->
   m a

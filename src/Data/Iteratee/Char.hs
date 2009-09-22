@@ -37,9 +37,9 @@ import Control.Monad.Trans
 
 -- |A particular instance of StreamG: the stream of characters.
 -- This stream is used by many input parsers.
-type Stream = StreamG [] Char
+type Stream = StreamG String
 
-type Iteratee = IterateeG [] Char
+type Iteratee = IterateeG String Char
 
 -- Useful combinators for implementing iteratees and enumerators
 
@@ -54,7 +54,7 @@ type Line = String      -- The line of text, terminators are not included
 -- The code is the same as that of pure Iteratee, only the signature
 -- has changed.
 -- Compare the code below with GHCBufferIO.line_lazy
-line :: Monad m => IterateeG [] Char m (Either Line Line)
+line :: Monad m => IterateeG String Char m (Either Line Line)
 line = Iter.break (\c -> c == '\r' || c == '\n') >>= \l ->
        terminators >>= check l
   where
@@ -69,7 +69,7 @@ line = Iter.break (\c -> c == '\r' || c == '\n') >>= \l ->
 
 -- |Print lines as they are received. This is the first `impure' iteratee
 -- with non-trivial actions during chunk processing
-printLines :: IterateeG [] Char IO ()
+printLines :: IterateeG String Char IO ()
 printLines = lines'
   where
   lines' = Iter.break (\c -> c == '\r' || c == '\n') >>= \l ->
@@ -86,7 +86,7 @@ printLines = lines'
 -- Upon EOF or stream error, return the complete, terminated lines accumulated
 -- so far.
 
-readLines :: (Monad m) => IterateeG [] Char m (Either [Line] [Line])
+readLines :: (Monad m) => IterateeG String Char m (Either [Line] [Line])
 readLines = lines' []
   where
   lines' acc = Iter.break (\c -> c == '\r' || c == '\n') >>= \l ->
@@ -106,11 +106,11 @@ readLines = lines' []
 -- character stream and the enumerator of the line stream.
 
 enumLines :: (Functor m, Monad m) =>
-             IterateeG [] Line m a ->
-             IterateeG [] Char m (IterateeG [] Line m a)
+             IterateeG [Line] Line m a ->
+             IterateeG String Char m (IterateeG [Line] Line m a)
 enumLines iter = line >>= check iter
   where
-  --check :: Either Line Line -> IterateeG [] Char m (IterateeG [] Line m a)
+  --check :: Either Line Line -> IterateeG String Char m (IterateeG [Line] Line m a)
   check iter' (Left l)  = runLine iter' l
   check iter' (Right l) = runLine iter' l
   runLine i' l = return . joinIM . fmap Iter.liftI $ runIter i' (Chunk [l])
@@ -124,11 +124,11 @@ enumLines iter = line >>= check iter
 -- function.
 
 enumWords :: (Functor m, Monad m) =>
-             IterateeG [] String m a ->
-             IterateeG [] Char m (IterateeG [] String m a)
+             IterateeG [String] String m a ->
+             IterateeG String Char m (IterateeG [String] String m a)
 enumWords iter = Iter.break isSpace >>= check iter
   where
-  --check :: String -> IterateeG [] Char m (IterateeG [] String m a)
+  --check :: String -> IterateeG String Char m (IterateeG [String] String m a)
   check iter' "" = return iter'
   check iter' w  = return . joinIM . fmap Iter.liftI $ runIter iter' (Chunk [w])
 
@@ -136,4 +136,4 @@ enumWords iter = Iter.break isSpace >>= check iter
 -- ------------------------------------------------------------------------
 -- Enumerators
 
-type EnumeratorM m a = EnumeratorGM [] Char m a
+type EnumeratorM m a = EnumeratorGM String Char m a

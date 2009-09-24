@@ -13,7 +13,9 @@
 -- embedded (chunk encoded) into another stream.
 
 module Data.Iteratee.Char (
-  -- * Type synonyms
+  -- * Types
+  EofBehavior (..),
+  -- ** Type synonyms
   Stream,
   Iteratee,
   EnumeratorM,
@@ -45,22 +47,34 @@ type Iteratee = IterateeG String Char
 
 type Line = String      -- The line of text, terminators are not included
 
+-- |Determine the behavior of line/word operators on EOF.
+data EofBehavior = ErrOnEof | EolOnEof
+
 -- |Read the line of text from the stream
 -- The line can be terminated by CR, LF or CRLF.
--- Return (Right Line) if successful. Return (Left Line) if EOF or
+-- Return (Right Line) if successful. Return (Left Line) if
 -- a stream error were encountered before the terminator is seen.
+-- EOF can be treated as either an implicit EOL or an error depending
+-- on the setting of EofBehavior.
 -- The returned line is the string read so far.
 
 -- The code is the same as that of pure Iteratee, only the signature
 -- has changed.
 -- Compare the code below with GHCBufferIO.line_lazy
-line :: Monad m => IterateeG String Char m (Either Line Line)
-line = Iter.break (\c -> c == '\r' || c == '\n') >>= \l ->
+line :: Monad m => EofBehavior -> IterateeG String Char m (Either Line Line)
+line ErrOnEof = Iter.break (\c -> c == '\r' || c == '\n') >>= \l ->
        terminators >>= check l
   where
-  check l 0 = return . Left $ l
-  check l _ = return . Right $ l
-  terminators = heads "\r\n" >>= \l -> if l == 0 then heads "\n" else return l
+    check l 0 = return . Left $ l
+    check l _ = return . Right $ l
+    terminators = heads "\r\n" >>= \l -> if l == 0 then heads "\n" else return l
+line EolOnEof = Iter.break (\c -> c == '\r' || c == '\n') >>= \l ->
+       terminators >> getStatus >>= check l
+  where
+    check l DataRemaining = return . Right $ l
+    check l EofNoError    = return . Right $ l
+    check l (EofError _)  = return . Left $ l
+    terminators = heads "\r\n" >>= \l -> if l == 0 then heads "\n" else return l
 
 -- Line iteratees: processors of a stream whose elements are made of Lines
 
@@ -80,22 +94,23 @@ printLines = lines'
   terminators = heads "\r\n" >>= \l -> if l == 0 then heads "\n" else return l
 
 
--- |Read a sequence of lines from the stream up to the empty lin
+-- |Read a sequence of lines from the stream up to the empty line.
 -- The line can be terminated by CR, LF, or CRLF -- or by EOF or stream error.
 -- Return the read lines, in order, not including the terminating empty line
--- Upon EOF or stream error, return the complete, terminated lines accumulated
+-- Upon stream error, return the complete, terminated lines accumulated
 -- so far.
+-- EOF is treated as either a stream error or an implicit EOL depending
+-- upon the EofBehavior
 
-readLines :: (Monad m) => IterateeG String Char m (Either [Line] [Line])
-readLines = lines' []
+readLines :: (Monad m) =>
+  EofBehavior ->
+  IterateeG String Char m (Either [Line] [Line])
+readLines eb = lines' []
   where
-  lines' acc = Iter.break (\c -> c == '\r' || c == '\n') >>= \l ->
-               terminators >>= check acc l
-  check acc _  0 = return . Left . reverse $ acc -- no terminator found
-  check acc "" _ = return . Right . reverse $ acc
-  check acc l  _ = lines' (l:acc)
-  terminators = heads "\r\n" >>= \l -> if l == 0 then heads "\n" else return l
-
+    lines' acc = line eb >>= check acc
+    check acc (Left _)   = return . Left . reverse $ acc
+    check acc (Right "") = return . Right . reverse $ acc
+    check acc (Right l)  = lines' (l:acc)
 
 -- |Convert the stream of characters to the stream of lines, and
 -- apply the given iteratee to enumerate the latter.
@@ -106,9 +121,10 @@ readLines = lines' []
 -- character stream and the enumerator of the line stream.
 
 enumLines :: (Functor m, Monad m) =>
+  EofBehavior ->
   IterateeG [Line] Line m a ->
   IterateeG String Char m (IterateeG [Line] Line m a)
-enumLines iter = line >>= check iter
+enumLines eb iter = line eb >>= check iter
   where
   --check :: Either Line Line -> IterateeG String Char m (IterateeG [Line] Line m a)
   check iter' (Left l)  = runLine iter' l

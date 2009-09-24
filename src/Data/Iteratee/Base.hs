@@ -122,6 +122,7 @@ data StreamStatus =
   DataRemaining
   | EofNoError
   | EofError ErrMsg
+  deriving (Show, Eq)
 
 data ErrMsg = Err String
               | Seek FileOffset

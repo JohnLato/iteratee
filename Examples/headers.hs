@@ -74,7 +74,7 @@ enum_chunk_decoded iter = return read_size
 
 read_lines_rest :: Iteratee Identity (Either [Line] [Line], String)
 read_lines_rest = do
-  ls <- readLines
+  ls <- readLines ErrOnEof
   rest <- Iter.break (const False)
   return (ls, rest)
 
@@ -129,9 +129,9 @@ test_driver_full filepath = do
       print body
  where
   read_headers_body = do
-    headers <- readLines
-    body <- joinIM $ enum_chunk_decoded readLines
-    status <- isFinished
+    headers <- readLines ErrOnEof
+    body <- joinIM . enum_chunk_decoded $ readLines ErrOnEof
+    status <- getStatus
     return (headers, body, status)
 
 test31 = do
@@ -140,7 +140,7 @@ test31 = do
   putStrLn "Finished reading"
   putStrLn "Complete headers"
   putStrLn "[\"header1: v1\",\"header2: v2\",\"header3: v3\",\"header4: v4\"]"
-  putStrLn "Problem Just (Err \"EOF\")"
+  putStrLn "Problem EofNoError"
   putStrLn "Incomplete body"
   putStrLn "[\"body line 1\",\"body line    2\",\"body line       3\",\"body line          4\"]"
   putStrLn ""
@@ -162,7 +162,7 @@ test33 = do
   putStrLn "Finished reading"
   putStrLn "Complete headers"
   putStrLn "[\"header1: v1\",\"header2: v2\",\"header3: v3\",\"header4: v4\"]"
-  putStrLn "Problem Just (Err \"EOF\")"
+  putStrLn "Problem EofNoError"
   putStrLn "Incomplete body"
   putStrLn "[\"body line 1\",\"body line    2\",\"body line       3\",\"body line          4\",\"body line             5\"]"
 

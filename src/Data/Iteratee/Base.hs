@@ -7,6 +7,7 @@ module Data.Iteratee.Base (
   -- * Types
   ErrMsg (..),
   StreamG (..),
+  StreamStatus (..),
   IterGV (..),
   IterateeG (..),
   EnumeratorN,
@@ -17,6 +18,7 @@ module Data.Iteratee.Base (
   joinI,
   liftI,
   isFinished,
+  getStatus,
   run,
   joinIM,
   stream2list,
@@ -115,6 +117,12 @@ strMap :: (c -> c') -> StreamG c -> StreamG c'
 strMap f (Chunk xs) = Chunk $ f xs
 strMap _ (EOF mErr) = EOF mErr
 
+-- |Describe the status of a stream of data.
+data StreamStatus =
+  DataRemaining
+  | EofNoError
+  | EofError ErrMsg
+
 data ErrMsg = Err String
               | Seek FileOffset
               deriving (Show, Eq)
@@ -175,13 +183,22 @@ run iter = runIter iter (EOF Nothing) >>= \res ->
     Done x _ -> return x
     Cont _ e -> error $ "control message: " ++ show e
 
--- | Check if a stream has finished ('EOF').
+-- | Check if a stream has finished, whether from EOF or Error.
 isFinished :: (LL.ListLike s el, Monad m) =>
-  IterateeG s el m (Maybe ErrMsg)
+  IterateeG s el m Bool
 isFinished = IterateeG check
   where
-  check s@(EOF e) = return $ Done (Just $ fromMaybe (Err "EOF") e) s
-  check s         = return $ Done Nothing s
+  check s@(EOF _) = return $ Done True s
+  check s         = return $ Done False s
+
+-- | Get the stream status of an iteratee.
+getStatus :: (LL.ListLike s el, Monad m) =>
+  IterateeG s el m StreamStatus
+getStatus = IterateeG check
+  where
+    check s@(EOF Nothing)  = return $ Done EofNoError s
+    check s@(EOF (Just e)) = return $ Done (EofError e) s
+    check s                = return $ Done DataRemaining s
 
 -- |If the iteratee ('IterGV') has finished, return its value.  If it has not
 -- finished then apply it to the given 'EnumeratorGM'.

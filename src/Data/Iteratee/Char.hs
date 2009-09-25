@@ -26,6 +26,8 @@ module Data.Iteratee.Char (
   readLines,
   enumLines,
   enumWords,
+  enumWords2,
+  enumWords3,
 
   module Data.Iteratee.Base
 )
@@ -35,7 +37,9 @@ where
 import qualified Data.Iteratee.Base as Iter
 import Data.Iteratee.Base hiding (break)
 import Data.Char
+import Data.Word
 import Control.Monad.Trans
+import qualified Data.ByteString.Char8 as BC
 
 -- |A particular instance of StreamG: the stream of characters.
 -- This stream is used by many input parsers.
@@ -142,11 +146,46 @@ enumLines eb iter = line eb >>= check iter
 enumWords :: (Functor m, Monad m) =>
   IterateeG [String] String m a ->
   IterateeG String Char m (IterateeG [String] String m a)
-enumWords iter = Iter.break isSpace >>= check iter
+enumWords iter = Iter.dropWhile isSpace >> Iter.break isSpace >>= check
   where
   --check :: String -> IterateeG String Char m (IterateeG [String] String m a)
-  check iter' "" = return iter'
-  check iter' w  = return . joinIM . fmap Iter.liftI $ runIter iter' (Chunk [w])
+  check "" = return iter
+  check w = joinIM $ runIter iter (Chunk [w]) >>= check'
+    where
+      check' (Done a _)          = return . return . return $ a
+      check' (Cont k Nothing)    = return . enumWords $ k
+      check' (Cont _ (Just err)) = return . throwErr $ err
+
+-- this still gives an incorrect answer, and it's only slightly faster than
+-- enumWords...
+enumWords2 :: (Functor m, Monad m) =>
+  IterateeG [String] String m a ->
+  IterateeG String Char m (IterateeG [String] String m a)
+enumWords2 iter = convStream getter iter
+  where
+    getter = IterateeG step
+    step (Chunk []) = return $ Cont getter Nothing
+    step (Chunk xs) = return $ Cont (IterateeG (step' xs)) Nothing
+    step str        = return $ Done Nothing str
+    step' xs (Chunk []) = return $ Cont (IterateeG (step' xs)) Nothing
+    step' xs (Chunk ys) = let ws = init $ words (xs ++ ys)
+                              ck = last $ words ys
+                          in return $ Done (Just ws) (Chunk ck)
+    step' xs str    = return $ Done (Just $ words xs) str
+
+-- this is even slower... probably causes a lot of copying...
+enumWords3 :: (Functor m, Monad m) =>
+  IterateeG [BC.ByteString] BC.ByteString m a ->
+  IterateeG BC.ByteString Word8 m (IterateeG [BC.ByteString] BC.ByteString m a)
+enumWords3 iter = Iter.dropWhile iSpace >> Iter.break iSpace >>= check
+  where
+  iSpace = isSpace . chr . fromIntegral
+  check w | BC.null w = return iter
+  check w = joinIM $ runIter iter (Chunk [w]) >>= check'
+    where
+      check' (Done a _)          = return . return . return $ a
+      check' (Cont k Nothing)    = return . enumWords3 $ k
+      check' (Cont _ (Just err)) = return . throwErr $ err
 
 
 -- ------------------------------------------------------------------------

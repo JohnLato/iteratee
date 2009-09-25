@@ -189,8 +189,9 @@ isFinished :: (LL.ListLike s el, Monad m) =>
   IterateeG s el m Bool
 isFinished = IterateeG check
   where
-  check s@(EOF _) = return $ Done True s
-  check s         = return $ Done False s
+  check (Chunk xs) | LL.null xs = return $ Cont isFinished Nothing
+  check s@(EOF _)               = return $ Done True s
+  check s                       = return $ Done False s
 
 -- | Get the stream status of an iteratee.
 getStatus :: (LL.ListLike s el, Monad m) =>

@@ -156,10 +156,7 @@ enumWords iter = {-# SCC "enumWords" #-} Iter.dropWhile isSpace >> Iter.break is
       check' (Done a _)          = return . return . return $ a
       check' (Cont _ (Just err)) = return . throwErr $ err
 
--- this still gives an incorrect answer, and it's only slightly faster than
--- enumWords...
--- incorrect answer is probably due to words that end on buffer boundaries,
--- which are currently elided into the next word.  Oops.
+-- now correct, and the fastest of these (although still too slow).
 enumWords2 :: (Functor m, Monad m) =>
   IterateeG [String] String m a ->
   IterateeG String Char m (IterateeG [String] String m a)
@@ -167,12 +164,17 @@ enumWords2 iter = convStream getter iter
   where
     getter = {-# SCC "enumWord2/getter" #-} IterateeG step
     step (Chunk []) = return $ Cont getter Nothing
-    step (Chunk xs) = return $ Cont (IterateeG (step' xs)) Nothing
+    step (Chunk xs)
+      | isSpace $ last xs = return $ Done (Just $ words xs) (Chunk [])
+      | True              = return $ Cont (IterateeG (step' xs)) Nothing
     step str        = return $ Done Nothing str
     step' xs (Chunk []) = return $ Cont (IterateeG (step' xs)) Nothing
-    step' xs (Chunk ys) = let ws = init $ words (xs ++ ys)
-                              ck = last $ words ys
-                          in return $ Done (Just ws) (Chunk ck)
+    step' xs (Chunk ys)
+      | isSpace (last ys) = return $ Done (Just $ words (xs ++ ys)) (Chunk [])
+      | True              = let w' = words (xs ++ ys)
+                                ws = init w'
+                                ck = last w'
+                            in return $ Done (Just ws) (Chunk ck)
     step' xs str    = return $ Done (Just $ words xs) str
 
 

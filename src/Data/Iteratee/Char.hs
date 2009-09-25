@@ -1,4 +1,4 @@
--- Haskell98!
+{-# LANGUAGE FlexibleContexts #-}
 
 -- |Utilties for Char-based iteratee processing.
 
@@ -26,7 +26,7 @@ module Data.Iteratee.Char (
   readLines,
   enumLines,
   enumWords,
-  enumWords3,
+  enumWordsBS,
 
   module Data.Iteratee.Base
 )
@@ -37,6 +37,8 @@ import qualified Data.Iteratee.Base as Iter
 import Data.Iteratee.Base hiding (break)
 import Data.Char
 import Data.Word
+import Data.Monoid
+import qualified Data.ListLike as LL
 import Control.Monad.Trans
 import qualified Data.ByteString.Char8 as BC
 
@@ -142,50 +144,56 @@ enumLines eb iter = line eb >>= check iter
 -- One should keep in mind that enumWords is a more general, monadic
 -- function.
 
-enumWords :: (Functor m, Monad m) =>
-  IterateeG [String] String m a ->
-  IterateeG String Char m (IterateeG [String] String m a)
+enumWords :: (LL.ListLike s el, LL.StringLike s, Functor m, Monad m) =>
+  IterateeG [s] s m a ->
+  IterateeG s el m (IterateeG [s] s m a)
 enumWords iter = convStream getter iter
   where
-    getter = {-# SCC "enumWord2/getter" #-} IterateeG step
-    step (Chunk []) = return $ Cont getter Nothing
+    getter = IterateeG step
+    lChar = isSpace . last . LL.toString
+    step (Chunk xs) | LL.null xs = return $ Cont getter Nothing
     step (Chunk xs)
-      | isSpace $ last xs = return $ Done (Just $ words xs) (Chunk [])
-      | True              = return $ Cont (IterateeG (step' xs)) Nothing
-    step str        = return $ Done Nothing str
-    step' xs (Chunk []) = return $ Cont (IterateeG (step' xs)) Nothing
+      | LL.null xs = return $ Cont getter Nothing
+      | lChar xs   = return $ Done (Just $ LL.words xs) (Chunk mempty)
+      | True       = return $ Cont (IterateeG (step' xs)) Nothing
+    step str       = return $ Done Nothing str
     step' xs (Chunk ys)
-      | isSpace (last ys) = return $ Done (Just $ words (xs ++ ys)) (Chunk [])
-      | True              = let w' = words (xs ++ ys)
-                                ws = init w'
-                                ck = last w'
-                            in return $ Done (Just ws) (Chunk ck)
-    step' xs str    = return $ Done (Just $ words xs) str
+      | LL.null ys = return $ Cont (IterateeG (step' xs)) Nothing
+      | lChar ys   = return $ Done (Just . LL.words . mappend xs $ ys)
+                                   (Chunk mempty)
+      | True       = let w' = LL.words $ mappend xs ys
+                         ws = init w'
+                         ck = last w'
+                     in return $ Done (Just ws) (Chunk ck)
+    step' xs str   = return $ Done (Just $ LL.words xs) str
 
 {-# INLINE enumWords #-}
 
-
-enumWords3 :: (Functor m, Monad m) =>
+-- Like enumWords, but operates on ByteStrings.
+-- This is provided as a higher-performance alternative to enumWords.
+enumWordsBS :: (Functor m, Monad m) =>
   IterateeG [BC.ByteString] BC.ByteString m a ->
   IterateeG BC.ByteString Word8 m (IterateeG [BC.ByteString] BC.ByteString m a)
-enumWords3 iter = {-# SCC "enumWords3" #-} convStream getter iter
+enumWordsBS iter = convStream getter iter
   where
-    getter = {-# SCC "enumWord3/getter" #-} IterateeG step
-    step (Chunk xs) | BC.null xs = return $ Cont getter Nothing
+    getter = IterateeG step
+    lChar = isSpace . BC.last
     step (Chunk xs)
-      | isSpace $ BC.last xs = return $ Done (Just $ BC.words xs) (Chunk BC.empty)
-      | True              = return $ Cont (IterateeG (step' xs)) Nothing
-    step str        = return $ Done Nothing str
-    step' xs (Chunk ys) | BC.null ys = return $ Cont (IterateeG (step' xs)) Nothing
+      | BC.null xs = return $ Cont getter Nothing
+      | lChar xs   = return $ Done (Just $ BC.words xs) (Chunk BC.empty)
+      | True       = return $ Cont (IterateeG (step' xs)) Nothing
+    step str       = return $ Done Nothing str
     step' xs (Chunk ys)
-      | isSpace (BC.last ys) = return $ Done (Just . BC.words . BC.append xs $ ys) (Chunk BC.empty)
-      | True              = let w' = BC.words . BC.append xs $ ys
-                                ws = init w'
-                                ck = last w'
-                            in return $ Done (Just ws) (Chunk ck)
-    step' xs str    = return $ Done (Just $ BC.words xs) str
+      | BC.null ys = return $ Cont (IterateeG (step' xs)) Nothing
+      | lChar ys   = return $ Done (Just . BC.words . BC.append xs $ ys)
+                                   (Chunk BC.empty)
+      | True       = let w' = BC.words . BC.append xs $ ys
+                         ws = init w'
+                         ck = last w'
+                     in return $ Done (Just ws) (Chunk ck)
+    step' xs str   = return $ Done (Just $ BC.words xs) str
 
-{-# INLINE enumWords3 #-}
+{-# INLINE enumWordsBS #-}
 
 
 -- ------------------------------------------------------------------------

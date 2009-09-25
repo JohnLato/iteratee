@@ -146,24 +146,26 @@ enumLines eb iter = line eb >>= check iter
 enumWords :: (Functor m, Monad m) =>
   IterateeG [String] String m a ->
   IterateeG String Char m (IterateeG [String] String m a)
-enumWords iter = Iter.dropWhile isSpace >> Iter.break isSpace >>= check
+enumWords iter = {-# SCC "enumWords" #-} Iter.dropWhile isSpace >> Iter.break isSpace >>= check
   where
   --check :: String -> IterateeG String Char m (IterateeG [String] String m a)
-  check "" = return iter
-  check w = joinIM $ runIter iter (Chunk [w]) >>= check'
+  check "" = {-# SCC "enumWords/checkEnd" #-} return iter
+  check w = {-# SCC "enumWords/check" #-} joinIM $ runIter iter (Chunk [w]) >>= check'
     where
-      check' (Done a _)          = return . return . return $ a
       check' (Cont k Nothing)    = return . enumWords $ k
+      check' (Done a _)          = return . return . return $ a
       check' (Cont _ (Just err)) = return . throwErr $ err
 
 -- this still gives an incorrect answer, and it's only slightly faster than
 -- enumWords...
+-- incorrect answer is probably due to words that end on buffer boundaries,
+-- which are currently elided into the next word.  Oops.
 enumWords2 :: (Functor m, Monad m) =>
   IterateeG [String] String m a ->
   IterateeG String Char m (IterateeG [String] String m a)
 enumWords2 iter = convStream getter iter
   where
-    getter = IterateeG step
+    getter = {-# SCC "enumWord2/getter" #-} IterateeG step
     step (Chunk []) = return $ Cont getter Nothing
     step (Chunk xs) = return $ Cont (IterateeG (step' xs)) Nothing
     step str        = return $ Done Nothing str
@@ -173,15 +175,19 @@ enumWords2 iter = convStream getter iter
                           in return $ Done (Just ws) (Chunk ck)
     step' xs str    = return $ Done (Just $ words xs) str
 
+
 -- this is even slower... probably causes a lot of copying...
+-- trying doing pretty much the same thing, only changing check to have less
+-- nesting; i.e. put it inside an IterateeG block.
+-- alternatively, change the type of enumWords to operate in the monad
 enumWords3 :: (Functor m, Monad m) =>
   IterateeG [BC.ByteString] BC.ByteString m a ->
   IterateeG BC.ByteString Word8 m (IterateeG [BC.ByteString] BC.ByteString m a)
-enumWords3 iter = Iter.dropWhile iSpace >> Iter.break iSpace >>= check
+enumWords3 iter = {-# SCC "enumWords3" #-} Iter.dropWhile iSpace >> Iter.break iSpace >>= check
   where
   iSpace = isSpace . chr . fromIntegral
   check w | BC.null w = return iter
-  check w = joinIM $ runIter iter (Chunk [w]) >>= check'
+  check w = {-# SCC "ew3/check" #-} joinIM $ runIter iter (Chunk [w]) >>= check'
     where
       check' (Done a _)          = return . return . return $ a
       check' (Cont k Nothing)    = return . enumWords3 $ k

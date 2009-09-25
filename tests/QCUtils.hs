@@ -12,7 +12,7 @@ import qualified Data.ListLike as LL
 import Control.Monad.Identity
 
 -- Show instance
-instance (Show a, LL.ListLike s el) => Show (IterateeG s el Identity a) where
+instance (Show a, LL.ListLike s el) => Show (IterateeT s el Identity a) where
   show = (++) "<<Iteratee>> " . show . runIdentity . run
 
 -- Arbitrary instances
@@ -29,7 +29,7 @@ instance Arbitrary c => Arbitrary (StreamG c) where
     xs <- arbitrary
     elements [EOF err, Chunk xs]
 
-instance (Num a, Ord a, Arbitrary a, Monad m) => Arbitrary (IterateeG [a] a m [a]) where
+instance (Num a, Ord a, Arbitrary a, Monad m) => Arbitrary (IterateeT [a] a m [a]) where
   arbitrary = do
     n <- suchThat arbitrary (>0)
     ns <- arbitrary

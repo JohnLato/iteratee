@@ -72,9 +72,9 @@ enumHandleRandom h i =
   -- the first argument of loop is (off,len), describing which part
   -- of the file is currently in the buffer 'fp'
   loop :: (FileOffset,Int) ->
-          IterateeG s el m a ->
+          IterateeT s el m a ->
           ForeignPtr el ->
-          m (IterateeG s el m a)
+          m (IterateeT s el m a)
   -- strictify `off', else the `off + fromIntegral len' accumulates thunks
   loop (off,len) _iter _p | off `seq` len `seq` False = undefined
   loop (off,len) iter fp = do
@@ -113,10 +113,10 @@ enumHandleRandom h i =
 -- ----------------------------------------------
 -- File Driver wrapper functions.
 
--- |Process a file using the given IterateeGM.  This function wraps
+-- |Process a file using the given IterateeT.  This function wraps
 -- enumHandle as a convenience.
 fileDriverHandle :: (MonadIO m, ReadableChunk s el) =>
-  IterateeG s el m a ->
+  IterateeT s el m a ->
   FilePath ->
   m a
 fileDriverHandle iter filepath = do
@@ -125,10 +125,10 @@ fileDriverHandle iter filepath = do
   liftIO $ hClose h
   return result
 
--- |Process a file using the given IterateeGM.  This function wraps
+-- |Process a file using the given IterateeT.  This function wraps
 -- enumHandleRandom as a convenience.
 fileDriverRandomHandle :: (MonadIO m, ReadableChunk s el) =>
-                          IterateeG s el m a ->
+                          IterateeT s el m a ->
                           FilePath ->
                           m a
 fileDriverRandomHandle iter filepath = do

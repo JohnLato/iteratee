@@ -119,7 +119,7 @@ prop_skip xs = runner1 (enumPure1Chunk xs (skipToEof >> stream2list)) == []
 -- ---------------------------------------------
 -- Simple enumerator tests
 
-type I = IterateeG [Int] Int Identity [Int]
+type I = IterateeT [Int] Int Identity [Int]
 
 prop_enumChunks n xs i = n > 0  ==>
   runner1 (enumPure1Chunk xs i) == runner1 (enumPureNChunk xs n i)
@@ -142,9 +142,9 @@ prop_eof xs ys i = runner1 (enumPure1Chunk ys $ runIdentity $
                  == runner1 (enumPure1Chunk xs i)
   where types = (xs :: [Int], ys :: [Int], i :: I)
 
-prop_isFinished = runner1 (enumEof (isFinished :: IterateeG [Int] Int Identity (Maybe ErrMsg))) == Just (Err "EOF")
+prop_isFinished = runner1 (enumEof (isFinished :: IterateeT [Int] Int Identity Bool)) == True
 
-prop_isFinished2 = runner1 (enumErr "Error" (isFinished :: IterateeG [Int] Int Identity (Maybe ErrMsg))) == Just (Err "Error")
+prop_isFinished2 = runner1 (enumErr "Error" (isFinished :: IterateeT [Int] Int Identity Bool)) == True
 
 prop_null xs i = runner1 (enumPure1Chunk xs =<< enumPure1Chunk [] i)
                  == runner1 (enumPure1Chunk xs i)
@@ -176,8 +176,8 @@ prop_mapjoin xs i =
   where types = (i :: I, xs :: [Int])
 
 
-convId :: (LL.ListLike s el, Monad m) => IterateeG s el m (Maybe s)
-convId = IterateeG (\str -> case str of
+convId :: (LL.ListLike s el, Monad m) => IterateeT s el m (Maybe s)
+convId = IterateeT (\str -> case str of
   s@(Chunk xs) | LL.null xs -> return $ Cont convId Nothing
   s@(Chunk xs) -> return $ Done (Just xs) (Chunk mempty)
   s@(EOF e)   -> return $ Done Nothing (EOF e)

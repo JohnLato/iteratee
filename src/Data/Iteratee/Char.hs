@@ -47,7 +47,7 @@ import qualified Data.ByteString.Char8 as BC
 -- This stream is used by many input parsers.
 type Stream = StreamG String
 
-type Iteratee = IterateeG String Char
+type Iteratee = IterateeT String Char
 
 -- Useful combinators for implementing iteratees and enumerators
 
@@ -67,7 +67,7 @@ data EofBehavior = ErrOnEof | EolOnEof
 -- The code is the same as that of pure Iteratee, only the signature
 -- has changed.
 -- Compare the code below with GHCBufferIO.line_lazy
-line :: Monad m => EofBehavior -> IterateeG String Char m (Either Line Line)
+line :: Monad m => EofBehavior -> IterateeT String Char m (Either Line Line)
 line ErrOnEof = Iter.break (\c -> c == '\r' || c == '\n') >>= \l ->
        terminators >>= check l
   where
@@ -89,7 +89,7 @@ line EolOnEof = Iter.break (\c -> c == '\r' || c == '\n') >>= \l ->
 
 -- |Print lines as they are received. This is the first `impure' iteratee
 -- with non-trivial actions during chunk processing
-printLines :: IterateeG String Char IO ()
+printLines :: IterateeT String Char IO ()
 printLines = lines'
   where
   lines' = Iter.break (\c -> c == '\r' || c == '\n') >>= \l ->
@@ -110,7 +110,7 @@ printLines = lines'
 
 readLines :: (Monad m) =>
   EofBehavior ->
-  IterateeG String Char m (Either [Line] [Line])
+  IterateeT String Char m (Either [Line] [Line])
 readLines eb = lines' []
   where
     lines' acc = line eb >>= check acc
@@ -126,27 +126,17 @@ readLines eb = lines' []
 -- This is the first proper iteratee-enumerator: it is the iteratee of the
 -- character stream and the enumerator of the line stream.
 
-enumLines :: (LL.ListLike s el, LL.StringLike s, Functor m, Monad m) =>
-  IterateeG [s] s m a ->
-  IterateeG s el m (IterateeG [s] s m a)
-enumLines = convStream getter
+enumLines :: (Functor m, Monad m) =>
+  EofBehavior ->
+  IterateeG [Line] Line m a ->
+  IterateeG String Char m (IterateeG [Line] Line m a)
+enumLines eb iter = line eb >>= check iter
   where
-    getter = IterateeG step
-    lChar = (== '\n') . last . LL.toString
-    step (Chunk xs)
-      | LL.null xs = return $ Cont getter Nothing
-      | lChar xs   = return $ Done (Just $ LL.lines xs) (Chunk mempty)
-      | True       = return $ Cont (IterateeG (step' xs)) Nothing
-    step str       = return $ Done Nothing str
-    step' xs (Chunk ys)
-      | LL.null ys = return $ Cont (IterateeG (step' xs)) Nothing
-      | lChar ys   = return $ Done (Just . LL.lines . mappend xs $ ys)
-                                   (Chunk mempty)
-      | True       = let w' = LL.lines $ mappend xs ys
-                         ws = init w'
-                         ck = last w'
-                     in return $ Done (Just ws) (Chunk ck)
-    step' xs str   = return $ Done (Just $ LL.lines xs) str
+  --check :: Either Line Line -> IterateeG String Char m (IterateeG [Line] Line m a)
+  check iter' (Left l)  = runLine iter' l
+  check iter' (Right l) = runLine iter' l
+  runLine i' l = return . joinIM . fmap Iter.liftI $ runIter i' (Chunk [l])
+
 
 -- |Convert the stream of characters to the stream of words, and
 -- apply the given iteratee to enumerate the latter.
@@ -155,10 +145,24 @@ enumLines = convStream getter
 -- One should keep in mind that enumWords is a more general, monadic
 -- function.
 
-enumWords :: (LL.ListLike s el, LL.StringLike s, Functor m, Monad m) =>
-  IterateeG [s] s m a ->
-  IterateeG s el m (IterateeG [s] s m a)
-enumWords = convStream getter
+enumWords :: (Functor m, Monad m) =>
+  IterateeG [String] String m a ->
+  IterateeG String Char m (IterateeG [String] String m a)
+enumWords iter = {-# SCC "enumWords" #-} Iter.dropWhile isSpace >> Iter.break isSpace >>= check
+  where
+  --check :: String -> IterateeG String Char m (IterateeG [String] String m a)
+  check "" = {-# SCC "enumWords/checkEnd" #-} return iter
+  check w = {-# SCC "enumWords/check" #-} joinIM $ runIter iter (Chunk [w]) >>= check'
+    where
+      check' (Cont k Nothing)    = return . enumWords $ k
+      check' (Done a _)          = return . return . return $ a
+      check' (Cont _ (Just err)) = return . throwErr $ err
+
+-- now correct, and the fastest of these (although still too slow).
+enumWords2 :: (Functor m, Monad m) =>
+  IterateeG [String] String m a ->
+  IterateeG String Char m (IterateeG [String] String m a)
+enumWords2 iter = convStream getter iter
   where
     getter = IterateeG step
     lChar = isSpace . last . LL.toString

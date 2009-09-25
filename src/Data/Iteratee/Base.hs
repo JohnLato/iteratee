@@ -8,8 +8,8 @@ module Data.Iteratee.Base (
   ErrMsg (..),
   StreamG (..),
   StreamStatus (..),
-  IterGV (..),
-  IterateeG (..),
+  IterTV (..),
+  IterateeT (..),
   EnumeratorN,
   EnumeratorGM,
   EnumeratorGMM,
@@ -151,34 +151,34 @@ instance Monoid ErrMsg where
 -- We also assume that given a terminated stream, an iteratee
 -- moves to the done state, so the results computed so far could be returned.
 
-data IterGV c el m a =
+data IterTV c el m a =
   Done a (StreamG c)
-  | Cont (IterateeG c el m a) (Maybe ErrMsg)
+  | Cont (IterateeT c el m a) (Maybe ErrMsg)
 
-instance (Show c, Show a) => Show (IterGV c el m a) where
-  show (Done a str) = "IterGV Done <<" ++ show a ++ ">> : <<" ++ show str ++ ">>"
-  show (Cont _ mErr) = "IterGV Cont :: " ++ show mErr
+instance (Show c, Show a) => Show (IterTV c el m a) where
+  show (Done a str) = "IterTV Done <<" ++ show a ++ ">> : <<" ++ show str ++ ">>"
+  show (Cont _ mErr) = "IterTV Cont :: " ++ show mErr
 
-newtype IterateeG c el m a = IterateeG{
-  runIter :: StreamG c -> m (IterGV c el m a)
+newtype IterateeT c el m a = IterateeT{
+  runIter :: StreamG c -> m (IterTV c el m a)
   }
 
 
 -- Useful combinators for implementing iteratees and enumerators
 
--- | Lift an IterGV result into an 'IterateeG'
-liftI :: (Monad m, LL.ListLike s el) => IterGV s el m a -> IterateeG s el m a
+-- | Lift an IterTV result into an 'IterateeT'
+liftI :: (Monad m, LL.ListLike s el) => IterTV s el m a -> IterateeT s el m a
 liftI (Cont k Nothing)     = k
 liftI (Cont _k (Just err)) = throwErr err
-liftI i@(Done _ (EOF _  )) = IterateeG (const (return i))
-liftI (Done a (Chunk st )) = IterateeG (check st)
+liftI i@(Done _ (EOF _  )) = IterateeT (const (return i))
+liftI (Done a (Chunk st )) = IterateeT (check st)
   where
   check str (Chunk str') = return $ Done a (Chunk $ str `mappend` str')
   check _str e@(EOF _)   = return $ Done a e
 
--- | Run an 'IterateeG' and get the result.  An 'EOF' is sent to the
+-- | Run an 'IterateeT' and get the result.  An 'EOF' is sent to the
 -- iteratee as it is run.
-run :: (Monad m, LL.ListLike s el) => IterateeG s el m a -> m a
+run :: (Monad m, LL.ListLike s el) => IterateeT s el m a -> m a
 run iter = runIter iter (EOF Nothing) >>= \res ->
   case res of
     Done x _ -> return x
@@ -186,8 +186,8 @@ run iter = runIter iter (EOF Nothing) >>= \res ->
 
 -- | Check if a stream has finished, whether from EOF or Error.
 isFinished :: (LL.ListLike s el, Monad m) =>
-  IterateeG s el m Bool
-isFinished = IterateeG check
+  IterateeT s el m Bool
+isFinished = IterateeT check
   where
   check (Chunk xs) | LL.null xs = return $ Cont isFinished Nothing
   check s@(EOF _)               = return $ Done True s
@@ -195,47 +195,47 @@ isFinished = IterateeG check
 
 -- | Get the stream status of an iteratee.
 getStatus :: (LL.ListLike s el, Monad m) =>
-  IterateeG s el m StreamStatus
-getStatus = IterateeG check
+  IterateeT s el m StreamStatus
+getStatus = IterateeT check
   where
     check s@(EOF Nothing)  = return $ Done EofNoError s
     check s@(EOF (Just e)) = return $ Done (EofError e) s
     check s                = return $ Done DataRemaining s
 
--- |If the iteratee ('IterGV') has finished, return its value.  If it has not
+-- |If the iteratee ('IterTV') has finished, return its value.  If it has not
 -- finished then apply it to the given 'EnumeratorGM'.
 -- If in error, throw the error.
 checkIfDone :: (LL.ListLike s el, Monad m) =>
-  (IterateeG s el m a -> m (IterateeG s el m a)) ->
-  IterGV s el m a ->
-  m (IterateeG s el m a)
+  (IterateeT s el m a -> m (IterateeT s el m a)) ->
+  IterTV s el m a ->
+  m (IterateeT s el m a)
 checkIfDone _ (Done x _)        = return . return $ x
 checkIfDone k (Cont x Nothing)  = k x
 checkIfDone _ (Cont _ (Just e)) = return . throwErr $ e
 
--- |The following is a `variant' of join in the IterateeGM s el m monad
+-- |The following is a `variant' of join in the IterateeT s el m monad
 -- When el' is the same as el, the type of joinI is indeed that of
 -- true monadic join.  However, joinI is subtly different: since
 -- generally el' is different from el, it makes no sense to
--- continue using the internal, IterateeG el' m a: we no longer
+-- continue using the internal, IterateeT el' m a: we no longer
 -- have elements of the type el' to feed to that iteratee.
 -- We thus send EOF to the internal Iteratee and propagate its result.
 -- This join function is useful when dealing with `derived iteratees'
 -- for embedded/nested streams.  In particular, joinI is useful to
 -- process the result of take, mapStream, or convStream below.
 joinI :: (LL.ListLike s el, LL.ListLike s' el', Monad m) =>
-  IterateeG s el m (IterateeG s' el' m a) ->
-  IterateeG s el m a
-joinI m = IterateeG (docase <=< runIter m)
+  IterateeT s el m (IterateeT s' el' m a) ->
+  IterateeT s el m a
+joinI m = IterateeT (docase <=< runIter m)
   where
   docase (Done ma str) = liftM (flip Done str) (run ma)
   docase (Cont k mErr) = return $ Cont (joinI k) mErr
 
 -- |Layer a monad transformer over the inner monad.
 liftInner :: (Monad m, MonadTrans t, Monad (t m)) =>
-  IterateeG s el m a ->
-  IterateeG s el (t m) a
-liftInner iter = IterateeG step
+  IterateeT s el m a ->
+  IterateeT s el (t m) a
+liftInner iter = IterateeT step
   where
   step str = do
     igv <- lift $ runIter iter str
@@ -243,18 +243,18 @@ liftInner iter = IterateeG step
       Done a res  -> return $ Done a res
       Cont k mErr -> return $ Cont (liftInner k) mErr
 
--- It turns out, IterateeG form a monad. We can use the familiar do
+-- It turns out, IterateeT form a monad. We can use the familiar do
 -- notation for composing Iteratees
 
-instance (Monad m) => Monad (IterateeG s el m) where
-  return x = IterateeG (return . Done x)
+instance (Monad m) => Monad (IterateeT s el m) where
+  return x = IterateeT (return . Done x)
   (>>=)    = iterBind
 
 iterBind :: (Monad m ) =>
-  IterateeG s el m a ->
-  (a -> IterateeG s el m b) ->
-  IterateeG s el m b
-iterBind m f = IterateeG (docase <=< runIter m)
+  IterateeT s el m a ->
+  (a -> IterateeT s el m b) ->
+  IterateeT s el m b
+iterBind m f = IterateeT (docase <=< runIter m)
   where
   docase (Done a str)  = runIter (f a) str
   docase (Cont k mErr) = return $ Cont (k `iterBind` f) mErr
@@ -262,54 +262,54 @@ iterBind m f = IterateeG (docase <=< runIter m)
 {-# INLINE iterBind #-}
 
 instance (Monad m, Functor m) =>
-  Functor (IterateeG s el m) where
-  fmap f m = IterateeG (docase <=< runIter m)
+  Functor (IterateeT s el m) where
+  fmap f m = IterateeT (docase <=< runIter m)
     where
-    -- docase :: IterGV s el m a -> m (IterGV s el m a)
+    -- docase :: IterTV s el m a -> m (IterTV s el m a)
     docase (Done a stream) = return $ Done (f a) stream
     docase (Cont k mErr)   = return $ Cont (fmap f k) mErr
 
-instance (Monad m, Functor m) => Applicative (IterateeG s el m) where
+instance (Monad m, Functor m) => Applicative (IterateeT s el m) where
   pure    = return
   m <*> a = m >>= flip fmap a
 
-instance MonadTrans (IterateeG s el) where
-  lift m = IterateeG $ \str -> liftM (flip Done str) m
+instance MonadTrans (IterateeT s el) where
+  lift m = IterateeT $ \str -> liftM (flip Done str) m
 
-instance (MonadIO m) => MonadIO (IterateeG s el m) where
+instance (MonadIO m) => MonadIO (IterateeT s el m) where
   liftIO = lift . liftIO
 
 -- ------------------------------------------------------------------------
 -- Primitive iteratees
 
 -- |Read a stream to the end and return all of its elements as a list
-stream2list :: (LL.ListLike s el, Monad m) => IterateeG s el m [el]
-stream2list = IterateeG (step mempty)
+stream2list :: (LL.ListLike s el, Monad m) => IterateeT s el m [el]
+stream2list = IterateeT (step mempty)
   where
-  -- step :: s el -> StreamG s -> m (IterGV s el m [el])
+  -- step :: s el -> StreamG s -> m (IterTV s el m [el])
   step acc (Chunk ls)
-    | LL.null ls      = return $ Cont (IterateeG (step acc)) Nothing
+    | LL.null ls      = return $ Cont (IterateeT (step acc)) Nothing
   step acc (Chunk ls) = return $ Cont
-                                 (IterateeG (step (acc `mappend` ls)))
+                                 (IterateeT (step (acc `mappend` ls)))
                                  Nothing
   step acc str        = return $ Done (LL.toList acc) str
 
 -- |Read a stream to the end and return all of its elements as a stream
-stream2stream :: (LL.ListLike s el, Monad m) => IterateeG s el m s
-stream2stream = IterateeG (step mempty)
+stream2stream :: (LL.ListLike s el, Monad m) => IterateeT s el m s
+stream2stream = IterateeT (step mempty)
   where
   step acc (Chunk ls)
-    | LL.null ls      = return $ Cont (IterateeG (step acc)) Nothing
+    | LL.null ls      = return $ Cont (IterateeT (step acc)) Nothing
   step acc (Chunk ls) = return $ Cont
-                                 (IterateeG (step (acc `mappend` ls)))
+                                 (IterateeT (step (acc `mappend` ls)))
                                  Nothing
   step acc str        = return $ Done acc str
 
 
 -- |Report and propagate an error.  Disregard the input first and then
 -- propagate the error.
-throwErr :: (Monad m) => ErrMsg -> IterateeG s el m a
-throwErr e = IterateeG (\_ -> return $ Cont (throwErr e) (Just e))
+throwErr :: (Monad m) => ErrMsg -> IterateeT s el m a
+throwErr e = IterateeT (\_ -> return $ Cont (throwErr e) (Just e))
 
 -- |Produce the EOF error message.  If the stream was terminated because
 -- of an error, keep the original error message.
@@ -323,9 +323,9 @@ setEOF _              = Err "EOF"
 -- with an empty stream.  In particular, it enables them to be used with
 -- 'convStream'.
 checkErr :: (Monad m, LL.ListLike s el) =>
-  IterateeG s el m a ->
-  IterateeG s el m (Either ErrMsg a)
-checkErr iter = IterateeG (check <=< runIter iter)
+  IterateeT s el m a ->
+  IterateeT s el m (Either ErrMsg a)
+checkErr iter = IterateeT (check <=< runIter iter)
   where
   check (Done a str) = return $ Done (Right a) str
   check (Cont _ (Just err)) = return $ Done (Left err) mempty
@@ -345,28 +345,28 @@ checkErr iter = IterateeG (check <=< runIter iter)
 
 break :: (LL.ListLike s el, Monad m) =>
   (el -> Bool) ->
-  IterateeG s el m s
-break cpred = IterateeG (step mempty)
+  IterateeT s el m s
+break cpred = IterateeT (step mempty)
   where
   step before (Chunk str) | LL.null str = return $
-    Cont (IterateeG (step before)) Nothing
+    Cont (IterateeT (step before)) Nothing
   step before (Chunk str) =
     case LL.break cpred str of
       (_, tail') | LL.null tail' -> return $ Cont
-                              (IterateeG (step (before `mappend` str)))
+                              (IterateeT (step (before `mappend` str)))
                               Nothing
       (str', tail') -> return $ Done (before `mappend` str') (Chunk tail')
   step before stream = return $ Done before stream
 
 -- |The identity iterator.  Doesn't do anything.
-identity :: (Monad m) => IterateeG s el m ()
+identity :: (Monad m) => IterateeT s el m ()
 identity = return ()
 
 
 -- |Attempt to read the next element of the stream and return it
 -- Raise a (recoverable) error if the stream is terminated
-head :: (LL.ListLike s el, Monad m) => IterateeG s el m el
-head = IterateeG step
+head :: (LL.ListLike s el, Monad m) => IterateeT s el m el
+head = IterateeT step
   where
   step (Chunk vec)
     | LL.null vec  = return $ Cont head Nothing
@@ -382,12 +382,12 @@ head = IterateeG step
 -- will remove the characters "ab" and return 2.
 heads :: (LL.ListLike s el, Monad m, Eq el) =>
   s ->
-  IterateeG s el m Int
+  IterateeT s el m Int
 heads st | LL.null st = return 0
 heads st = loop 0 st
   where
   loop cnt xs | LL.null xs = return cnt
-  loop cnt xs              = IterateeG (step cnt xs)
+  loop cnt xs              = IterateeT (step cnt xs)
   step cnt str (Chunk xs) | LL.null xs  = return $ Cont (loop cnt str) Nothing
   step cnt str stream     | LL.null str = return $ Done cnt stream
   step cnt str s@(Chunk xs) =
@@ -401,8 +401,8 @@ heads st = loop 0 st
 -- it from the stream.
 -- Return (Just c) if successful, return Nothing if the stream is
 -- terminated (by EOF or an error)
-peek :: (LL.ListLike s el, Monad m) => IterateeG s el m (Maybe el)
-peek = IterateeG step
+peek :: (LL.ListLike s el, Monad m) => IterateeT s el m (Maybe el)
+peek = IterateeT step
   where
   step s@(Chunk vec)
     | LL.null vec = return $ Cont peek Nothing
@@ -411,16 +411,16 @@ peek = IterateeG step
 
 
 -- |Skip the rest of the stream
-skipToEof :: (Monad m) => IterateeG s el m ()
-skipToEof = IterateeG step
+skipToEof :: (Monad m) => IterateeT s el m ()
+skipToEof = IterateeT step
   where
   step (Chunk _) = return $ Cont skipToEof Nothing
   step s         = return $ Done () s
 
 
 -- |Seek to a position in the stream
-seek :: (Monad m) => FileOffset -> IterateeG s el m ()
-seek n = IterateeG step
+seek :: (Monad m) => FileOffset -> IterateeT s el m ()
+seek n = IterateeT step
   where
   step (Chunk _) = return $ Cont identity (Just (Seek n))
   step s         = return $ Done () s
@@ -429,9 +429,9 @@ seek n = IterateeG step
 
 -- |Skip n elements of the stream, if there are that many
 -- This is the analogue of List.drop
-drop :: (LL.ListLike s el, Monad m) => Int -> IterateeG s el m ()
+drop :: (LL.ListLike s el, Monad m) => Int -> IterateeT s el m ()
 drop 0 = return ()
-drop n = IterateeG step
+drop n = IterateeT step
   where
   step (Chunk str)
     | LL.length str <= n = return $ Cont (drop (n - LL.length str)) Nothing
@@ -442,8 +442,8 @@ drop n = IterateeG step
 -- This is the analogue of List.dropWhile
 dropWhile :: (LL.ListLike s el, Monad m) =>
   (el -> Bool) ->
-  IterateeG s el m ()
-dropWhile p = IterateeG step
+  IterateeT s el m ()
+dropWhile p = IterateeT step
   where
   step (Chunk str) = let dropped = LL.dropWhile p str
                      in if LL.null dropped
@@ -453,10 +453,10 @@ dropWhile p = IterateeG step
 
 
 -- |Return the total length of the stream
-length :: (Num a, LL.ListLike s el, Monad m) => IterateeG s el m a
+length :: (Num a, LL.ListLike s el, Monad m) => IterateeT s el m a
 length = length' 0
   where
-  length' = IterateeG . step
+  length' = IterateeT . step
   step i (Chunk xs) = return $ Cont
                                (length' $! i + fromIntegral (LL.length xs))
                                Nothing
@@ -469,11 +469,11 @@ length = length' 0
 
 -- |The type of the converter from the stream with elements el_outer
 -- to the stream with element el_inner.  The result is the iteratee
--- for the outer stream that uses an `IterateeG el_inner m a'
+-- for the outer stream that uses an `IterateeT el_inner m a'
 -- to process the embedded, inner stream as it reads the outer stream.
 type EnumeratorN s_outer el_outer s_inner el_inner m a =
-  IterateeG s_inner el_inner m a ->
-  IterateeG s_outer el_outer m (IterateeG s_inner el_inner m a)
+  IterateeT s_inner el_inner m a ->
+  IterateeT s_outer el_outer m (IterateeT s_inner el_inner m a)
 
 -- |Read n elements from a stream and apply the given iteratee to the
 -- stream of the read elements. Unless the stream is terminated early, we
@@ -482,7 +482,7 @@ take :: (LL.ListLike s el, Monad m) =>
   Int ->
   EnumeratorN s el s el m a
 take 0 iter = return iter
-take n' iter = IterateeG (step n')
+take n' iter = IterateeT (step n')
   where
   step n chk@(Chunk str)
     | LL.null str = return $ Cont (take n iter) Nothing
@@ -505,10 +505,10 @@ take n' iter = IterateeG (step n')
 -- finished early.
 takeR :: (LL.ListLike s el, Monad m) =>
   Int ->
-  IterateeG s el m a ->
-  IterateeG s el m (IterateeG s el m a)
+  IterateeT s el m a ->
+  IterateeT s el m (IterateeT s el m a)
 takeR 0 iter = return iter
-takeR n iter = IterateeG (step n)
+takeR n iter = IterateeT (step n)
   where
   step n' s@(Chunk str)
     | LL.null str        = return $ Cont (takeR n iter) Nothing
@@ -535,7 +535,7 @@ mapStream :: (LL.ListLike (s el) el,
   -> EnumeratorN (s el) el (s el') el' m a
 mapStream f i = go i
   where
-    go iter = IterateeG ((check <=< runIter iter) . strMap (lMap f))
+    go iter = IterateeT ((check <=< runIter iter) . strMap (lMap f))
     check (Done a _)    = return $ Done (return a) (Chunk LL.empty)
     check (Cont k mErr) = return $ Cont (go k) mErr
 
@@ -547,7 +547,7 @@ rigidMapStream :: (LL.ListLike s el, Monad m) =>
   -> EnumeratorN s el s el m a
 rigidMapStream f i =  go i
   where
-    go iter = IterateeG ((check <=< runIter iter) . strMap (LL.rigidMap f))
+    go iter = IterateeT ((check <=< runIter iter) . strMap (LL.rigidMap f))
     check (Done a _)    = return $ Done (return a) (Chunk LL.empty)
     check (Cont k mErr) = return $ Cont (go k) mErr
 
@@ -557,10 +557,10 @@ rigidMapStream f i =  go i
 -- general: it may take several elements of the outer stream to produce
 -- one element of the inner stream, or the other way around.
 -- The transformation from one stream to the other is specified as
--- IterateeGM s el m (Maybe (s' el')).  The Maybe type is in case of
+-- IterateeT s el m (Maybe (s' el')).  The Maybe type is in case of
 -- errors (or end of stream).
 convStream :: Monad m =>
-  IterateeG s el m (Maybe s') ->
+  IterateeT s el m (Maybe s') ->
   EnumeratorN s el s' el' m a
 convStream fi iter = fi >>= check
   where
@@ -579,7 +579,7 @@ filter :: (LL.ListLike s el, Monad m) =>
   EnumeratorN s el s el m a
 filter p = convStream f'
   where
-  f' = IterateeG step
+  f' = IterateeT step
   step (Chunk xs) | LL.null xs = return $ Cont f' Nothing
   step (Chunk xs) = return $ Done (Just $ LL.filter p xs) mempty
   step stream     = return $ Done Nothing stream
@@ -591,10 +591,10 @@ filter p = convStream f'
 foldl :: (LL.ListLike s el, FLL.FoldableLL s el, Monad m) =>
   (a -> el -> a) ->
   a ->
-  IterateeG s el m a
+  IterateeT s el m a
 foldl f i = iter i
   where
-  iter ac = IterateeG step
+  iter ac = IterateeT step
     where
       step (Chunk xs) | LL.null xs = return $ Cont (iter ac) Nothing
       step (Chunk xs) = return $ Cont (iter (FLL.foldl f ac xs)) Nothing
@@ -604,12 +604,12 @@ foldl f i = iter i
 foldl' :: (LL.ListLike s el, FLL.FoldableLL s el, Monad m) =>
   (a -> el -> a) ->
   a ->
-  IterateeG s el m a
-foldl' f i = IterateeG (step i)
+  IterateeT s el m a
+foldl' f i = IterateeT (step i)
   where
-    step ac (Chunk xs) | LL.null xs = return $ Cont (IterateeG (step ac))
+    step ac (Chunk xs) | LL.null xs = return $ Cont (IterateeT (step ac))
                                                Nothing
-    step ac (Chunk xs) = return $ Cont (IterateeG (step $! FLL.foldl' f ac xs))
+    step ac (Chunk xs) = return $ Cont (IterateeT (step $! FLL.foldl' f ac xs))
                                        Nothing
     step ac stream     = return $ Done ac stream
 
@@ -619,8 +619,8 @@ foldl' f i = IterateeG (step i)
 --   in the stream.
 foldl1 :: (LL.ListLike s el, FLL.FoldableLL s el, Monad m) =>
   (el -> el -> el) ->
-  IterateeG s el m el
-foldl1 f = IterateeG step
+  IterateeT s el m el
+foldl1 f = IterateeT step
   where
   step (Chunk xs) | LL.null xs = return $ Cont (foldl1 f) Nothing
   -- After the first chunk, just use regular foldl in order to account for
@@ -630,23 +630,23 @@ foldl1 f = IterateeG step
 
 -- | Sum of a stream.
 sum :: (LL.ListLike s el, Num el, Monad m) =>
-  IterateeG s el m el
-sum = IterateeG (step 0)
+  IterateeT s el m el
+sum = IterateeT (step 0)
   where
     step acc (Chunk xs)
-      | LL.null xs = return $ Cont (IterateeG (step acc)) Nothing
-    step acc (Chunk xs) = return $ Cont (IterateeG . step $! acc + LL.sum xs)
+      | LL.null xs = return $ Cont (IterateeT (step acc)) Nothing
+    step acc (Chunk xs) = return $ Cont (IterateeT . step $! acc + LL.sum xs)
                                         Nothing
     step acc str = return $ Done acc str
 
 -- | Product of a stream
 product :: (LL.ListLike s el, Num el, Monad m) =>
-  IterateeG s el m el
-product = IterateeG (step 1)
+  IterateeT s el m el
+product = IterateeT (step 1)
   where
     step acc (Chunk xs)
-      | LL.null xs = return $ Cont (IterateeG (step acc)) Nothing
-    step acc (Chunk xs) = return $ Cont (IterateeG . step $! acc *
+      | LL.null xs = return $ Cont (IterateeT (step acc)) Nothing
+    step acc (Chunk xs) = return $ Cont (IterateeT . step $! acc *
                                           LL.product xs)
                                         Nothing
     step acc str = return $ Done acc str
@@ -656,16 +656,16 @@ product = IterateeG (step 1)
 
 -- |Enumerate two iteratees over a single stream simultaneously.
 enumPair :: (LL.ListLike s el, Monad m) =>
-  IterateeG s el m a ->
-  IterateeG s el m b ->
-  IterateeG s el m (a,b)
-enumPair i1 i2 = IterateeG step
+  IterateeT s el m a ->
+  IterateeT s el m b ->
+  IterateeT s el m (a,b)
+enumPair i1 i2 = IterateeT step
   where
   longest c1@(Chunk xs) c2@(Chunk ys) = if LL.length xs > LL.length ys
                                         then c1 else c2
   longest e@(EOF _)  _          = e
   longest _          e@(EOF _)  = e
-  step (Chunk xs) | LL.null xs = return $ Cont (IterateeG step) Nothing
+  step (Chunk xs) | LL.null xs = return $ Cont (IterateeT step) Nothing
   step str = do
     ia <- runIter i1 str
     ib <- runIter i2 str
@@ -688,13 +688,13 @@ enumPair i1 i2 = IterateeG step
 -- enumerators. The latter is useful when one iteratee
 -- reads from the concatenation of two data sources.
 
-type EnumeratorGM s el m a = IterateeG s el m a -> m (IterateeG s el m a)
+type EnumeratorGM s el m a = IterateeT s el m a -> m (IterateeT s el m a)
 
 -- |More general enumerator type: enumerator that maps
 -- streams (not necessarily in lock-step).  This is
 -- a flattened (`joinI-ed') EnumeratorN sfrom elfrom sto elto m a
 type EnumeratorGMM sfrom elfrom sto elto m a =
-  IterateeG sto elto m a -> m (IterateeG sfrom elfrom m a)
+  IterateeT sto elto m a -> m (IterateeT sfrom elfrom m a)
 
 -- |The most primitive enumerator: applies the iteratee to the terminated
 -- stream. The result is the iteratee usually in the done state.
@@ -702,7 +702,7 @@ enumEof :: Monad m =>
   EnumeratorGM s el m a
 enumEof iter = runIter iter (EOF Nothing) >>= check
   where
-  check (Done x _) = return $ IterateeG $ return . Done x
+  check (Done x _) = return $ IterateeT $ return . Done x
   check (Cont _ e) = return $ throwErr (fromMaybe (Err "Divergent Iteratee") e)
 
 -- |Another primitive enumerator: report an error
@@ -711,7 +711,7 @@ enumErr :: (LL.ListLike s el, Monad m) =>
   EnumeratorGM s el m a
 enumErr e iter = runIter iter (EOF (Just (Err e))) >>= check
   where
-  check (Done x _)  = return $ IterateeG (return . Done x)
+  check (Done x _)  = return $ IterateeT (return . Done x)
   check (Cont _ e') = return $ throwErr
                       (fromMaybe (Err "Divergent Iteratee") e')
 
@@ -748,5 +748,5 @@ enumPureNChunk str n iter | n > 0 = runIter iter (Chunk s1) >>=
 enumPureNChunk _ n _ = error $ "enumPureNChunk called with n==" ++ show n
 
 -- |A variant of join for Iteratees in a monad.
-joinIM :: (Monad m) => m (IterateeG s el m a) -> IterateeG s el m a
-joinIM m = IterateeG (\str -> m >>= flip runIter str)
+joinIM :: (Monad m) => m (IterateeT s el m a) -> IterateeT s el m a
+joinIM m = IterateeT (\str -> m >>= flip runIter str)

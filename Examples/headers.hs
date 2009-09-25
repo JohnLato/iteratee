@@ -63,7 +63,7 @@ enum_chunk_decoded iter = return read_size
   read_hex acc (d:rest) | isHexDigit d = read_hex (16*acc + digitToInt d) rest
   read_hex acc _ = Nothing
 
-  frame_err e iter = IterateeG (\_ ->
+  frame_err e iter = IterateeT (\_ ->
                      return $ Cont (joinIM $ enumErr e iter)
                      (Just $ Err "Frame error"))
 

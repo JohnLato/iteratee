@@ -79,9 +79,9 @@ enumFdRandom fd iter' =
   -- the first argument of loop is (off,len), describing which part
   -- of the file is currently in the buffer 'fp'
   loop :: (FileOffset,Int) ->
-          IterateeG s el m a ->
+          IterateeT s el m a ->
           ForeignPtr el ->
-          m (IterateeG s el m a)
+          m (IterateeT s el m a)
     -- Thanks to John Lato for the strictness annotation
     -- Otherwise, the `off + fromIntegral len' below accumulates thunks
   loop (off,len) _iter _fp | off `seq` len `seq` False = undefined
@@ -118,10 +118,10 @@ enumFdRandom fd iter' =
   check o fp  (Cont i (Just (Seek off))) = seekTo o off i fp
   check _ _fp (Cont _ (Just e))          = return $ throwErr e
 
--- |Process a file using the given IterateeGM.  This function wraps
+-- |Process a file using the given IterateeT.  This function wraps
 -- enumFd as a convenience.
 fileDriverFd :: (MonadIO m, ReadableChunk s el) =>
-  IterateeG s el m a ->
+  IterateeT s el m a ->
   FilePath ->
   m a
 fileDriverFd iter filepath = do
@@ -130,10 +130,10 @@ fileDriverFd iter filepath = do
   liftIO $ closeFd fd
   return result
 
--- |Process a file using the given IterateeGM.  This function wraps
+-- |Process a file using the given IterateeT.  This function wraps
 -- enumFdRandom as a convenience.
 fileDriverRandomFd :: (MonadIO m, ReadableChunk s el) =>
-  IterateeG s el m a ->
+  IterateeT s el m a ->
   FilePath ->
   m a
 fileDriverRandomFd iter filepath = do

@@ -125,17 +125,29 @@ readLines eb = lines' []
 -- This is the first proper iteratee-enumerator: it is the iteratee of the
 -- character stream and the enumerator of the line stream.
 
-enumLines :: (Functor m, Monad m) =>
-  EofBehavior ->
-  IterateeG [Line] Line m a ->
-  IterateeG String Char m (IterateeG [Line] Line m a)
-enumLines eb iter = line eb >>= check iter
+-- Isn't quite right yet, don't know why.  Count is 1 line off for the long test?
+enumLines :: (LL.ListLike s el, LL.StringLike s, Functor m, Monad m) =>
+  IterateeG [s] s m a ->
+  IterateeG s el m (IterateeG [s] s m a)
+enumLines = convStream getter
   where
-  --check :: Either Line Line -> IterateeG String Char m (IterateeG [Line] Line m a)
-  check iter' (Left l)  = runLine iter' l
-  check iter' (Right l) = runLine iter' l
-  runLine i' l = return . joinIM . fmap Iter.liftI $ runIter i' (Chunk [l])
-
+    getter = IterateeG step
+    lChar = (== '\n') . last . LL.toString
+    step (Chunk xs) | LL.null xs = return $ Cont getter Nothing
+    step (Chunk xs)
+      | LL.null xs = return $ Cont getter Nothing
+      | lChar xs   = return $ Done (Just $ LL.lines xs) (Chunk mempty)
+      | True       = return $ Cont (IterateeG (step' xs)) Nothing
+    step str       = return $ Done Nothing str
+    step' xs (Chunk ys)
+      | LL.null ys = return $ Cont (IterateeG (step' xs)) Nothing
+      | lChar ys   = return $ Done (Just . LL.lines . mappend xs $ ys)
+                                   (Chunk mempty)
+      | True       = let w' = LL.lines $ mappend xs ys
+                         ws = init w'
+                         ck = last w'
+                     in return $ Done (Just ws) (Chunk ck)
+    step' xs str   = return $ Done (Just $ LL.lines xs) str
 
 -- |Convert the stream of characters to the stream of words, and
 -- apply the given iteratee to enumerate the latter.
@@ -147,7 +159,7 @@ enumLines eb iter = line eb >>= check iter
 enumWords :: (LL.ListLike s el, LL.StringLike s, Functor m, Monad m) =>
   IterateeG [s] s m a ->
   IterateeG s el m (IterateeG [s] s m a)
-enumWords iter = convStream getter iter
+enumWords = convStream getter
   where
     getter = IterateeG step
     lChar = isSpace . last . LL.toString

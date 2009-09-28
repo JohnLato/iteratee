@@ -14,21 +14,22 @@
 
 module Data.Iteratee.Char (
   -- * Types
-  EofBehavior (..),
+  EofBehavior (..)
   -- ** Type synonyms
-  Stream,
-  Iteratee,
-  EnumeratorM,
-  Line,
+  ,Stream
+  ,Iteratee
+  ,EnumeratorM
+  ,Line
   -- * Word and Line processors
-  line,
-  printLines,
-  readLines,
-  enumLines,
-  enumWords,
-  enumWordsBS,
+  ,line
+  ,printLines
+  ,readLines
+  ,enumLines
+  ,enumLinesBS
+  ,enumWords
+  ,enumWordsBS
 
-  module Data.Iteratee.Base
+  ,module Data.Iteratee.Base
 )
 
 where
@@ -125,7 +126,6 @@ readLines eb = lines' []
 -- This is the first proper iteratee-enumerator: it is the iteratee of the
 -- character stream and the enumerator of the line stream.
 
--- Isn't quite right yet, don't know why.  Count is 1 line off for the long test?
 enumLines :: (LL.ListLike s el, LL.StringLike s, Functor m, Monad m) =>
   IterateeG [s] s m a ->
   IterateeG s el m (IterateeG [s] s m a)
@@ -133,7 +133,6 @@ enumLines = convStream getter
   where
     getter = IterateeG step
     lChar = (== '\n') . last . LL.toString
-    step (Chunk xs) | LL.null xs = return $ Cont getter Nothing
     step (Chunk xs)
       | LL.null xs = return $ Cont getter Nothing
       | lChar xs   = return $ Done (Just $ LL.lines xs) (Chunk mempty)
@@ -206,6 +205,28 @@ enumWordsBS iter = convStream getter iter
     step' xs str   = return $ Done (Just $ BC.words xs) str
 
 {-# INLINE enumWordsBS #-}
+
+enumLinesBS :: (Functor m, Monad m) =>
+  IterateeG [BC.ByteString] BC.ByteString m a ->
+  IterateeG BC.ByteString Word8 m (IterateeG [BC.ByteString] BC.ByteString  m a)
+enumLinesBS = convStream getter
+  where
+    getter = IterateeG step
+    lChar = (== '\n') . BC.last
+    step (Chunk xs)
+      | BC.null xs = return $ Cont getter Nothing
+      | lChar xs   = return $ Done (Just $ BC.lines xs) (Chunk BC.empty)
+      | True       = return $ Cont (IterateeG (step' xs)) Nothing
+    step str       = return $ Done Nothing str
+    step' xs (Chunk ys)
+      | BC.null ys = return $ Cont (IterateeG (step' xs)) Nothing
+      | lChar ys   = return $ Done (Just . BC.lines . BC.append xs $ ys)
+                                   (Chunk BC.empty)
+      | True       = let w' = BC.lines $ BC.append xs ys
+                         ws = init w'
+                         ck = last w'
+                     in return $ Done (Just ws) (Chunk ck)
+    step' xs str   = return $ Done (Just $ BC.lines xs) str
 
 
 -- ------------------------------------------------------------------------

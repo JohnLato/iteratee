@@ -1,11 +1,12 @@
 -- A simple wc-like program using Data.Iteratee
 module Main where
 
+import Prelude as P
 import Data.Iteratee
 import Data.Iteratee.Char as C
 import qualified Data.ByteString.Char8 as BC
 import Data.Word
-import Data.ListLike
+import Data.ListLike as LL
 import System
 
 
@@ -25,7 +26,11 @@ numWords = joinI $ enumWordsBS C.length
 numWordsL :: (Monad m, Functor m) => IterateeG String Char m Int
 numWordsL = joinI $ enumWords C.length
 
+-- Count the number of lines, similar to numWords
+numLines :: (Monad m, Functor m) => IterateeG BC.ByteString Word8 m Int
+numLines = joinI $ enumLinesBS C.length
+
 main = do
   f:_ <- getArgs
-  words <- fileDriver (numWords `enumPair` numChars) f
+  words <- fileDriver (numLines `enumPair` numWords `enumPair` numChars) f
   print words

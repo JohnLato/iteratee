@@ -11,7 +11,7 @@ module Data.Iteratee.Binary (
 )
 where
 
-import qualified Data.Iteratee.Base as It
+import qualified Data.Iteratee.IterateeT as It
 import qualified Data.ListLike as LL
 import Data.Word
 import Data.Bits

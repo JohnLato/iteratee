@@ -22,7 +22,7 @@ module Data.Iteratee.IO(
 where
 
 import Data.Iteratee.Base.ReadableChunk
-import Data.Iteratee.Base
+import Data.Iteratee.IterateeT
 import Data.Iteratee.Binary()
 import Data.Iteratee.IO.Handle
 

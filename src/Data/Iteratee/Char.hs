@@ -29,13 +29,13 @@ module Data.Iteratee.Char (
   ,enumWords
   ,enumWordsBS
 
-  ,module Data.Iteratee.Base
+  ,module Data.Iteratee.IterateeT
 )
 
 where
 
-import qualified Data.Iteratee.Base as Iter
-import Data.Iteratee.Base hiding (break)
+import qualified Data.Iteratee.IterateeT as Iter
+import Data.Iteratee.IterateeT hiding (break)
 import Data.Char
 import Data.Word
 import Data.Monoid

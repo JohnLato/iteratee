@@ -126,17 +126,27 @@ readLines eb = lines' []
 -- This is the first proper iteratee-enumerator: it is the iteratee of the
 -- character stream and the enumerator of the line stream.
 
-enumLines :: (Functor m, Monad m) =>
-  EofBehavior ->
-  IterateeG [Line] Line m a ->
-  IterateeG String Char m (IterateeG [Line] Line m a)
-enumLines eb iter = line eb >>= check iter
+enumLines :: (LL.ListLike s el, LL.StringLike s, Functor m, Monad m) =>
+  IterateeT [s] s m a ->
+  IterateeT s el m (IterateeT [s] s m a)
+enumLines = convStream getter
   where
-  --check :: Either Line Line -> IterateeG String Char m (IterateeG [Line] Line m a)
-  check iter' (Left l)  = runLine iter' l
-  check iter' (Right l) = runLine iter' l
-  runLine i' l = return . joinIM . fmap Iter.liftI $ runIter i' (Chunk [l])
-
+    getter = IterateeT step
+    lChar = (== '\n') . last . LL.toString
+    step (Chunk xs)
+      | LL.null xs = return $ Cont getter Nothing
+      | lChar xs   = return $ Done (Just $ LL.lines xs) (Chunk mempty)
+      | True       = return $ Cont (IterateeT (step' xs)) Nothing
+    step str       = return $ Done Nothing str
+    step' xs (Chunk ys)
+      | LL.null ys = return $ Cont (IterateeT (step' xs)) Nothing
+      | lChar ys   = return $ Done (Just . LL.lines . mappend xs $ ys)
+                                   (Chunk mempty)
+      | True       = let w' = LL.lines $ mappend xs ys
+                         ws = init w'
+                         ck = last w'
+                     in return $ Done (Just ws) (Chunk ck)
+    step' xs str   = return $ Done (Just $ LL.lines xs) str
 
 -- |Convert the stream of characters to the stream of words, and
 -- apply the given iteratee to enumerate the latter.
@@ -145,35 +155,21 @@ enumLines eb iter = line eb >>= check iter
 -- One should keep in mind that enumWords is a more general, monadic
 -- function.
 
-enumWords :: (Functor m, Monad m) =>
-  IterateeG [String] String m a ->
-  IterateeG String Char m (IterateeG [String] String m a)
-enumWords iter = {-# SCC "enumWords" #-} Iter.dropWhile isSpace >> Iter.break isSpace >>= check
+enumWords :: (LL.ListLike s el, LL.StringLike s, Functor m, Monad m) =>
+  IterateeT [s] s m a ->
+  IterateeT s el m (IterateeT [s] s m a)
+enumWords = convStream getter
   where
-  --check :: String -> IterateeG String Char m (IterateeG [String] String m a)
-  check "" = {-# SCC "enumWords/checkEnd" #-} return iter
-  check w = {-# SCC "enumWords/check" #-} joinIM $ runIter iter (Chunk [w]) >>= check'
-    where
-      check' (Cont k Nothing)    = return . enumWords $ k
-      check' (Done a _)          = return . return . return $ a
-      check' (Cont _ (Just err)) = return . throwErr $ err
-
--- now correct, and the fastest of these (although still too slow).
-enumWords2 :: (Functor m, Monad m) =>
-  IterateeG [String] String m a ->
-  IterateeG String Char m (IterateeG [String] String m a)
-enumWords2 iter = convStream getter iter
-  where
-    getter = IterateeG step
+    getter = IterateeT step
     lChar = isSpace . last . LL.toString
     step (Chunk xs) | LL.null xs = return $ Cont getter Nothing
     step (Chunk xs)
       | LL.null xs = return $ Cont getter Nothing
       | lChar xs   = return $ Done (Just $ LL.words xs) (Chunk mempty)
-      | True       = return $ Cont (IterateeG (step' xs)) Nothing
+      | True       = return $ Cont (IterateeT (step' xs)) Nothing
     step str       = return $ Done Nothing str
     step' xs (Chunk ys)
-      | LL.null ys = return $ Cont (IterateeG (step' xs)) Nothing
+      | LL.null ys = return $ Cont (IterateeT (step' xs)) Nothing
       | lChar ys   = return $ Done (Just . LL.words . mappend xs $ ys)
                                    (Chunk mempty)
       | True       = let w' = LL.words $ mappend xs ys
@@ -187,19 +183,19 @@ enumWords2 iter = convStream getter iter
 -- Like enumWords, but operates on ByteStrings.
 -- This is provided as a higher-performance alternative to enumWords.
 enumWordsBS :: (Functor m, Monad m) =>
-  IterateeG [BC.ByteString] BC.ByteString m a ->
-  IterateeG BC.ByteString Word8 m (IterateeG [BC.ByteString] BC.ByteString m a)
+  IterateeT [BC.ByteString] BC.ByteString m a ->
+  IterateeT BC.ByteString Word8 m (IterateeT [BC.ByteString] BC.ByteString m a)
 enumWordsBS iter = convStream getter iter
   where
-    getter = IterateeG step
+    getter = IterateeT step
     lChar = isSpace . BC.last
     step (Chunk xs)
       | BC.null xs = return $ Cont getter Nothing
       | lChar xs   = return $ Done (Just $ BC.words xs) (Chunk BC.empty)
-      | True       = return $ Cont (IterateeG (step' xs)) Nothing
+      | True       = return $ Cont (IterateeT (step' xs)) Nothing
     step str       = return $ Done Nothing str
     step' xs (Chunk ys)
-      | BC.null ys = return $ Cont (IterateeG (step' xs)) Nothing
+      | BC.null ys = return $ Cont (IterateeT (step' xs)) Nothing
       | lChar ys   = return $ Done (Just . BC.words . BC.append xs $ ys)
                                    (Chunk BC.empty)
       | True       = let w' = BC.words . BC.append xs $ ys
@@ -211,19 +207,19 @@ enumWordsBS iter = convStream getter iter
 {-# INLINE enumWordsBS #-}
 
 enumLinesBS :: (Functor m, Monad m) =>
-  IterateeG [BC.ByteString] BC.ByteString m a ->
-  IterateeG BC.ByteString Word8 m (IterateeG [BC.ByteString] BC.ByteString  m a)
+  IterateeT [BC.ByteString] BC.ByteString m a ->
+  IterateeT BC.ByteString Word8 m (IterateeT [BC.ByteString] BC.ByteString  m a)
 enumLinesBS = convStream getter
   where
-    getter = IterateeG step
+    getter = IterateeT step
     lChar = (== '\n') . BC.last
     step (Chunk xs)
       | BC.null xs = return $ Cont getter Nothing
       | lChar xs   = return $ Done (Just $ BC.lines xs) (Chunk BC.empty)
-      | True       = return $ Cont (IterateeG (step' xs)) Nothing
+      | True       = return $ Cont (IterateeT (step' xs)) Nothing
     step str       = return $ Done Nothing str
     step' xs (Chunk ys)
-      | BC.null ys = return $ Cont (IterateeG (step' xs)) Nothing
+      | BC.null ys = return $ Cont (IterateeT (step' xs)) Nothing
       | lChar ys   = return $ Done (Just . BC.lines . BC.append xs $ ys)
                                    (Chunk BC.empty)
       | True       = let w' = BC.lines $ BC.append xs ys

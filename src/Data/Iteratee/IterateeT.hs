@@ -22,6 +22,7 @@ module Data.Iteratee.IterateeT (
   stream2stream,
   checkIfDone,
   liftInner,
+  liftIteratee,
   -- ** Error handling
   throwErr,
   checkErr,
@@ -73,6 +74,7 @@ import qualified Data.ListLike as LL
 import qualified Data.ListLike.FoldableLL as FLL
 import Data.Iteratee.IO.Base
 import Data.Iteratee.Base
+import qualified Data.Iteratee.Iteratee as I
 import Control.Monad
 import Control.Applicative
 import Control.Monad.Trans
@@ -187,6 +189,14 @@ liftInner iter = IterateeT step
     case igv of
       Done a res  -> return $ Done a res
       Cont k mErr -> return $ Cont (liftInner k) mErr
+
+liftIteratee :: Monad m => I.Iteratee s el a -> IterateeT s el m a
+liftIteratee iter = IterateeT step
+  where
+    step str = do
+      case I.runIter iter str of
+        I.Done a res  -> return $ Done a res
+        I.Cont k mErr -> return $ Cont (liftIteratee k) mErr
 
 -- It turns out, IterateeT form a monad. We can use the familiar do
 -- notation for composing Iteratees

@@ -19,6 +19,7 @@ module Data.Iteratee.Iteratee (
   stream2list,
   stream2stream,
   checkIfDone,
+  joinI,
   -- ** Error handling
   throwErr,
   checkErr,
@@ -55,6 +56,7 @@ module Data.Iteratee.Iteratee (
   -- ** Enumerator Combinators
   (>.),
   enumPair,
+  enumPar,
   -- * Misc.
   seek,
   FileOffset,
@@ -71,6 +73,7 @@ import qualified Data.ListLike.FoldableLL as FLL
 import Data.Iteratee.IO.Base
 import Data.Iteratee.Base
 import Control.Monad
+import Control.Parallel
 import Control.Applicative
 import Data.Monoid
 import Data.Maybe (fromMaybe)
@@ -152,6 +155,15 @@ checkIfDone :: (LL.ListLike s el) =>
 checkIfDone _ (Done x _)        = return $ x
 checkIfDone k (Cont x Nothing)  = k x
 checkIfDone _ (Cont _ (Just e)) = throwErr $ e
+
+joinI :: (LL.ListLike s el, LL.ListLike s' el') =>
+  Iteratee s el (Iteratee s' el' a) ->
+  Iteratee s el a
+joinI m = Iteratee (docase . runIter m)
+  where
+  docase (Done ma str) = (flip Done str) (run ma)
+  docase (Cont k mErr) = Cont (joinI k) mErr
+
 
 -- It turns out, Iteratee form a monad. We can use the familiar do
 -- notation for composing Iteratees
@@ -562,6 +574,27 @@ enumPair i1 i2 = Iteratee step
   step str = let ia = runIter i1 str
                  ib = runIter i2 str
              in case (ia, ib) of
+               (Done a astr, Done b bstr)  -> Done (a,b) $ longest astr bstr
+               (Done a _astr, Cont k mErr) -> Cont (enumPair (return a) k) mErr
+               (Cont k mErr, Done b _bstr) -> Cont (enumPair k (return b)) mErr
+               (Cont a aEr,  Cont b bEr)   -> Cont (enumPair a b)
+                                                   (aEr `mappend` bEr)
+
+enumPar :: (LL.ListLike s el) =>
+  Iteratee s el a ->
+  Iteratee s el b ->
+  Iteratee s el (a,b)
+enumPar i1 i2 = Iteratee step
+  where
+  longest c1@(Chunk xs) c2@(Chunk ys) = if LL.length xs > LL.length ys
+                                        then c1 else c2
+  longest e@(EOF _)  _          = e
+  longest _          e@(EOF _)  = e
+  step (Chunk xs) | LL.null xs = Cont (Iteratee step) Nothing
+  step str = let ia = runIter i1 str
+                 ib = runIter i2 str
+                 tup = ia `par` ib `pseq` (ia, ib)
+             in case tup of
                (Done a astr, Done b bstr)  -> Done (a,b) $ longest astr bstr
                (Done a _astr, Cont k mErr) -> Cont (enumPair (return a) k) mErr
                (Cont k mErr, Done b _bstr) -> Cont (enumPair k (return b)) mErr

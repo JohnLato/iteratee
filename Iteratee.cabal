@@ -59,7 +59,8 @@ library
     containers            >= 0.2   && < 0.4,
     extensible-exceptions >= 0.1   && < 0.2,
     haskell98             >= 1     && < 2,
-    transformers          >= 0.1.4 && < 0.2
+    transformers          >= 0.1.4 && < 0.2,
+    parallel              >= 1     && < 2
 
   exposed-modules:
     Data.Iteratee

@@ -26,14 +26,17 @@ module Data.Iteratee.Char (
   ,readLines
   ,enumLines
   ,enumLinesBS
+  ,enumLinesTBS
   ,enumWords
   ,enumWordsBS
+  ,enumWordsTBS
 
   ,module Data.Iteratee.IterateeT
 )
 
 where
 
+import qualified Data.Iteratee.Iteratee as IP
 import qualified Data.Iteratee.IterateeT as Iter
 import Data.Iteratee.IterateeT hiding (break)
 import Data.Char
@@ -182,10 +185,34 @@ enumWords = convStream getter
 
 -- Like enumWords, but operates on ByteStrings.
 -- This is provided as a higher-performance alternative to enumWords.
-enumWordsBS :: (Functor m, Monad m) =>
+enumWordsBS ::
+  IP.Iteratee [BC.ByteString] BC.ByteString a ->
+  IP.Iteratee BC.ByteString Word8 (IP.Iteratee [BC.ByteString] BC.ByteString a)
+enumWordsBS iter = IP.convStream getter iter
+  where
+    getter = IP.Iteratee step
+    lChar = isSpace . BC.last
+    step (IP.Chunk xs)
+      | BC.null xs = IP.Cont getter Nothing
+      | lChar xs   = IP.Done (Just $ BC.words xs) (Chunk BC.empty)
+      | True       = IP.Cont (IP.Iteratee (step' xs)) Nothing
+    step str       = IP.Done Nothing str
+    step' xs (IP.Chunk ys)
+      | BC.null ys = IP.Cont (IP.Iteratee (step' xs)) Nothing
+      | lChar ys   = IP.Done (Just . BC.words . BC.append xs $ ys)
+                                   (IP.Chunk BC.empty)
+      | True       = let w' = BC.words . BC.append xs $ ys
+                         ws = init w'
+                         ck = last w'
+                     in IP.Done (Just ws) (Chunk ck)
+    step' xs str   = IP.Done (Just $ BC.words xs) str
+
+{-# INLINE enumWordsBS #-}
+
+enumWordsTBS :: (Functor m, Monad m) =>
   IterateeT [BC.ByteString] BC.ByteString m a ->
   IterateeT BC.ByteString Word8 m (IterateeT [BC.ByteString] BC.ByteString m a)
-enumWordsBS iter = convStream getter iter
+enumWordsTBS = convStream getter
   where
     getter = IterateeT step
     lChar = isSpace . BC.last
@@ -204,12 +231,10 @@ enumWordsBS iter = convStream getter iter
                      in return $ Done (Just ws) (Chunk ck)
     step' xs str   = return $ Done (Just $ BC.words xs) str
 
-{-# INLINE enumWordsBS #-}
-
-enumLinesBS :: (Functor m, Monad m) =>
+enumLinesTBS :: (Functor m, Monad m) =>
   IterateeT [BC.ByteString] BC.ByteString m a ->
   IterateeT BC.ByteString Word8 m (IterateeT [BC.ByteString] BC.ByteString  m a)
-enumLinesBS = convStream getter
+enumLinesTBS = convStream getter
   where
     getter = IterateeT step
     lChar = (== '\n') . BC.last
@@ -228,6 +253,27 @@ enumLinesBS = convStream getter
                      in return $ Done (Just ws) (Chunk ck)
     step' xs str   = return $ Done (Just $ BC.lines xs) str
 
+enumLinesBS ::
+  IP.Iteratee [BC.ByteString] BC.ByteString a ->
+  IP.Iteratee BC.ByteString Word8 (IP.Iteratee [BC.ByteString] BC.ByteString a)
+enumLinesBS = IP.convStream getter
+  where
+    getter = IP.Iteratee step
+    lChar = (== '\n') . BC.last
+    step (Chunk xs)
+      | BC.null xs = IP.Cont getter Nothing
+      | lChar xs   = IP.Done (Just $ BC.lines xs) (Chunk BC.empty)
+      | True       = IP.Cont (IP.Iteratee (step' xs)) Nothing
+    step str       = IP.Done Nothing str
+    step' xs (IP.Chunk ys)
+      | BC.null ys = IP.Cont (IP.Iteratee (step' xs)) Nothing
+      | lChar ys   = IP.Done (Just . BC.lines . BC.append xs $ ys)
+                                   (Chunk BC.empty)
+      | True       = let w' = BC.lines $ BC.append xs ys
+                         ws = init w'
+                         ck = last w'
+                     in IP.Done (Just ws) (Chunk ck)
+    step' xs str   = IP.Done (Just $ BC.lines xs) str
 
 -- ------------------------------------------------------------------------
 -- Enumerators

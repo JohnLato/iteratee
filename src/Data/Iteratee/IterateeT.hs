@@ -7,9 +7,9 @@ module Data.Iteratee.IterateeT (
   -- * Types
   IterTV (..),
   IterateeT (..),
-  EnumeratorN,
-  EnumeratorGM,
-  EnumeratorGMM,
+  EnumeratorTN,
+  EnumeratorTM,
+  EnumeratorTMM,
   -- * Iteratees
   -- ** Iteratee Utilities
   joinI,
@@ -148,7 +148,7 @@ getStatus = IterateeT check
     check s                = return $ Done DataRemaining s
 
 -- |If the iteratee ('IterTV') has finished, return its value.  If it has not
--- finished then apply it to the given 'EnumeratorGM'.
+-- finished then apply it to the given 'EnumeratorTM'.
 -- If in error, throw the error.
 checkIfDone :: (LL.ListLike s el, Monad m) =>
   (IterateeT s el m a -> m (IterateeT s el m a)) ->
@@ -410,7 +410,7 @@ length = length' 0
 -- to the stream with element el_inner.  The result is the iteratee
 -- for the outer stream that uses an `IterateeT el_inner m a'
 -- to process the embedded, inner stream as it reads the outer stream.
-type EnumeratorN s_outer el_outer s_inner el_inner m a =
+type EnumeratorTN s_outer el_outer s_inner el_inner m a =
   IterateeT s_inner el_inner m a ->
   IterateeT s_outer el_outer m (IterateeT s_inner el_inner m a)
 
@@ -419,7 +419,7 @@ type EnumeratorN s_outer el_outer s_inner el_inner m a =
 -- read exactly n elements (even if the iteratee has accepted fewer).
 take :: (LL.ListLike s el, Monad m) =>
   Int ->
-  EnumeratorN s el s el m a
+  EnumeratorTN s el s el m a
 take 0 iter = return iter
 take n' iter = IterateeT (step n')
   where
@@ -471,7 +471,7 @@ mapStream :: (LL.ListLike (s el) el,
     LooseMap s el el',
     Monad m) =>
  (el -> el')
-  -> EnumeratorN (s el) el (s el') el' m a
+  -> EnumeratorTN (s el) el (s el') el' m a
 mapStream f i = go i
   where
     go iter = IterateeT ((check <=< runIter iter) . strMap (lMap f))
@@ -483,7 +483,7 @@ mapStream f i = go i
 -- this can be much more efficient than regular mapStream
 rigidMapStream :: (LL.ListLike s el, Monad m) =>
   (el -> el)
-  -> EnumeratorN s el s el m a
+  -> EnumeratorTN s el s el m a
 rigidMapStream f i =  go i
   where
     go iter = IterateeT ((check <=< runIter iter) . strMap (LL.rigidMap f))
@@ -500,7 +500,7 @@ rigidMapStream f i =  go i
 -- errors (or end of stream).
 convStream :: Monad m =>
   IterateeT s el m (Maybe s') ->
-  EnumeratorN s el s' el' m a
+  EnumeratorTN s el s' el' m a
 convStream fi iter = fi >>= check
   where
   check (Just xs) = lift (runIter iter (Chunk xs)) >>= docase
@@ -515,7 +515,7 @@ convStream fi iter = fi >>= check
 -- satisfy the predicate function.
 filter :: (LL.ListLike s el, Monad m) =>
   (el -> Bool) ->
-  EnumeratorN s el s el m a
+  EnumeratorTN s el s el m a
 filter p = convStream f'
   where
   f' = IterateeT step
@@ -627,18 +627,18 @@ enumPair i1 i2 = IterateeT step
 -- enumerators. The latter is useful when one iteratee
 -- reads from the concatenation of two data sources.
 
-type EnumeratorGM s el m a = IterateeT s el m a -> m (IterateeT s el m a)
+type EnumeratorTM s el m a = IterateeT s el m a -> m (IterateeT s el m a)
 
 -- |More general enumerator type: enumerator that maps
 -- streams (not necessarily in lock-step).  This is
--- a flattened (`joinI-ed') EnumeratorN sfrom elfrom sto elto m a
-type EnumeratorGMM sfrom elfrom sto elto m a =
+-- a flattened (`joinI-ed') EnumeratorTN sfrom elfrom sto elto m a
+type EnumeratorTMM sfrom elfrom sto elto m a =
   IterateeT sto elto m a -> m (IterateeT sfrom elfrom m a)
 
 -- |The most primitive enumerator: applies the iteratee to the terminated
 -- stream. The result is the iteratee usually in the done state.
 enumEof :: Monad m =>
-  EnumeratorGM s el m a
+  EnumeratorTM s el m a
 enumEof iter = runIter iter (EOF Nothing) >>= check
   where
   check (Done x _) = return $ IterateeT $ return . Done x
@@ -647,7 +647,7 @@ enumEof iter = runIter iter (EOF Nothing) >>= check
 -- |Another primitive enumerator: report an error
 enumErr :: (LL.ListLike s el, Monad m) =>
   String ->
-  EnumeratorGM s el m a
+  EnumeratorTM s el m a
 enumErr e iter = runIter iter (EOF (Just (Err e))) >>= check
   where
   check (Done x _)  = return $ IterateeT (return . Done x)
@@ -659,7 +659,7 @@ enumErr e iter = runIter iter (EOF (Just (Err e))) >>= check
 -- though: in e1 >. e2, e1 is executed first
 
 (>.):: (LL.ListLike s el, Monad m) =>
-  EnumeratorGM s el m a -> EnumeratorGM s el m a -> EnumeratorGM s el m a
+  EnumeratorTM s el m a -> EnumeratorTM s el m a -> EnumeratorTM s el m a
 (>.) = (>=>)
 
 -- |The pure 1-chunk enumerator
@@ -667,7 +667,7 @@ enumErr e iter = runIter iter (EOF (Just (Err e))) >>= check
 -- This enumerator does no IO and is useful for testing of base parsing
 enumPure1Chunk :: (LL.ListLike s el, Monad m) =>
   s ->
-  EnumeratorGM s el m a
+  EnumeratorTM s el m a
 enumPure1Chunk str iter = runIter iter (Chunk str) >>= checkIfDone return
 
 
@@ -678,7 +678,7 @@ enumPure1Chunk str iter = runIter iter (Chunk str) >>= checkIfDone return
 enumPureNChunk :: (LL.ListLike s el, Monad m) =>
   s ->
   Int ->
-  EnumeratorGM s el m a
+  EnumeratorTM s el m a
 enumPureNChunk str _ iter | LL.null str = return iter
 enumPureNChunk str n iter | n > 0 = runIter iter (Chunk s1) >>=
                                     checkIfDone (enumPureNChunk s2 n)

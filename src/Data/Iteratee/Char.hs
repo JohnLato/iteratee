@@ -232,4 +232,4 @@ enumLinesBS = convStream getter
 -- ------------------------------------------------------------------------
 -- Enumerators
 
-type EnumeratorM m a = EnumeratorGM String Char m a
+type EnumeratorM m a = EnumeratorTM String Char m a

@@ -44,7 +44,7 @@ import GHC.Conc
 -- the iteratee.  In particular, seeking is not supported.
 enumFd :: forall s el m a.(ReadableChunk s el, MonadIO m) =>
   Fd ->
-  EnumeratorGM s el m a
+  EnumeratorTM s el m a
 enumFd fd iter' =
   liftIO (mallocForeignPtrBytes (fromIntegral buffer_size)) >>= loop iter'
   where
@@ -69,7 +69,7 @@ enumFd fd iter' =
 -- supports RandomIO (seek requests)
 enumFdRandom :: forall s el m a.(ReadableChunk s el, MonadIO m) =>
   Fd ->
-  EnumeratorGM s el m a
+  EnumeratorTM s el m a
 enumFdRandom fd iter' =
  liftIO (mallocForeignPtrBytes (fromIntegral buffer_size)) >>= loop (0,0) iter'
  where

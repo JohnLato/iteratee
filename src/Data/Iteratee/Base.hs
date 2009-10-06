@@ -485,9 +485,9 @@ take 0 iter = return iter
 take n' iter = IterateeG (step n')
   where
   step n chk@(Chunk str)
-    | LL.null str = return $ Cont (take n iter) Nothing
-    | LL.length str <= n = return $ Cont (joinIM inner) Nothing
-      where inner = liftM (check (n - LL.length str)) (runIter iter chk)
+    | SC.null str = return $ Cont (take n iter) Nothing
+    | SC.length str <= n = return $ Cont (joinIM inner) Nothing
+      where inner = liftM (check (n - SC.length str)) (runIter iter chk)
   step n (Chunk str) = done (Chunk s1) (Chunk s2)
     where (s1, s2) = LL.splitAt n str
   step _n stream            = done stream stream

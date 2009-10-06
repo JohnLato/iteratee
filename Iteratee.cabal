@@ -70,6 +70,7 @@ library
     Data.Iteratee.Char
     Data.Iteratee.IO
     Data.Iteratee.IO.Handle
+    Data.Iteratee.Iteratee
     Data.Iteratee.IterateeT
     Data.Iteratee.Instances.WrappedByteString
 

@@ -13,9 +13,6 @@ import Prelude hiding (head, tail, dropWhile, length, splitAt )
 import qualified Prelude as P
 
 import qualified Data.ListLike as LL
-import qualified Data.ByteString as B
-import Data.Word
-import Foreign.C
 import Foreign.Ptr
 import Foreign.Storable
 import Foreign.Marshal.Array
@@ -28,16 +25,7 @@ import System.IO
 class (LL.ListLike c el, Storable el) => ReadableChunk c el where
   readFromPtr :: Ptr (el) -> Int -> IO c
 
-instance ReadableChunk [Char] Char where
-  readFromPtr buf l = peekCAStringLen (castPtr buf, l)
-
-instance ReadableChunk [Word8] Word8 where
-  readFromPtr = flip peekArray
-instance ReadableChunk [Word16] Word16 where
-  readFromPtr = flip peekArray
-instance ReadableChunk [Word32] Word32 where
-  readFromPtr = flip peekArray
-instance ReadableChunk [Word] Word where
+instance (Storable el) => ReadableChunk [] el where
   readFromPtr = flip peekArray
 
 instance ReadableChunk B.ByteString Word8 where

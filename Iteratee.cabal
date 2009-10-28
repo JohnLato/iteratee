@@ -10,7 +10,7 @@ maintainer:    John W. Lato <jwlato@gmail.com>
 license:       BSD3
 license-file:  LICENSE
 homepage:      http://inmachina.net/~jwlato/haskell/iteratee
-tested-with:   GHC == 6.10.3
+tested-with:   GHC == 6.10.4
 stability:     experimental
 
 cabal-version: >= 1.2

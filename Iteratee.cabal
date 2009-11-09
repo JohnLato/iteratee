@@ -13,7 +13,7 @@ homepage:      http://inmachina.net/~jwlato/haskell/iteratee
 tested-with:   GHC == 6.10.4
 stability:     experimental
 
-cabal-version: >= 1.2
+cabal-version: >= 1.6
 build-type:    Simple
 
 extra-source-files:

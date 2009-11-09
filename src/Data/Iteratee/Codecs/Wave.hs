@@ -8,7 +8,7 @@ for clarity of code.
 
 -}
 
-module Data.Iteratee.Codecs.Wave (
+module Data.Iteratee.Codecs.Wave {-# DEPRECATED "This will be moved to a separate package in the future" #-} (
   WAVEDE (..),
   WAVEDE_ENUM (..),
   WAVE_CHUNK (..),

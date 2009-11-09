@@ -34,6 +34,7 @@ import Foreign.Storable
 import System.IO (SeekMode(..))
 
 import System.Posix hiding (FileOffset)
+import GHC.Conc
 
 -- ------------------------------------------------------------------------
 -- Binary Random IO enumerators
@@ -50,6 +51,7 @@ enumFd fd iter' =
     buffer_size = fromIntegral $ 4096 - mod 4096 (sizeOf (undefined :: el))
     loop iter fp = do
       s <- liftIO . withForeignPtr fp $ \p -> do
+        liftIO $ GHC.Conc.threadWaitRead fd
         n <- myfdRead fd (castPtr p) buffer_size
         case n of
           Left _errno -> return $ Left "IO error"
@@ -85,6 +87,7 @@ enumFdRandom fd iter' =
   loop (off,len) _iter _fp | off `seq` len `seq` False = undefined
   loop (off,len) iter fp = do
     s <- liftIO . withForeignPtr fp $ \p -> do
+      liftIO $ GHC.Conc.threadWaitRead fd
       n <- myfdRead fd (castPtr p) buffer_size
       case n of
         Left _errno -> return $ Left "IO error"

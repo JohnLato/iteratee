@@ -72,7 +72,7 @@ library
     Data.Iteratee.IO
     Data.Iteratee.IO.Handle
     Data.Iteratee.Iteratee
-    Data.Iteratee.IterateeT
+    Data.Iteratee.ListLike
     Data.Iteratee.Instances.WrappedByteString
 
   other-modules:

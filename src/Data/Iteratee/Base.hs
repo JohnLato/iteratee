@@ -162,7 +162,7 @@ instance (IterateeC i, Functor m, Monad m) => Functor (i s m) where
       docase (Cont k mErr)   = cont (fmap f k) mErr
 
 instance (IterateeC i, Functor m, Monad m) => Applicative (i s m) where
-  pure    = return
+  pure x  = toIter (done x)
   m <*> a = m >>= flip fmap a
 
 instance (IterateeC i, Monad m) => Monad (i s m) where
@@ -222,8 +222,12 @@ joinIPure
      -> IterateePure s m a
 joinIPure m = IterateePure $ docase . runIterPure m
   where
-    docase (Done ma str) = (flip Done str) (runPure ma)
+    docase (Done ma str) = (flip Done str) (runPure' ma)
     docase (Cont k mErr) = Cont (joinIPure k) mErr
+    -- can't use runPure because we need to keep the monad type
+    runPure' iter = case runIterPure iter (EOF Nothing) of
+      Done x _ -> x
+      Cont _ e -> error $ "joinI - didn't terminate on EOF: " ++ show e
 
 checkIfDoneM
   :: (Monad m) =>

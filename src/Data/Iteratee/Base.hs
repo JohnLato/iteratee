@@ -23,16 +23,20 @@ module Data.Iteratee.Base (
   ,runPure
   -- * Classes
   ,IterateeC (..)
+  ,Nullable (..)
   ,module Data.Iteratee.Base.LooseMap
 )
 where
 
+import Prelude hiding (null)
 import Data.Iteratee.Base.LooseMap
 import Data.Iteratee.IO.Base
 import Data.Monoid
+import qualified Data.ByteString as B
 
 import Control.Monad
-import Control.Applicative
+import Control.Monad.Trans
+import Control.Applicative hiding (empty)
 
 
 -- |A stream is a (continuing) sequence of elements bundled in Chunks.
@@ -95,21 +99,35 @@ setEOF _              = Err "EOF"
 
 data IterV i s m a =
   Done a (StreamG s)
-  | Cont (i s m a) (Maybe ErrMsg)
+  | Cont (StreamG s -> i s m a) (Maybe ErrMsg)
 
 instance (Show a) => Show (IterV i s m a) where
   show (Done a str) = "IterV :: Done " ++ show a
   show (Cont k mErr) = "IterV :: Cont, mErr :: " ++ show mErr
 
 -- ----------------------------------------------
+-- Nullable container class
+class Monoid c => Nullable c where
+  null :: c -> Bool
+  empty :: c
+  empty = mempty
+
+instance Nullable [a] where
+  null [] = True
+  null _  = False
+  empty   = []
+
+instance Nullable B.ByteString where
+  null = B.null
+  empty = B.empty
+
+-- ----------------------------------------------
 -- | Monadic iteratee
-newtype Iteratee s m a = Iteratee{
-  runIter :: StreamG s -> m (IterV Iteratee s m a)
-  }
+newtype Iteratee s m a = Iteratee{ runIter :: m (IterV Iteratee s m a)}
 
 -- |Pure iteratee
 newtype IterateePure s m a = IterateePure{
-  runIterPure :: StreamG s -> IterV IterateePure s m a
+  runIterPure :: IterV IterateePure s m a
   }
 
 -- ----------------------------------------------
@@ -117,35 +135,34 @@ newtype IterateePure s m a = IterateePure{
 -- |Type class of iteratees
 class IterateeC i where
   data IV i   :: * -> (* -> *) -> * -> *
-  toIter      :: (StreamG s -> IV i s m a) -> i s m a
-  runIterC    :: i s m a -> StreamG s -> IV i s m a
+  toIter      :: IV i s m a -> i s m a
+  runIterC    :: i s m a -> IV i s m a
   done        :: Monad m => a -> StreamG s -> IV i s m a
-  cont        :: Monad m => i s m a -> Maybe ErrMsg -> IV i s m a
-  mapv        :: Monad m =>
-                 (IterV i s m a -> IV i s' m b)
-                 -> IV i s m a -> IV i s' m b
+  cont        :: Monad m => (StreamG s -> i s m a) -> Maybe ErrMsg -> IV i s m a
+  infixl 1 >>==
+  (>>==)      :: Monad m =>
+                 i s m a
+                 -> (IterV i s m a -> IV i s' m b)
+                 -> i s' m b
   joinI       :: Monad m => i s m (i s' m a) -> i s m a
-  checkIfDone :: Monad m => (i s m a -> i s m a) -> IV i s m a -> i s m a
 
 instance IterateeC Iteratee where
   data IV Iteratee s m a = IterateeV (m (IterV Iteratee s m a))
-  toIter f     = Iteratee (unIV . f)
-  runIterC i s = IterateeV (runIter i s)
+  toIter       = Iteratee . unIV
+  runIterC     = IterateeV . runIter
   done a s     = IterateeV (return $ Done a s)
   cont k mErr  = IterateeV (return $ Cont k mErr)
-  mapv f iv    = IterateeV (unIV iv >>= unIV . f)
+  m >>== f     = Iteratee (runIter m >>= unIV . f)
   joinI        = joinIM
-  checkIfDone e iv = checkIfDoneM e (unIV iv)
 
 instance IterateeC IterateePure where
   data IV IterateePure s m a = IterateePV (IterV IterateePure s m a)
-  toIter f      = IterateePure (unIVP . f)
-  runIterC i s  = IterateePV (runIterPure i s)
+  toIter        = IterateePure . unIVP
+  runIterC      = IterateePV . runIterPure
   done a s      = IterateePV (Done a s)
   cont k mErr   = IterateePV (Cont k mErr)
-  mapv f        = f . unIVP
+  m >>== f      = IterateePure . unIVP . f . runIterPure $ m
   joinI         = joinIPure
-  checkIfDone e = checkIfDoneP e . unIVP
 
 -- |Convert the data family IterV type to a normal IterV (monadic version)
 unIV :: IV Iteratee s m a -> m (IterV Iteratee s m a)
@@ -155,31 +172,44 @@ unIV (IterateeV v) = v
 unIVP :: IV IterateePure s m a -> IterV IterateePure s m a
 unIVP (IterateePV v) = v
 
+
 instance (IterateeC i, Functor m, Monad m) => Functor (i s m) where
-  fmap f m = toIter (mapv docase . runIterC m)
+  fmap f m = m >>== docase
     where
-      docase (Done a stream) = done (f a) stream
-      docase (Cont k mErr)   = cont (fmap f k) mErr
+      docase (Done a str)  = done (f a) str
+      docase (Cont k mErr) = cont (fmap f . k) mErr
 
-instance (IterateeC i, Functor m, Monad m) => Applicative (i s m) where
-  pure x  = toIter (done x)
-  m <*> a = m >>= flip fmap a
+instance (IterateeC i, Functor m, Monad m, Nullable s) =>
+  Applicative (i s m) where
+    pure x  = toIter $ done x (Chunk empty)
+    m <*> a = m >>= flip fmap a
 
-instance (IterateeC i, Monad m) => Monad (i s m) where
-  return x = toIter (done x)
+instance (IterateeC i, Monad m, Nullable s) => Monad (i s m) where
+  return x = toIter $ done x (Chunk empty)
   (>>=)    = iterBind
 
 iterBind
-  :: (IterateeC i, Monad m) =>
+  :: (IterateeC i, Monad m, Nullable s) =>
      i s m a
      -> (a -> i s m b)
      -> i s m b
-iterBind m f = toIter (mapv docase . runIterC m)
+iterBind m f = m >>== docase
   where
-    docase (Done a str)  = runIterC (f a) str
-    docase (Cont k mErr) = cont (k `iterBind` f) mErr
+    -- the null case isn't required, but it is more efficient
+    docase (Done a (Chunk s)) | null s = runIterC $ f a
+    docase (Done a str)  = runIterC $ (f a) >>== check
+      where
+        check (Done x _str) = done x str
+        check (Cont k mErr) = runIterC (k str)
+    docase (Cont k mErr) = cont ((`iterBind` f) . k) mErr
 
 {-# INLINE iterBind #-}
+
+instance Monoid s => MonadTrans (Iteratee s) where
+  lift m = Iteratee (m >>= return . flip Done mempty)
+
+instance (Nullable s, MonadIO m) => MonadIO (Iteratee s m) where
+  liftIO = lift . liftIO
 
 -- ----------------------------------------------
 -- non-typeclass Iteratee and IterateePure functions
@@ -188,19 +218,29 @@ iterBind m f = toIter (mapv docase . runIterC m)
 -- iteratee as it is run.
 -- If the iteratee does not complete, an error is raised.
 run :: (Monad m) => Iteratee s m a -> m a
-run iter = liftM docase $ runIter iter (EOF Nothing)
+run iter = runIter iter >>= check1
   where
-    docase iv = case iv of
-      Done x _ -> x
-      Cont _ e -> error $ "control message: " ++ show e
+    check1 (Done x _)       = return x
+    check1 (Cont k Nothing) = runIter (k $ EOF Nothing) >>= check2
+    check1 (Cont _ e)       = error $ "control message: " ++ show e
+    check2 (Done x _)       = return x
+    check2 (Cont k Nothing) = error
+      "control message: iteratee did not terminate on EOF"
+    check2 (Cont k e)       = error $ "control message: " ++ show e
 
 -- | Run an 'IterateePure' and get the result.  An 'EOF' is sent to the
 -- iteratee as it is run.
 -- If the iteratee does not complete, an error is raised.
 runPure :: IterateePure s m a -> a
-runPure iter = case runIterPure iter (EOF Nothing) of
-  Done x _ -> x
-  Cont _ e -> error $ "control message: " ++ show e
+runPure = check1 . runIterPure
+  where
+    check1 (Done x _)       = x
+    check1 (Cont k Nothing) = check2 $ runIterPure (k (EOF Nothing))
+    check1 (Cont _ e)       = error $ "control message: " ++ show e
+    check2 (Done x _)       = x
+    check2 (Cont _ Nothing) = error
+      "control message: iteratee did not terminate on EOF"
+    check2 (Cont _ e)       = error $ "control message: " ++ show e
 
 -- the join functions are similar to monadic join, with one difference.
 -- the inner stream may be of a different type than the outer stream.
@@ -211,42 +251,17 @@ joinIM
   :: (Monad m) =>
      Iteratee s m (Iteratee s' m a)
      -> Iteratee s m a
-joinIM m = Iteratee (docase <=< runIter m)
+joinIM = Iteratee . (docase <=< runIter)
   where
-    docase (Done ma str) = liftM (flip Done str) (run ma)
-    docase (Cont k mErr) = return $ Cont (joinIM k) mErr
+    docase (Done ma str) = liftM (flip Done str) $ run ma
+    docase (Cont k mErr) = return $ Cont (joinIM . k) mErr
 
 joinIPure
   :: 
      IterateePure s m (IterateePure s' m a)
      -> IterateePure s m a
-joinIPure m = IterateePure $ docase . runIterPure m
+joinIPure = IterateePure . docase . runIterPure
   where
-    docase (Done ma str) = (flip Done str) (runPure' ma)
-    docase (Cont k mErr) = Cont (joinIPure k) mErr
-    -- can't use runPure because we need to keep the monad type
-    runPure' iter = case runIterPure iter (EOF Nothing) of
-      Done x _ -> x
-      Cont _ e -> error $ "joinI - didn't terminate on EOF: " ++ show e
+    docase (Done ma str) = (flip Done str) (runPure ma)
+    docase (Cont k mErr) = Cont (joinIPure . k) mErr
 
-checkIfDoneM
-  :: (Monad m) =>
-     (Iteratee s m a -> Iteratee s m a)
-     -> m (IterV Iteratee s m a)
-     -> Iteratee s m a
-checkIfDoneM k mIv = Iteratee step
-  where
-    step str = mIv >>= (\iv -> case iv of
-      Done x _       -> return $ Done x str
-      Cont x Nothing -> runIter (k x) str
-      Cont x err     -> return $ Cont (k x) err
-      )
-
-checkIfDoneP
-  :: (Monad m) =>
-     (IterateePure s m a -> IterateePure s m a)
-     -> IterV IterateePure s m a
-     -> IterateePure s m a
-checkIfDoneP _ (Done x _)       = return x
-checkIfDoneP k (Cont x Nothing) = k x
-checkIfDoneP k (Cont x err)     = IterateePure (const (Cont (k x) err))

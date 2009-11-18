@@ -17,7 +17,7 @@ module Data.Iteratee.IO.Handle(
 where
 
 import Data.Iteratee.Base.ReadableChunk
-import Data.Iteratee.IterateeT
+import Data.Iteratee.Iteratee
 import Data.Iteratee.Binary()
 
 import Data.Int

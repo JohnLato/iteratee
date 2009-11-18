@@ -26,19 +26,15 @@ module Data.Iteratee.Char (
   ,readLines
   ,enumLines
   ,enumLinesBS
-  ,enumLinesTBS
   ,enumWords
   ,enumWordsBS
-  ,enumWordsTBS
-
-  ,module Data.Iteratee.IterateeT
 )
 
 where
 
-import qualified Data.Iteratee.Iteratee as IP
-import qualified Data.Iteratee.IterateeT as Iter
-import Data.Iteratee.IterateeT hiding (break)
+import Data.Iteratee.Iteratee
+import qualified Data.Iteratee.ListLike as Iter
+import Data.Iteratee.ListLike (heads)
 import Data.Char
 import Data.Word
 import Data.Monoid
@@ -50,9 +46,17 @@ import qualified Data.ByteString.Char8 as BC
 -- This stream is used by many input parsers.
 type Stream = StreamG String
 
-type Iteratee = IterateeT String Char
-
 -- Useful combinators for implementing iteratees and enumerators
+
+idone :: (IterateeC i, Monad m) => a -> StreamG s -> i s m a
+idone a = toIter . done a
+
+icont
+  :: (IterateeC i, Monad m) =>
+     (StreamG s -> i s m a)
+     -> Maybe ErrMsg -> i s m a
+icont k = toIter . cont k
+
 
 type Line = String      -- The line of text, terminators are not included
 
@@ -70,7 +74,10 @@ data EofBehavior = ErrOnEof | EolOnEof
 -- The code is the same as that of pure Iteratee, only the signature
 -- has changed.
 -- Compare the code below with GHCBufferIO.line_lazy
-line :: Monad m => EofBehavior -> IterateeT String Char m (Either Line Line)
+line
+  :: (IterateeC i, Monad m) =>
+     EofBehavior
+     -> i String m (Either Line Line)
 line ErrOnEof = Iter.break (\c -> c == '\r' || c == '\n') >>= \l ->
        terminators >>= check l
   where
@@ -92,7 +99,7 @@ line EolOnEof = Iter.break (\c -> c == '\r' || c == '\n') >>= \l ->
 
 -- |Print lines as they are received. This is the first `impure' iteratee
 -- with non-trivial actions during chunk processing
-printLines :: IterateeT String Char IO ()
+printLines :: Iteratee String IO ()
 printLines = lines'
   where
   lines' = Iter.break (\c -> c == '\r' || c == '\n') >>= \l ->
@@ -111,9 +118,10 @@ printLines = lines'
 -- EOF is treated as either a stream error or an implicit EOL depending
 -- upon the EofBehavior
 
-readLines :: (Monad m) =>
-  EofBehavior ->
-  IterateeT String Char m (Either [Line] [Line])
+readLines
+  :: (IterateeC i, Monad m) =>
+     EofBehavior
+     -> i String m (Either [Line] [Line])
 readLines eb = lines' []
   where
     lines' acc = line eb >>= check acc
@@ -129,27 +137,27 @@ readLines eb = lines' []
 -- This is the first proper iteratee-enumerator: it is the iteratee of the
 -- character stream and the enumerator of the line stream.
 
-enumLines :: (LL.ListLike s el, LL.StringLike s, Functor m, Monad m) =>
-  IterateeT [s] s m a ->
-  IterateeT s el m (IterateeT [s] s m a)
+enumLines
+  :: (IterateeC i, LL.ListLike s el, LL.StringLike s, Nullable s, Monad m) =>
+     i [s] m a
+     -> i s m (i [s] m a)
 enumLines = convStream getter
   where
-    getter = IterateeT step
+    getter = icont step Nothing
     lChar = (== '\n') . last . LL.toString
     step (Chunk xs)
-      | LL.null xs = return $ Cont getter Nothing
-      | lChar xs   = return $ Done (Just $ LL.lines xs) (Chunk mempty)
-      | True       = return $ Cont (IterateeT (step' xs)) Nothing
-    step str       = return $ Done Nothing str
+      | LL.null xs = getter
+      | lChar xs   = idone (Just $ LL.lines xs) mempty
+      | True       = icont (step' xs) Nothing
+    step str       = idone Nothing str
     step' xs (Chunk ys)
-      | LL.null ys = return $ Cont (IterateeT (step' xs)) Nothing
-      | lChar ys   = return $ Done (Just . LL.lines . mappend xs $ ys)
-                                   (Chunk mempty)
+      | LL.null ys = icont (step' xs) Nothing
+      | lChar ys   = idone (Just . LL.lines . mappend xs $ ys) mempty
       | True       = let w' = LL.lines $ mappend xs ys
                          ws = init w'
                          ck = last w'
-                     in return $ Done (Just ws) (Chunk ck)
-    step' xs str   = return $ Done (Just $ LL.lines xs) str
+                     in idone (Just ws) (Chunk ck)
+    step' xs str   = idone (Just $ LL.lines xs) str
 
 -- |Convert the stream of characters to the stream of words, and
 -- apply the given iteratee to enumerate the latter.
@@ -158,124 +166,75 @@ enumLines = convStream getter
 -- One should keep in mind that enumWords is a more general, monadic
 -- function.
 
-enumWords :: (LL.ListLike s el, LL.StringLike s, Functor m, Monad m) =>
-  IterateeT [s] s m a ->
-  IterateeT s el m (IterateeT [s] s m a)
+enumWords
+  :: (IterateeC i, LL.ListLike s el, LL.StringLike s, Nullable s, Monad m) =>
+     i [s] m a
+     -> i s m (i [s] m a)
 enumWords = convStream getter
   where
-    getter = IterateeT step
+    getter = icont step Nothing
     lChar = isSpace . last . LL.toString
-    step (Chunk xs) | LL.null xs = return $ Cont getter Nothing
     step (Chunk xs)
-      | LL.null xs = return $ Cont getter Nothing
-      | lChar xs   = return $ Done (Just $ LL.words xs) (Chunk mempty)
-      | True       = return $ Cont (IterateeT (step' xs)) Nothing
-    step str       = return $ Done Nothing str
+      | LL.null xs = getter
+      | lChar xs   = idone (Just $ LL.words xs) mempty
+      | True       = icont (step' xs) Nothing
+    step str       = idone Nothing str
     step' xs (Chunk ys)
-      | LL.null ys = return $ Cont (IterateeT (step' xs)) Nothing
-      | lChar ys   = return $ Done (Just . LL.words . mappend xs $ ys)
-                                   (Chunk mempty)
+      | LL.null ys = icont (step' xs) Nothing
+      | lChar ys   = idone (Just . LL.words . mappend xs $ ys) mempty
       | True       = let w' = LL.words $ mappend xs ys
                          ws = init w'
                          ck = last w'
-                     in return $ Done (Just ws) (Chunk ck)
-    step' xs str   = return $ Done (Just $ LL.words xs) str
+                     in idone (Just ws) (Chunk ck)
+    step' xs str   = idone (Just $ LL.words xs) str
 
 {-# INLINE enumWords #-}
 
 -- Like enumWords, but operates on ByteStrings.
 -- This is provided as a higher-performance alternative to enumWords.
-enumWordsBS ::
-  IP.Iteratee [BC.ByteString] BC.ByteString a ->
-  IP.Iteratee BC.ByteString Word8 (IP.Iteratee [BC.ByteString] BC.ByteString a)
-enumWordsBS iter = IP.convStream getter iter
+enumWordsBS
+  :: (IterateeC i, Monad m) =>
+     i [BC.ByteString] m a
+     -> i BC.ByteString m (i [BC.ByteString] m a)
+enumWordsBS iter = convStream getter iter
   where
-    getter = IP.Iteratee step
+    getter = icont step Nothing
     lChar = isSpace . BC.last
-    step (IP.Chunk xs)
-      | BC.null xs = IP.Cont getter Nothing
-      | lChar xs   = IP.Done (Just $ BC.words xs) (Chunk BC.empty)
-      | True       = IP.Cont (IP.Iteratee (step' xs)) Nothing
-    step str       = IP.Done Nothing str
-    step' xs (IP.Chunk ys)
-      | BC.null ys = IP.Cont (IP.Iteratee (step' xs)) Nothing
-      | lChar ys   = IP.Done (Just . BC.words . BC.append xs $ ys)
-                                   (IP.Chunk BC.empty)
+    step (Chunk xs)
+      | BC.null xs = getter
+      | lChar xs   = idone (Just $ BC.words xs) (Chunk BC.empty)
+      | True       = icont ((step' xs)) Nothing
+    step str       = idone Nothing str
+    step' xs (Chunk ys)
+      | BC.null ys = icont (step' xs) Nothing
+      | lChar ys   = idone (Just . BC.words . BC.append xs $ ys) mempty
       | True       = let w' = BC.words . BC.append xs $ ys
                          ws = init w'
                          ck = last w'
-                     in IP.Done (Just ws) (Chunk ck)
-    step' xs str   = IP.Done (Just $ BC.words xs) str
+                     in idone (Just ws) (Chunk ck)
+    step' xs str   = idone (Just $ BC.words xs) str
 
 {-# INLINE enumWordsBS #-}
 
-enumWordsTBS :: (Functor m, Monad m) =>
-  IterateeT [BC.ByteString] BC.ByteString m a ->
-  IterateeT BC.ByteString Word8 m (IterateeT [BC.ByteString] BC.ByteString m a)
-enumWordsTBS = convStream getter
+enumLinesBS
+  :: (IterateeC i, Monad m) =>
+     i [BC.ByteString] m a
+     -> i BC.ByteString m (i [BC.ByteString] m a)
+enumLinesBS = convStream getter
   where
-    getter = IterateeT step
-    lChar = isSpace . BC.last
-    step (Chunk xs)
-      | BC.null xs = return $ Cont getter Nothing
-      | lChar xs   = return $ Done (Just $ BC.words xs) (Chunk BC.empty)
-      | True       = return $ Cont (IterateeT (step' xs)) Nothing
-    step str       = return $ Done Nothing str
-    step' xs (Chunk ys)
-      | BC.null ys = return $ Cont (IterateeT (step' xs)) Nothing
-      | lChar ys   = return $ Done (Just . BC.words . BC.append xs $ ys)
-                                   (Chunk BC.empty)
-      | True       = let w' = BC.words . BC.append xs $ ys
-                         ws = init w'
-                         ck = last w'
-                     in return $ Done (Just ws) (Chunk ck)
-    step' xs str   = return $ Done (Just $ BC.words xs) str
-
-enumLinesTBS :: (Functor m, Monad m) =>
-  IterateeT [BC.ByteString] BC.ByteString m a ->
-  IterateeT BC.ByteString Word8 m (IterateeT [BC.ByteString] BC.ByteString  m a)
-enumLinesTBS = convStream getter
-  where
-    getter = IterateeT step
+    getter = icont step Nothing
     lChar = (== '\n') . BC.last
     step (Chunk xs)
-      | BC.null xs = return $ Cont getter Nothing
-      | lChar xs   = return $ Done (Just $ BC.lines xs) (Chunk BC.empty)
-      | True       = return $ Cont (IterateeT (step' xs)) Nothing
-    step str       = return $ Done Nothing str
+      | BC.null xs = getter
+      | lChar xs   = idone (Just $ BC.lines xs) (Chunk BC.empty)
+      | True       = icont (step' xs) Nothing
+    step str       = idone Nothing str
     step' xs (Chunk ys)
-      | BC.null ys = return $ Cont (IterateeT (step' xs)) Nothing
-      | lChar ys   = return $ Done (Just . BC.lines . BC.append xs $ ys)
-                                   (Chunk BC.empty)
+      | BC.null ys = icont (step' xs) Nothing
+      | lChar ys   = idone (Just . BC.lines . BC.append xs $ ys) mempty
       | True       = let w' = BC.lines $ BC.append xs ys
                          ws = init w'
                          ck = last w'
-                     in return $ Done (Just ws) (Chunk ck)
-    step' xs str   = return $ Done (Just $ BC.lines xs) str
+                     in idone (Just ws) (Chunk ck)
+    step' xs str   = idone (Just $ BC.lines xs) str
 
-enumLinesBS ::
-  IP.Iteratee [BC.ByteString] BC.ByteString a ->
-  IP.Iteratee BC.ByteString Word8 (IP.Iteratee [BC.ByteString] BC.ByteString a)
-enumLinesBS = IP.convStream getter
-  where
-    getter = IP.Iteratee step
-    lChar = (== '\n') . BC.last
-    step (Chunk xs)
-      | BC.null xs = IP.Cont getter Nothing
-      | lChar xs   = IP.Done (Just $ BC.lines xs) (Chunk BC.empty)
-      | True       = IP.Cont (IP.Iteratee (step' xs)) Nothing
-    step str       = IP.Done Nothing str
-    step' xs (IP.Chunk ys)
-      | BC.null ys = IP.Cont (IP.Iteratee (step' xs)) Nothing
-      | lChar ys   = IP.Done (Just . BC.lines . BC.append xs $ ys)
-                                   (Chunk BC.empty)
-      | True       = let w' = BC.lines $ BC.append xs ys
-                         ws = init w'
-                         ck = last w'
-                     in IP.Done (Just ws) (Chunk ck)
-    step' xs str   = IP.Done (Just $ BC.lines xs) str
-
--- ------------------------------------------------------------------------
--- Enumerators
-
-type EnumeratorM m a = EnumeratorTM String Char m a

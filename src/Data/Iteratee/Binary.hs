@@ -11,7 +11,8 @@ module Data.Iteratee.Binary (
 )
 where
 
-import qualified Data.Iteratee.IterateeT as It
+import Data.Iteratee.Base
+import qualified Data.Iteratee.ListLike as I
 import qualified Data.ListLike as LL
 import Data.Word
 import Data.Bits
@@ -28,11 +29,13 @@ data Endian = MSB -- ^ Most Significant Byte is first (big-endian)
   | LSB           -- ^ Least Significan Byte is first (little-endian)
   deriving (Eq, Ord, Show, Enum)
 
-endianRead2 :: (LL.ListLike s Word8, Monad m) => Endian ->
-  It.IterateeT s Word8 m Word16
+endianRead2
+  :: (IterateeC i, Nullable s, LL.ListLike s Word8, Monad m) =>
+     Endian
+     -> i s m Word16
 endianRead2 e = do
-  c1 <- It.head
-  c2 <- It.head
+  c1 <- I.head
+  c2 <- I.head
   case e of
     MSB -> return $ (fromIntegral c1 `shiftL` 8) .|. fromIntegral c2
     LSB -> return $ (fromIntegral c2 `shiftL` 8) .|. fromIntegral c1
@@ -40,12 +43,14 @@ endianRead2 e = do
 -- |read 3 bytes in an endian manner.  If the first bit is set (negative),
 -- set the entire first byte so the Word32 can be properly set negative as
 -- well.
-endianRead3 :: (LL.ListLike s Word8, Monad m) => Endian ->
-  It.IterateeT s Word8 m Word32
+endianRead3
+  :: (IterateeC i, Nullable s, LL.ListLike s Word8, Monad m) =>
+     Endian
+     -> i s m Word32
 endianRead3 e = do
-  c1 <- It.head
-  c2 <- It.head
-  c3 <- It.head
+  c1 <- I.head
+  c2 <- I.head
+  c3 <- I.head
   case e of
     MSB -> return $ (((fromIntegral c1
                         `shiftL` 8) .|. fromIntegral c2)
@@ -57,13 +62,15 @@ endianRead3 e = do
                         `shiftL` 8) .|. fromIntegral c2)
                         `shiftL` 8) .|. fromIntegral m
 
-endianRead4 :: (LL.ListLike s Word8, Monad m) => Endian ->
-  It.IterateeT s Word8 m Word32
+endianRead4
+  :: (IterateeC i, Nullable s, LL.ListLike s Word8, Monad m) =>
+     Endian
+     -> i s m Word32
 endianRead4 e = do
-  c1 <- It.head
-  c2 <- It.head
-  c3 <- It.head
-  c4 <- It.head
+  c1 <- I.head
+  c2 <- I.head
+  c3 <- I.head
+  c4 <- I.head
   case e of
     MSB -> return $
                (((((fromIntegral c1

@@ -30,10 +30,6 @@ flag buildTests
   description: Build test executables.
   default:     False
 
-flag includeCodecs
-  description: Build Tiff and Wave codec modules
-  default:     False
-
 library
   hs-source-dirs:
     src
@@ -78,11 +74,6 @@ library
     Data.Iteratee.Iteratee
     Data.Iteratee.ListLike
     Data.Iteratee.Instances.WrappedByteString
-
-  if flag(includeCodecs)
-    exposed-modules:
-      Data.Iteratee.Codecs.Tiff
-      Data.Iteratee.Codecs.Wave
 
   other-modules:
     Data.Iteratee.IO.Base

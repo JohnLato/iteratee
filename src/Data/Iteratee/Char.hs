@@ -203,7 +203,7 @@ enumWordsBS iter = convStream getter iter
     step (Chunk xs)
       | BC.null xs = getter
       | lChar xs   = idone (Just $ BC.words xs) (Chunk BC.empty)
-      | True       = icont ((step' xs)) Nothing
+      | True       = icont (step' xs) Nothing
     step str       = idone Nothing str
     step' xs (Chunk ys)
       | BC.null ys = icont (step' xs) Nothing

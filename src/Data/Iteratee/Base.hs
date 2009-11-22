@@ -102,8 +102,8 @@ data IterV i s m a =
   | Cont (StreamG s -> i s m a) (Maybe ErrMsg)
 
 instance (Show a) => Show (IterV i s m a) where
-  show (Done a str) = "IterV :: Done " ++ show a
-  show (Cont k mErr) = "IterV :: Cont, mErr :: " ++ show mErr
+  show (Done a _str)  = "IterV :: Done " ++ show a
+  show (Cont _k mErr) = "IterV :: Cont, mErr :: " ++ show mErr
 
 -- ----------------------------------------------
 -- Nullable container class
@@ -150,8 +150,8 @@ instance IterateeC Iteratee where
   data IV Iteratee s m a = IterateeV (m (IterV Iteratee s m a))
   toIter       = Iteratee . unIV
   runIterC     = IterateeV . runIter
-  done a s     = IterateeV (return $ Done a s)
-  cont k mErr  = IterateeV (return $ Cont k mErr)
+  done a       = IterateeV . return . Done a
+  cont k       = IterateeV . return . Cont k
   m >>== f     = Iteratee (runIter m >>= unIV . f)
   joinI        = joinIM
 
@@ -159,8 +159,8 @@ instance IterateeC IterateePure where
   data IV IterateePure s m a = IterateePV (IterV IterateePure s m a)
   toIter        = IterateePure . unIVP
   runIterC      = IterateePV . runIterPure
-  done a s      = IterateePV (Done a s)
-  cont k mErr   = IterateePV (Cont k mErr)
+  done a        = IterateePV . Done a
+  cont k        = IterateePV . Cont k
   m >>== f      = IterateePure . unIVP . f . runIterPure $ m
   joinI         = joinIPure
 
@@ -197,16 +197,16 @@ iterBind m f = m >>== docase
   where
     -- the null case isn't required, but it is more efficient
     docase (Done a (Chunk s)) | null s = runIterC $ f a
-    docase (Done a str)  = runIterC $ (f a) >>== check
+    docase (Done a str)  = runIterC $ f a >>== check
       where
-        check (Done x _str) = done x str
-        check (Cont k mErr) = runIterC (k str)
+        check (Done x _str)  = done x str
+        check (Cont k _mErr) = runIterC (k str)
     docase (Cont k mErr) = cont ((`iterBind` f) . k) mErr
 
 {-# INLINE iterBind #-}
 
 instance Monoid s => MonadTrans (Iteratee s) where
-  lift m = Iteratee (m >>= return . flip Done mempty)
+  lift = Iteratee . liftM (flip Done mempty)
 
 instance (Nullable s, MonadIO m) => MonadIO (Iteratee s m) where
   liftIO = lift . liftIO
@@ -224,9 +224,9 @@ run iter = runIter iter >>= check1
     check1 (Cont k Nothing) = runIter (k $ EOF Nothing) >>= check2
     check1 (Cont _ e)       = error $ "control message: " ++ show e
     check2 (Done x _)       = return x
-    check2 (Cont k Nothing) = error
+    check2 (Cont _ Nothing) = error
       "control message: iteratee did not terminate on EOF"
-    check2 (Cont k e)       = error $ "control message: " ++ show e
+    check2 (Cont _ e)       = error $ "control message: " ++ show e
 
 -- | Run an 'IterateePure' and get the result.  An 'EOF' is sent to the
 -- iteratee as it is run.
@@ -262,6 +262,6 @@ joinIPure
      -> IterateePure s m a
 joinIPure = IterateePure . docase . runIterPure
   where
-    docase (Done ma str) = (flip Done str) (runPure ma)
+    docase (Done ma str) = Done (runPure ma) str
     docase (Cont k mErr) = Cont (joinIPure . k) mErr
 

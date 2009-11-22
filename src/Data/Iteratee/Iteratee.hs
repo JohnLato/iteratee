@@ -64,7 +64,7 @@ throwErr e = icont (const $ throwErr e) (Just e)
 -- |Propagate a recoverable error.
 -- Disregard input while in the error state.
 throwRecoverableErr :: (IterateeC i, Monad m, Nullable s) => ErrMsg -> i s m ()
-throwRecoverableErr e = icont (const identity) (Just e)
+throwRecoverableErr = icont (const identity) . Just
 
 
 -- |Check if an iteratee produces an error.
@@ -108,7 +108,7 @@ skipToEof = icont check Nothing
 
 -- |Seek to a position in the stream
 seek :: (IterateeC i, Monad m, Nullable s) => FileOffset -> i s m ()
-seek n = icont (const identity) (Just (Seek n))
+seek = icont (const identity) . Just . Seek
 
 
 -- ---------------------------------------------------
@@ -133,7 +133,7 @@ convStream
      -> Enumeratee i s s' m a
 convStream fi iter = fi >>= check
   where
-    check (Just xs) = (enumPure1Chunk xs iter) >>== docase
+    check (Just xs) = enumPure1Chunk xs iter >>== docase
     check (Nothing) = return iter
     docase (Done a _)          = done (return a) mempty
     docase (Cont k Nothing)    = cont next Nothing

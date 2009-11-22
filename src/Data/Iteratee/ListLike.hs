@@ -186,7 +186,7 @@ length :: (IterateeC i, Monad m, Num a, LL.ListLike s el) => i s m a
 length = length' 0
   where
     length' n = icont (step n) Nothing
-    step i (Chunk xs) = length' $! i + (fromIntegral (LL.length xs))
+    step i (Chunk xs) = length' $! i + fromIntegral (LL.length xs)
     step i stream     = idone i stream
 
 
@@ -231,7 +231,7 @@ takeR i iter = icont (step i) Nothing
   where
     step n s@(Chunk str)
       | LL.null str        = icont (step i) Nothing
-      | LL.length str <= n = iter >>== (check (n - LL.length str) s)
+      | LL.length str <= n = iter >>== check (n - LL.length str) s
       | otherwise          = done' n s
     step _ st              = iter >>== final st
       where
@@ -265,7 +265,7 @@ mapStream
       -> Enumeratee i (s el) (s el') m a
 mapStream f i = go i
   where
-    go iter = iter >>== check
+    go = (>>== check)
     check (Done a s)        = done (idone a s) mempty
     check (Cont k Nothing)  = cont (go . k . strMap (lMap f)) Nothing
     check (Cont _ (Just e)) = runIterC (throwErr e)

@@ -7,6 +7,7 @@ module Data.Iteratee.Iteratee (
   -- * Types
   -- ** Error handling
   throwErr,
+  throwRecoverableErr,
   checkErr,
   -- ** Basic Iteratees
   identity,
@@ -38,10 +39,7 @@ import qualified Prelude as P
 import Data.Iteratee.IO.Base
 import Data.Iteratee.Base
 import Control.Monad
-import Control.Parallel
-import Control.Applicative
 import Data.Monoid
-import Data.Maybe (fromMaybe)
 
 -- ------------------------------------------------------------------------
 -- useful functions
@@ -137,11 +135,11 @@ convStream fi iter = fi >>= check
   where
     check (Just xs) = (enumPure1Chunk xs iter) >>== docase
     check (Nothing) = return iter
-    docase (Done a s)          = done (return a) mempty
+    docase (Done a _)          = done (return a) mempty
     docase (Cont k Nothing)    = cont next Nothing
       where
         next = flip enumStream (convStream fi $ icont k Nothing)
-    docase (Cont k j@(Just e)) = cont (const $ throwErr e) j
+    docase (Cont _ j@(Just e)) = cont (const $ throwErr e) j
 
 {-# INLINE convStream #-}
 
@@ -167,7 +165,7 @@ type EnumeratorM i s m a = i s m a -> m (i s m a)
 enumEof :: (IterateeC i, Monad m) => Enumerator i s m a
 enumEof iter = iter >>== check False
   where
-    check _ (Done x s)           = done x (EOF Nothing)
+    check _ (Done x _)           = done x (EOF Nothing)
     check _ (Cont k e@(Just _))  = cont k e
     check False (Cont k Nothing) = runIterC $ k (EOF Nothing) >>== check True
     check True  _ = runIterC . throwErr . Err $ "Divergent Iteratee"
@@ -180,7 +178,7 @@ enumErr
 enumErr e iter = iter >>== check False
   where
     check _ (Done x _) = done x (EOF . Just . Err $ e)
-    check _ (Cont k e@(Just _)) = cont k e
+    check _ (Cont k j@(Just _)) = cont k j
     check False (Cont k Nothing) =
       runIterC $ k (EOF . Just . Err $ e) >>== check True
     check True _                 =
@@ -207,6 +205,6 @@ enumPure1Chunk str iter = iter >>== check
     check (Done a _)       = done a (Chunk str)
 
 enumStream :: (IterateeC i, Monad m) => StreamG s -> Enumerator i s m a
-enumStream e@(EOF _) = enumEof
+enumStream (EOF _)    = enumEof
 enumStream (Chunk xs) = enumPure1Chunk xs
 

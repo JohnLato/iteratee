@@ -44,13 +44,10 @@ import qualified Prelude as P
 
 import qualified Data.ListLike as LL
 import qualified Data.ListLike.FoldableLL as FLL
-import Data.Iteratee.IO.Base
 import Data.Iteratee.Iteratee
 import Control.Monad
 import Control.Parallel
-import Control.Applicative
 import Data.Monoid
-import Data.Maybe (fromMaybe)
 
 idone :: (IterateeC i, Monad m) => a -> StreamG s -> i s m a
 idone a = toIter . done a
@@ -219,7 +216,7 @@ take n' iter = icont (step n') Nothing
       where
         check (Done x _)       = done (return x) s2
         check (Cont k Nothing) = done (k s1) s2
-        check c@(Cont k e)     = cont (const . return $ icont k e) e
+        check (Cont k e)       = cont (const . return $ icont k e) e
 
 
 -- |Read n elements from a stream and apply the given iteratee to the
@@ -236,19 +233,20 @@ takeR i iter = icont (step i) Nothing
       | LL.null str        = icont (step i) Nothing
       | LL.length str <= n = iter >>== (check (n - LL.length str) s)
       | otherwise          = done' n s
-    step n str             = iter >>== final str
+    step _ st              = iter >>== final st
       where
         final str (Done a _)       = done (idone a str) str
         final str (Cont k Nothing) = done (k str) str
         final str (Cont k e)       = done (k str) (EOF e)
     check _ str (Done a _)    = done (return a) str
-    check n str (Cont k mErr) = runIterC (takeR n $ k str)
+    check n str (Cont k _) = runIterC (takeR n $ k str)
     done' n s@(Chunk str) = iter >>== check'
       where
         (s1, s2) = LL.splitAt n str
-        check' (Done a s')       = done (idone a (Chunk s1)) s
+        check' (Done a _)        = done (idone a (Chunk s1)) s
         check' (Cont k Nothing)  = done (k $ Chunk s1) (Chunk s2)
-        check' (Cont k (Just e)) = runIterC $ throwErr e
+        check' (Cont _ (Just e)) = runIterC $ throwErr e
+    done' _ _             = error "Internal error in takeR"
 
 
 -- |Map the stream: yet another iteratee transformer
@@ -270,7 +268,7 @@ mapStream f i = go i
     go iter = iter >>== check
     check (Done a s)        = done (idone a s) mempty
     check (Cont k Nothing)  = cont (go . k . strMap (lMap f)) Nothing
-    check (Cont k (Just e)) = runIterC (throwErr e)
+    check (Cont _ (Just e)) = runIterC (throwErr e)
 
 
 -- |Creates an enumerator with only elements from the stream that
@@ -395,8 +393,8 @@ enumPar i1 i2 = icont step Nothing
     (Cont a Nothing, Cont b Nothing) -> let ia = a str
                                             ib = b str
                                         in ia `par` ib `pseq` enumPar ia ib
-    (Cont _ j@(Just e), _)           -> icont step j
-    (_, Cont _ j@(Just e))           -> icont step j
+    (Cont _ j@(Just _), _)           -> icont step j
+    (_, Cont _ j@(Just _))           -> icont step j
 
 -- ------------------------------------------------------------------------
 -- Enumerators

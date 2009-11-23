@@ -1,9 +1,11 @@
+{-# LANGUAGE RankNTypes, KindSignatures, NoMonomorphismRestriction #-}
+
 -- some basic benchmarking of iteratee
 
 module Main where
-import qualified Data.Iteratee as I
-import Data.Iteratee (enumPure1Chunk, enumPureNChunk, stream2list, stream2stream)
-import Data.Iteratee.Base.StreamChunk
+import Data.Iteratee.Iteratee (enumPure1Chunk)
+import qualified Data.Iteratee.ListLike as I
+import Data.Iteratee.ListLike (enumPureNChunk, stream2list, stream2stream)
 import Control.Monad.Identity
 import Control.Monad
 
@@ -19,9 +21,9 @@ main = defaultMain allListBenches
 -- for easy comparison of different streams.
 -- BDList is for creating baseline comparison functions.  Although the name
 -- is BDList, it will work for any stream type (e.g. bytestrings).
-data BD a b s el m = BDIter1 String (a -> b) (I.IterateeG s el m a) 
-  | BDIterN String Int (a -> b) (I.IterateeG s el m a)
-  | BDList String ((s el) -> b) (s el)
+data BD i a b s (m :: * -> *) = BDIter1 String (a -> b) (i s m a) 
+  | BDIterN String Int (a -> b) (i s m a)
+  | BDList String (s -> b) s
 
 id1 name i = BDIter1 name id i
 idN name i = BDIterN name 5 id i
@@ -34,31 +36,45 @@ makeBench (BDIterN n csize eval i) = bench n $
   proc eval runIdentity (enumPureNChunk [1..10000] csize) i
 makeBench (BDList n f l) = bench n $ B f l
 
-proc :: (StreamChunk s el, Functor m, Monad m)
+makeBenchPure :: BD I.IterateePure a b [Int] (Control.Monad.Identity.Identity) -> Benchmark
+makeBenchPure (BDIter1 n eval i) = bench n $
+  procPure eval (enumPure1Chunk [1..10000]) i
+makeBenchPure (BDIterN n csize eval i) = bench n $
+  procPure eval (enumPureNChunk [1..10000] csize) i
+makeBenchPure (BDList n f l) = bench n $ B f l
+
+isIter (BDList _ _ _) = False
+isIter _          = True
+
+proc :: (Functor m, Monad m)
   => (a -> b) --function to force evaluation of result
   -> (m a -> a)
-  -> I.EnumeratorGM s el m a
-  -> I.IterateeG s el m a
-  -> B (I.IterateeG s el m a) b
-proc eval runner enum iter = B (eval . runner . join . fmap I.run . enum) iter
+  -> I.Enumerator I.Iteratee s m a
+  -> I.Iteratee s m a
+  -> B (I.Iteratee s m a) b
+proc eval runner enum iter = B (eval . runner . I.run . enum) iter
+
+procPure eval enum iter = B (eval . I.runPure . enum) iter
 
 defaultProc = proc id runIdentity (enumPure1Chunk [1..10000])
 defaultNProc = proc id runIdentity (enumPureNChunk [1..10000] 5)
 
 -- -------------------------------------------------------------
 -- benchmark groups
-makeGroup n bs = bgroup n $ map makeBench bs
+makeGroup n = bgroup n . map makeBench . filter isIter
 
-listbench = makeGroup "Stream2List benchmarks" slistBenches
-streambench = makeGroup "stream benchmarks" streamBenches
-breakbench = makeGroup "Break benchmarks" breakBenches
-headsbench = makeGroup "Heads benchmarks" headsBenches
-dropbench = makeGroup "Drop benchmarks" dropBenches
-lengthbench = makeGroup "Length benchmarks" listBenches
-takebench = makeGroup "Take benchmarks" takeBenches
-takeRbench = makeGroup "TakeR benchmarks" takeRBenches
-mapbench = makeGroup "Map benchmarks" mapBenches
-miscbench = makeGroup "Other iteratee benchmarks" miscBenches
+makeGroupPure n = bgroup n . map makeBenchPure
+
+listbench = bgroup "Stream2List" [makeGroup "monadic" slistBenches, makeGroupPure "pure" slistBenches]
+streambench = bgroup "stream" [makeGroup "monadic" streamBenches, makeGroupPure "pure" streamBenches]
+breakbench = bgroup "Break" [makeGroup "monadic" breakBenches, makeGroupPure "pure" breakBenches]
+headsbench = bgroup "Heads" [makeGroup "monadic" headsBenches, makeGroupPure "pure" headsBenches]
+dropbench = bgroup "Drop" [makeGroup "monadic" dropBenches, makeGroupPure "pure" dropBenches]
+lengthbench = bgroup "Length" [makeGroup "monadic" listBenches, makeGroupPure "pure" listBenches]
+takebench = bgroup "Take" [makeGroup "monadic" takeBenches, makeGroupPure "pure" takeBenches]
+takeRbench = bgroup "TakeR" [makeGroup "monadic" takeRBenches, makeGroupPure "pure" takeRBenches]
+mapbench = bgroup "Map" [makeGroup "monadic" mapBenches, makeGroupPure "pure" mapBenches]
+miscbench = bgroup "Other" [makeGroup "monadic" miscBenches, makeGroupPure "pure" miscBenches]
 
 allListBenches = [listbench, streambench, breakbench, headsbench, dropbench, lengthbench, takebench, takeRbench, mapbench, miscbench]
 
@@ -84,8 +100,8 @@ breakBenches = [break0, break0', break1, break2, break3, break4, break5]
 
 heads1 = id1 "heads null" (I.heads [])
 heads2 = id1 "heads 1" (I.heads [1])
-heads3 = id1 "heads 100" (I.heads [1.100])
-heads4 = idN "heads 100 over chunks" (I.heads [1.100])
+heads3 = id1 "heads 100" (I.heads [1..100])
+heads4 = idN "heads 100 over chunks" (I.heads [1..100])
 headsBenches = [heads1, heads2, heads3, heads4]
 
 benchpeek = id1 "peek" I.peek

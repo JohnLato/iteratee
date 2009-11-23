@@ -95,7 +95,7 @@ enumFd fd iter' = Iteratee $
                     (\c -> runIter iter >>= check fp (Chunk c)))
     check _p s (Done x _)          = return $ Done x s
     check p  s (Cont i Nothing)    = loop (i s) p
-    check _p _ c@(Cont _ (Just _)) = return $ c
+    check _p _ c@(Cont _ (Just _)) = return c
 
 -- |The enumerator of a POSIX File Descriptor: a variation of enumFdPure that
 -- supports RandomIO (seek requests)
@@ -193,7 +193,7 @@ enumFdRandom fd iter' = Iteratee $
     let local_off = fromIntegral $ off' - off
     s <- liftIO $ withForeignPtr fp $ \p ->
                     readFromPtr (p `plusPtr` local_off) (len - local_off)
-    runIter iter >>= flip (check pos fp) (Chunk s)
+    runIter iter >>= check pos fp (Chunk s)
   seekTo _pos off iter fp = do                         -- Seek outside buffer
     off' <- liftIO $ myfdSeek fd AbsoluteSeek (fromIntegral off)
     case off' of
@@ -202,11 +202,11 @@ enumFdRandom fd iter' = Iteratee $
   checkres fp iter = either
                        (runIter . flip enumErr iter)
                        (maybe (runIter iter) (uncurry $ runS fp iter))
-  runS fp iter o s = runIter iter >>= flip (check o fp) (Chunk s)
-  check _ _fp (Done x _) s                 = return $ Done x s
-  check o fp  (Cont i Nothing) s           = loop o (i s) fp
-  check o fp  (Cont i (Just (Seek off))) s = seekTo o off (i s) fp
-  check _ _fp c@(Cont _ (Just _)) _        = return $ c
+  runS fp iter o s = runIter iter >>= check o fp (Chunk s)
+  check _ _fp s (Done x _)                 = return $ Done x s
+  check o fp  s (Cont i Nothing)           = loop o (i s) fp
+  check o fp  s (Cont i (Just (Seek off))) = seekTo o off (i s) fp
+  check _ _fp _ c@(Cont _ (Just _))        = return c
 
 -- |Process a file using the given Iteratee.  This function wraps
 -- enumFd as a convenience.

@@ -36,7 +36,6 @@ import Data.Iteratee.Iteratee
 import qualified Data.Iteratee.ListLike as Iter
 import Data.Iteratee.ListLike (heads)
 import Data.Char
-import Data.Word
 import Data.Monoid
 import qualified Data.ListLike as LL
 import Control.Monad.Trans

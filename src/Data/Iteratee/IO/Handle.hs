@@ -40,7 +40,7 @@ import System.IO
 -- the iteratee.  In particular, seeking is not supported.
 enumHandle :: forall s el m a.(ReadableChunk s el, Nullable s, MonadIO m) =>
   Handle ->
-  Enumerator Iteratee s m a
+  Enumerator s m a
 enumHandle h i = Iteratee $
   liftIO (mallocForeignPtrBytes (fromIntegral buffer_size)) >>= loop i
   where
@@ -65,7 +65,7 @@ enumHandle h i = Iteratee $
 enumHandleRandom
   :: forall s el m a.(ReadableChunk s el, Nullable s, MonadIO m) =>
      Handle
-     -> Enumerator Iteratee s m a
+     -> Enumerator s m a
 enumHandleRandom h i = Iteratee $
  liftIO (mallocForeignPtrBytes (fromIntegral buffer_size)) >>= loop (0,0) i
  where

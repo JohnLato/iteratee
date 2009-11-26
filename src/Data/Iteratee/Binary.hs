@@ -30,9 +30,9 @@ data Endian = MSB -- ^ Most Significant Byte is first (big-endian)
   deriving (Eq, Ord, Show, Enum)
 
 endianRead2
-  :: (IterateeC i, Nullable s, LL.ListLike s Word8, Monad m) =>
+  :: (Nullable s, LL.ListLike s Word8, Monad m) =>
      Endian
-     -> i s m Word16
+     -> Iteratee s m Word16
 endianRead2 e = do
   c1 <- I.head
   c2 <- I.head
@@ -44,9 +44,9 @@ endianRead2 e = do
 -- set the entire first byte so the Word32 can be properly set negative as
 -- well.
 endianRead3
-  :: (IterateeC i, Nullable s, LL.ListLike s Word8, Monad m) =>
+  :: (Nullable s, LL.ListLike s Word8, Monad m) =>
      Endian
-     -> i s m Word32
+     -> Iteratee s m Word32
 endianRead3 e = do
   c1 <- I.head
   c2 <- I.head
@@ -63,9 +63,9 @@ endianRead3 e = do
                         `shiftL` 8) .|. fromIntegral m
 
 endianRead4
-  :: (IterateeC i, Nullable s, LL.ListLike s Word8, Monad m) =>
+  :: (Nullable s, LL.ListLike s Word8, Monad m) =>
      Endian
-     -> i s m Word32
+     -> Iteratee s m Word32
 endianRead4 e = do
   c1 <- I.head
   c2 <- I.head

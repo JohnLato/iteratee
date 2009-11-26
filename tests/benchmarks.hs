@@ -36,45 +36,34 @@ makeBench (BDIterN n csize eval i) = bench n $
   proc eval runIdentity (enumPureNChunk [1..10000] csize) i
 makeBench (BDList n f l) = bench n $ B f l
 
-makeBenchPure :: BD I.IterateePure a b [Int] (Control.Monad.Identity.Identity) -> Benchmark
-makeBenchPure (BDIter1 n eval i) = bench n $
-  procPure eval (enumPure1Chunk [1..10000]) i
-makeBenchPure (BDIterN n csize eval i) = bench n $
-  procPure eval (enumPureNChunk [1..10000] csize) i
-makeBenchPure (BDList n f l) = bench n $ B f l
-
 isIter (BDList _ _ _) = False
 isIter _          = True
 
 proc :: (Functor m, Monad m)
   => (a -> b) --function to force evaluation of result
   -> (m a -> a)
-  -> I.Enumerator I.Iteratee s m a
+  -> I.Enumerator s m a
   -> I.Iteratee s m a
   -> B (I.Iteratee s m a) b
 proc eval runner enum iter = B (eval . runner . I.run . enum) iter
-
-procPure eval enum iter = B (eval . I.runPure . enum) iter
 
 defaultProc = proc id runIdentity (enumPure1Chunk [1..10000])
 defaultNProc = proc id runIdentity (enumPureNChunk [1..10000] 5)
 
 -- -------------------------------------------------------------
 -- benchmark groups
-makeGroup n = bgroup n . map makeBench . filter isIter
+makeGroup n = bgroup n . map makeBench
 
-makeGroupPure n = bgroup n . map makeBenchPure
-
-listbench = bgroup "Stream2List" [makeGroup "monadic" slistBenches, makeGroupPure "pure" slistBenches]
-streambench = bgroup "stream" [makeGroup "monadic" streamBenches, makeGroupPure "pure" streamBenches]
-breakbench = bgroup "Break" [makeGroup "monadic" breakBenches, makeGroupPure "pure" breakBenches]
-headsbench = bgroup "Heads" [makeGroup "monadic" headsBenches, makeGroupPure "pure" headsBenches]
-dropbench = bgroup "Drop" [makeGroup "monadic" dropBenches, makeGroupPure "pure" dropBenches]
-lengthbench = bgroup "Length" [makeGroup "monadic" listBenches, makeGroupPure "pure" listBenches]
-takebench = bgroup "Take" [makeGroup "monadic" takeBenches, makeGroupPure "pure" takeBenches]
-takeRbench = bgroup "TakeR" [makeGroup "monadic" takeRBenches, makeGroupPure "pure" takeRBenches]
-mapbench = bgroup "Map" [makeGroup "monadic" mapBenches, makeGroupPure "pure" mapBenches]
-miscbench = bgroup "Other" [makeGroup "monadic" miscBenches, makeGroupPure "pure" miscBenches]
+listbench = makeGroup "stream2list" slistBenches
+streambench = makeGroup "stream" streamBenches
+breakbench = makeGroup "break" breakBenches
+headsbench = makeGroup "heads" headsBenches
+dropbench = makeGroup "drop" dropBenches
+lengthbench = makeGroup "length" listBenches
+takebench = makeGroup "take" takeBenches
+takeRbench = makeGroup "takeR" takeRBenches
+mapbench = makeGroup "map" mapBenches
+miscbench = makeGroup "other" miscBenches
 
 allListBenches = [listbench, streambench, breakbench, headsbench, dropbench, lengthbench, takebench, takeRbench, mapbench, miscbench]
 

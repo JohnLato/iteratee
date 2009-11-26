@@ -18,7 +18,6 @@ module Data.Iteratee.Char (
   -- ** Type synonyms
   ,Stream
   ,Iteratee
-  ,EnumeratorM
   ,Line
   -- * Word and Line processors
   ,line
@@ -47,14 +46,14 @@ type Stream = StreamG String
 
 -- Useful combinators for implementing iteratees and enumerators
 
-idone :: (IterateeC i, Monad m) => a -> StreamG s -> i s m a
-idone a = toIter . done a
+idone :: (Monad m) => a -> StreamG s -> Iteratee s m a
+idone a = Iteratee . return . Done a
 
 icont
-  :: (IterateeC i, Monad m) =>
-     (StreamG s -> i s m a)
-     -> Maybe ErrMsg -> i s m a
-icont k = toIter . cont k
+  :: (Monad m) =>
+     (StreamG s -> Iteratee s m a)
+     -> Maybe ErrMsg -> Iteratee s m a
+icont k = Iteratee . return . Cont k
 
 
 type Line = String      -- The line of text, terminators are not included
@@ -74,9 +73,9 @@ data EofBehavior = ErrOnEof | EolOnEof
 -- has changed.
 -- Compare the code below with GHCBufferIO.line_lazy
 line
-  :: (IterateeC i, Monad m) =>
+  :: (Monad m) =>
      EofBehavior
-     -> i String m (Either Line Line)
+     -> Iteratee String m (Either Line Line)
 line ErrOnEof = Iter.break (\c -> c == '\r' || c == '\n') >>= \l ->
        terminators >>= check l
   where
@@ -118,9 +117,9 @@ printLines = lines'
 -- upon the EofBehavior
 
 readLines
-  :: (IterateeC i, Monad m) =>
+  :: (Monad m) =>
      EofBehavior
-     -> i String m (Either [Line] [Line])
+     -> Iteratee String m (Either [Line] [Line])
 readLines eb = lines' []
   where
     lines' acc = line eb >>= check acc
@@ -137,9 +136,9 @@ readLines eb = lines' []
 -- character stream and the enumerator of the line stream.
 
 enumLines
-  :: (IterateeC i, LL.ListLike s el, LL.StringLike s, Nullable s, Monad m) =>
-     i [s] m a
-     -> i s m (i [s] m a)
+  :: (LL.ListLike s el, LL.StringLike s, Nullable s, Monad m) =>
+     Iteratee [s] m a
+     -> Iteratee s m (Iteratee [s] m a)
 enumLines = convStream getter
   where
     getter = icont step Nothing
@@ -166,9 +165,9 @@ enumLines = convStream getter
 -- function.
 
 enumWords
-  :: (IterateeC i, LL.ListLike s el, LL.StringLike s, Nullable s, Monad m) =>
-     i [s] m a
-     -> i s m (i [s] m a)
+  :: (LL.ListLike s el, LL.StringLike s, Nullable s, Monad m) =>
+     Iteratee [s] m a
+     -> Iteratee s m (Iteratee [s] m a)
 enumWords = convStream getter
   where
     getter = icont step Nothing
@@ -192,9 +191,9 @@ enumWords = convStream getter
 -- Like enumWords, but operates on ByteStrings.
 -- This is provided as a higher-performance alternative to enumWords.
 enumWordsBS
-  :: (IterateeC i, Monad m) =>
-     i [BC.ByteString] m a
-     -> i BC.ByteString m (i [BC.ByteString] m a)
+  :: (Monad m) =>
+     Iteratee [BC.ByteString] m a
+     -> Iteratee BC.ByteString m (Iteratee [BC.ByteString] m a)
 enumWordsBS iter = convStream getter iter
   where
     getter = icont step Nothing
@@ -216,9 +215,9 @@ enumWordsBS iter = convStream getter iter
 {-# INLINE enumWordsBS #-}
 
 enumLinesBS
-  :: (IterateeC i, Monad m) =>
-     i [BC.ByteString] m a
-     -> i BC.ByteString m (i [BC.ByteString] m a)
+  :: (Monad m) =>
+     Iteratee [BC.ByteString] m a
+     -> Iteratee BC.ByteString m (Iteratee [BC.ByteString] m a)
 enumLinesBS = convStream getter
   where
     getter = icont step Nothing

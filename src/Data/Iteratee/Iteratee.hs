@@ -15,9 +15,9 @@ module Data.Iteratee.Iteratee (
   skipToEof,
   -- ** Nested iteratee combinators
   convStream,
+  joinI,
   -- * Enumerators
   Enumerator,
-  EnumeratorM,
   Enumeratee,
   -- ** Basic enumerators
   enumEof,
@@ -43,14 +43,11 @@ import Data.Monoid
 
 -- ------------------------------------------------------------------------
 -- useful functions
-idone :: (IterateeC i, Monad m) => a -> StreamG s -> i s m a
-idone a = toIter . done a
+idone :: (Monad m) => a -> StreamG s -> Iteratee s m a
+idone a = Iteratee . return . Done a
 
-icont
-  :: (IterateeC i, Monad m) =>
-     (StreamG s -> i s m a)
-     -> Maybe ErrMsg -> i s m a
-icont k = toIter . cont k
+icont :: (Monad m) => (StreamG s -> Iteratee s m a) -> Maybe ErrMsg -> Iteratee s m a
+icont k = Iteratee . return . Cont k
 
 
 -- ------------------------------------------------------------------------
@@ -58,12 +55,12 @@ icont k = toIter . cont k
 
 -- |Report and propagate an unrecoverable error.
 --  Disregard the input first and then propagate the error.
-throwErr :: (IterateeC i, Monad m) => ErrMsg -> i s m a
+throwErr :: (Monad m) => ErrMsg -> Iteratee s m a
 throwErr e = icont (const $ throwErr e) (Just e)
 
 -- |Propagate a recoverable error.
 -- Disregard input while in the error state.
-throwRecoverableErr :: (IterateeC i, Monad m, Nullable s) => ErrMsg -> i s m ()
+throwRecoverableErr :: (Monad m, Nullable s) => ErrMsg -> Iteratee s m ()
 throwRecoverableErr = icont (const identity) . Just
 
 
@@ -73,25 +70,25 @@ throwRecoverableErr = icont (const identity) . Just
 -- with an empty stream.  In particular, it enables them to be used with
 -- 'convStream'.
 checkErr
-  :: (IterateeC i, Monad m, Monoid s) =>
-     i s m a
-     -> i s m (Either ErrMsg a)
+  :: (Monad m, Monoid s) =>
+     Iteratee s m a
+     -> Iteratee s m (Either ErrMsg a)
 checkErr iter = iter >>== check
   where
-  check (Done a str)        = done (Right a) str
-  check (Cont _ (Just err)) = done (Left err) mempty
-  check (Cont k Nothing)    = cont (checkErr . k) Nothing
+  check (Done a str)        = idone (Right a) str
+  check (Cont _ (Just err)) = idone (Left err) mempty
+  check (Cont k Nothing)    = icont (checkErr . k) Nothing
 
 
 -- ------------------------------------------------------------------------
 -- Parser combinators
 
 -- |The identity iterator.  Doesn't do anything.
-identity :: (IterateeC i, Monad m, Nullable s) => i s m ()
+identity :: (Monad m, Nullable s) => Iteratee s m ()
 identity = return ()
 
 -- |Get the stream status of an iteratee.
-getStatus :: (IterateeC i, Monad m) => i s m StreamStatus
+getStatus :: (Monad m) => Iteratee s m StreamStatus
 getStatus = icont check Nothing
   where
     check s@(EOF Nothing)  = idone EofNoError s
@@ -99,7 +96,7 @@ getStatus = icont check Nothing
     check s                = idone DataRemaining s
 
 -- |Skip the rest of the stream
-skipToEof :: (IterateeC i, Monad m) => i s m ()
+skipToEof :: (Monad m) => Iteratee s m ()
 skipToEof = icont check Nothing
   where
     check (Chunk _) = skipToEof
@@ -107,7 +104,7 @@ skipToEof = icont check Nothing
 
 
 -- |Seek to a position in the stream
-seek :: (IterateeC i, Monad m, Nullable s) => FileOffset -> i s m ()
+seek :: (Monad m, Nullable s) => FileOffset -> Iteratee s m ()
 seek = icont (const identity) . Just . Seek
 
 
@@ -115,9 +112,9 @@ seek = icont (const identity) . Just . Seek
 -- The converters show a different way of composing two iteratees:
 -- `vertical' rather than `horizontal'
 
-type Enumeratee i sFrom sTo (m :: * -> *) a =
-  i sTo m a
-  -> i sFrom m (i sTo m a)
+type Enumeratee sFrom sTo (m :: * -> *) a =
+  Iteratee sTo m a
+  -> Iteratee sFrom m (Iteratee sTo m a)
 
 -- |Convert one stream into another, not necessarily in `lockstep'
 -- The transformer mapStream maps one element of the outer stream
@@ -128,20 +125,30 @@ type Enumeratee i sFrom sTo (m :: * -> *) a =
 -- Iteratee s el (Maybe (s' el')).  The Maybe type is in case of
 -- errors, or end of stream.
 convStream
-  :: (IterateeC i, Monad m, Nullable s, Nullable s') =>
-     i s m (Maybe s')
-     -> Enumeratee i s s' m a
+  :: (Monad m, Nullable s, Monoid s, Nullable s') =>
+     Iteratee s m (Maybe s')
+     -> Enumeratee s s' m a
 convStream fi iter = fi >>= check
   where
     check (Just xs) = enumPure1Chunk xs iter >>== docase
     check (Nothing) = return iter
-    docase (Done a _)          = done (return a) mempty
-    docase (Cont k Nothing)    = cont next Nothing
+    docase (Done a _)          = idone (return a) mempty
+    docase (Cont k Nothing)    = icont next Nothing
       where
         next = flip enumStream (convStream fi $ icont k Nothing)
-    docase (Cont _ j@(Just e)) = cont (const $ throwErr e) j
+    docase (Cont _ j@(Just e)) = icont (const $ throwErr e) j
 
 {-# INLINE convStream #-}
+
+joinI
+  :: (Monad m, Nullable s) =>
+     Iteratee s m (Iteratee s' m a)
+     -> Iteratee s m a
+joinI m = m >>= (\i -> enumEof i >>== check)
+  where
+    check (Done a _)        = return a
+    check (Cont _ Nothing)  = throwErr $ Err "joinI: divergent iteratee"
+    check (Cont _ (Just e)) = throwErr e
 
 -- ------------------------------------------------------------------------
 -- Enumerators
@@ -151,38 +158,34 @@ convStream fi iter = fi >>= check
 -- or when the iteratee moves to the done state, whichever comes first.
 -- When to stop is of course up to the enumerator...
 
-type Enumerator i s (m :: * -> *) a = i s m a -> i s m a
+type Enumerator s (m :: * -> *) a = Iteratee s m a -> Iteratee s m a
 
 -- We have two choices of composition: compose iteratees or compose
 -- enumerators. The latter is useful when one iteratee
 -- reads from the concatenation of two data sources.
 
-type EnumeratorM i s m a = i s m a -> m (i s m a)
-
 -- |The most primitive enumerator: applies the iteratee to the terminated
 -- stream. The result is the iteratee in the Done state.  It is an error
 -- if the iteratee does not terminate on EOF.
-enumEof :: (IterateeC i, Monad m) => Enumerator i s m a
+enumEof :: (Monad m) => Enumerator s m a
 enumEof iter = iter >>== check False
   where
-    check _ (Done x _)           = done x (EOF Nothing)
-    check _ (Cont k e@(Just _))  = cont k e
-    check False (Cont k Nothing) = runIterC $ k (EOF Nothing) >>== check True
-    check True  _ = runIterC . throwErr . Err $ "Divergent Iteratee"
+    check _ (Done x _)           = idone x (EOF Nothing)
+    check _ (Cont k e@(Just _))  = icont k e
+    check False (Cont k Nothing) = k (EOF Nothing) >>== check True
+    check True  _ = throwErr . Err $ "Divergent Iteratee"
 
 -- |Another primitive enumerator: report an error
 enumErr
-  :: (IterateeC i, Monad m, Nullable s) =>
+  :: (Monad m, Nullable s) =>
      String
-     -> Enumerator i s m a
+     -> Enumerator s m a
 enumErr e iter = iter >>== check False
   where
-    check _ (Done x _) = done x (EOF . Just . Err $ e)
-    check _ (Cont k j@(Just _)) = cont k j
-    check False (Cont k Nothing) =
-      runIterC $ k (EOF . Just . Err $ e) >>== check True
-    check True _                 =
-      runIterC . throwErr . Err $ "Divergent Iteratee"
+    check _ (Done x _)           = idone x (EOF . Just . Err $ e)
+    check _ (Cont k j@(Just _))  = icont k j
+    check False (Cont k Nothing) = k (EOF . Just . Err $ e) >>== check True
+    check True _                 = throwErr . Err $ "Divergent Iteratee"
 
 
 -- |The composition of two enumerators: essentially the functional composition
@@ -190,21 +193,21 @@ enumErr e iter = iter >>== check False
 -- though: in e1 >. e2, e1 is executed first
 
 (>.)
-  :: (IterateeC i, Monad m) =>
-     EnumeratorM i s m a -> EnumeratorM i s m a -> EnumeratorM i s m a
-(>.) = (<=<)
+  :: (Monad m) =>
+     Enumerator s m a -> Enumerator s m a -> Enumerator s m a
+(>.) = flip (.)
 
 -- |The pure 1-chunk enumerator
 -- It passes a given list of elements to the iteratee in one chunk
 -- This enumerator does no IO and is useful for testing of base parsing
-enumPure1Chunk :: (IterateeC i, Monad m) => s -> Enumerator i s m a
+enumPure1Chunk :: (Monad m) => s -> Enumerator s m a
 enumPure1Chunk str iter = iter >>== check
   where
-    check (Cont k Nothing) = runIterC $ k (Chunk str)
-    check (Cont k e)       = cont k e
-    check (Done a _)       = done a (Chunk str)
+    check (Cont k Nothing) = k (Chunk str)
+    check (Cont k e)       = icont k e
+    check (Done a _)       = idone a (Chunk str)
 
-enumStream :: (IterateeC i, Monad m) => StreamG s -> Enumerator i s m a
+enumStream :: (Monad m) => StreamG s -> Enumerator s m a
 enumStream (EOF _)    = enumEof
 enumStream (Chunk xs) = enumPure1Chunk xs
 

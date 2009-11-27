@@ -56,16 +56,17 @@ defaultNProc = proc id runIdentity (enumPureNChunk [1..10000] 5)
 -- benchmark groups
 makeGroup n = bgroup n . map makeBench
 
-listbench = makeGroup "Stream2List benchmarks" slistBenches
-streambench = makeGroup "stream benchmarks" streamBenches
-breakbench = makeGroup "Break benchmarks" breakBenches
-headsbench = makeGroup "Heads benchmarks" headsBenches
-dropbench = makeGroup "Drop benchmarks" dropBenches
-lengthbench = makeGroup "Length benchmarks" listBenches
-takebench = makeGroup "Take benchmarks" takeBenches
-takeRbench = makeGroup "TakeR benchmarks" takeRBenches
-mapbench = makeGroup "Map benchmarks" mapBenches
-miscbench = makeGroup "Other iteratee benchmarks" miscBenches
+listbench = makeGroup "stream2list" slistBenches
+streambench = makeGroup "stream" streamBenches
+breakbench = makeGroup "break" breakBenches
+headsbench = makeGroup "heads" headsBenches
+dropbench = makeGroup "drop" dropBenches
+lengthbench = makeGroup "length" listBenches
+takebench = makeGroup "take" takeBenches
+takeRbench = makeGroup "takeR" takeRBenches
+mapbench = makeGroup "map" mapBenches
+convbench = makeGroup "convStream" convBenches
+miscbench = makeGroup "other" miscBenches
 
 allListBenches = [listbench, streambench, breakbench, headsbench, dropbench, lengthbench, takebench, takeRbench, mapbench, convbench, miscbench]
 
@@ -145,10 +146,10 @@ mapBenches = [map0, map1, map2, map3, map4]
 
 conv1 = idN "convStream id head chunked" (I.joinI . I.convStream idChunk $ I.head)
 conv2 = idN "convStream id length chunked" (I.joinI . I.convStream idChunk $ I.length)
-idChunk = toIter $ cont step Nothing
+idChunk = Iteratee . return $ Cont step Nothing
   where
     step (I.Chunk xs)
-      | LL.null xs      = toIter $ cont step Nothing
-      | True            = toIter $ done (Just xs) (I.Chunk mempty)
-    step s@(I.EOF mErr) = toIter $ done Nothing s
+      | LL.null xs      = idChunk
+      | True            = Iteratee . return $ Done (Just xs) (I.Chunk mempty)
+    step s@(I.EOF mErr) = Iteratee . return $ Done Nothing s
 convBenches = [conv1, conv2]

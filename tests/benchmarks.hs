@@ -1,13 +1,12 @@
-{-# LANGUAGE RankNTypes, KindSignatures, NoMonomorphismRestriction #-}
-
 -- some basic benchmarking of iteratee
 
 module Main where
-import Data.Iteratee.Iteratee (enumPure1Chunk)
-import qualified Data.Iteratee.ListLike as I
-import Data.Iteratee.ListLike (enumPureNChunk, stream2list, stream2stream)
+import qualified Data.Iteratee as I
+import Data.Iteratee (enumPure1Chunk, enumPureNChunk, stream2list, stream2stream)
+import Data.Iteratee.Base.StreamChunk
 import Control.Monad.Identity
 import Control.Monad
+import qualified Data.ListLike as LL
 
 import Criterion.Main
 
@@ -54,18 +53,18 @@ defaultNProc = proc id runIdentity (enumPureNChunk [1..10000] 5)
 -- benchmark groups
 makeGroup n = bgroup n . map makeBench
 
-listbench = makeGroup "stream2list" slistBenches
-streambench = makeGroup "stream" streamBenches
-breakbench = makeGroup "break" breakBenches
-headsbench = makeGroup "heads" headsBenches
-dropbench = makeGroup "drop" dropBenches
-lengthbench = makeGroup "length" listBenches
-takebench = makeGroup "take" takeBenches
-takeRbench = makeGroup "takeR" takeRBenches
-mapbench = makeGroup "map" mapBenches
-miscbench = makeGroup "other" miscBenches
+listbench = makeGroup "Stream2List benchmarks" slistBenches
+streambench = makeGroup "stream benchmarks" streamBenches
+breakbench = makeGroup "Break benchmarks" breakBenches
+headsbench = makeGroup "Heads benchmarks" headsBenches
+dropbench = makeGroup "Drop benchmarks" dropBenches
+lengthbench = makeGroup "Length benchmarks" listBenches
+takebench = makeGroup "Take benchmarks" takeBenches
+takeRbench = makeGroup "TakeR benchmarks" takeRBenches
+mapbench = makeGroup "Map benchmarks" mapBenches
+miscbench = makeGroup "Other iteratee benchmarks" miscBenches
 
-allListBenches = [listbench, streambench, breakbench, headsbench, dropbench, lengthbench, takebench, takeRbench, mapbench, miscbench]
+allListBenches = [listbench, streambench, breakbench, headsbench, dropbench, lengthbench, takebench, takeRbench, mapbench, convbench, miscbench]
 
 list0 = makeList "list one go" sum
 list1 = BDIter1 "stream2list one go" sum stream2list
@@ -140,3 +139,13 @@ map2 = idN "map length chunked" (I.joinI $ I.mapStream id I.length)
 map3 = id1 "map head one go" (I.joinI $ I.mapStream id I.head)
 map4 = idN "map head chunked" (I.joinI $ I.mapStream id I.head)
 mapBenches = [map0, map1, map2, map3, map4]
+
+conv1 = idN "convStream id head chunked" (I.joinI . I.convStream idChunk $ I.head)
+conv2 = idN "convStream id length chunked" (I.joinI . I.convStream idChunk $ I.length)
+idChunk = I.IterateeG (return . step)
+  where
+    step (I.Chunk xs)
+      | LL.null xs      = I.Cont idChunk Nothing
+      | True            = I.Done (Just xs) (I.Chunk mempty)
+    step s@(I.EOF mErr) = I.Done Nothing s
+convBenches = [conv1, conv2]

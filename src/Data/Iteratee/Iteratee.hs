@@ -122,7 +122,7 @@ type Enumeratee sFrom sTo (m :: * -> *) a =
 -- general: it may take several elements of the outer stream to produce
 -- one element of the inner stream, or the other way around.
 -- The transformation from one stream to the other is specified as
--- Iteratee s el (Maybe (s' el')).  The Maybe type is in case of
+-- Iteratee s el (Maybe s').  The Maybe type is in case of
 -- errors, or end of stream.
 convStream
   :: (Monad m, Nullable s, Monoid s, Nullable s') =>

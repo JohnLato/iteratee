@@ -1,9 +1,12 @@
+{-# LANGUAGE RankNTypes, KindSignatures, NoMonomorphismRestriction #-}
+
 -- some basic benchmarking of iteratee
 
 module Main where
-import qualified Data.Iteratee as I
-import Data.Iteratee (enumPure1Chunk, enumPureNChunk, stream2list, stream2stream)
-import Data.Iteratee.Base.StreamChunk
+import Data.Iteratee.Iteratee
+import qualified Data.Iteratee.ListLike as I
+import Data.Iteratee.ListLike (enumPureNChunk, stream2list, stream2stream)
+import Data.Monoid
 import Control.Monad.Identity
 import Control.Monad
 import qualified Data.ListLike as LL
@@ -142,10 +145,10 @@ mapBenches = [map0, map1, map2, map3, map4]
 
 conv1 = idN "convStream id head chunked" (I.joinI . I.convStream idChunk $ I.head)
 conv2 = idN "convStream id length chunked" (I.joinI . I.convStream idChunk $ I.length)
-idChunk = I.IterateeG (return . step)
+idChunk = toIter $ cont step Nothing
   where
     step (I.Chunk xs)
-      | LL.null xs      = I.Cont idChunk Nothing
-      | True            = I.Done (Just xs) (I.Chunk mempty)
-    step s@(I.EOF mErr) = I.Done Nothing s
+      | LL.null xs      = toIter $ cont step Nothing
+      | True            = toIter $ done (Just xs) (I.Chunk mempty)
+    step s@(I.EOF mErr) = toIter $ done Nothing s
 convBenches = [conv1, conv2]

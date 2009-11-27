@@ -56,17 +56,16 @@ defaultNProc = proc id runIdentity (enumPureNChunk [1..10000] 5)
 -- benchmark groups
 makeGroup n = bgroup n . map makeBench
 
-listbench = makeGroup "stream2list" slistBenches
-streambench = makeGroup "stream" streamBenches
-breakbench = makeGroup "break" breakBenches
-headsbench = makeGroup "heads" headsBenches
-dropbench = makeGroup "drop" dropBenches
-lengthbench = makeGroup "length" listBenches
-takebench = makeGroup "take" takeBenches
-takeRbench = makeGroup "takeR" takeRBenches
-mapbench = makeGroup "map" mapBenches
-convbench = makeGroup "convStream" convBenches
-miscbench = makeGroup "other" miscBenches
+listbench = makeGroup "Stream2List benchmarks" slistBenches
+streambench = makeGroup "stream benchmarks" streamBenches
+breakbench = makeGroup "Break benchmarks" breakBenches
+headsbench = makeGroup "Heads benchmarks" headsBenches
+dropbench = makeGroup "Drop benchmarks" dropBenches
+lengthbench = makeGroup "Length benchmarks" listBenches
+takebench = makeGroup "Take benchmarks" takeBenches
+takeRbench = makeGroup "TakeR benchmarks" takeRBenches
+mapbench = makeGroup "Map benchmarks" mapBenches
+miscbench = makeGroup "Other iteratee benchmarks" miscBenches
 
 allListBenches = [listbench, streambench, breakbench, headsbench, dropbench, lengthbench, takebench, takeRbench, mapbench, convbench, miscbench]
 

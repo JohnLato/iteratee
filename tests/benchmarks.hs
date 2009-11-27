@@ -3,10 +3,9 @@
 -- some basic benchmarking of iteratee
 
 module Main where
-import Data.Iteratee.Iteratee
-import qualified Data.Iteratee.ListLike as I
-import Data.Iteratee.ListLike (enumPureNChunk, stream2list, stream2stream)
-import Data.Monoid
+import qualified Data.Iteratee as I
+import Data.Iteratee (enumPure1Chunk, enumPureNChunk, stream2list, stream2stream)
+import Data.Iteratee.Base.StreamChunk
 import Control.Monad.Identity
 import Control.Monad
 import qualified Data.ListLike as LL
@@ -23,9 +22,9 @@ main = defaultMain allListBenches
 -- for easy comparison of different streams.
 -- BDList is for creating baseline comparison functions.  Although the name
 -- is BDList, it will work for any stream type (e.g. bytestrings).
-data BD i a b s (m :: * -> *) = BDIter1 String (a -> b) (i s m a) 
-  | BDIterN String Int (a -> b) (i s m a)
-  | BDList String (s -> b) s
+data BD a b s el m = BDIter1 String (a -> b) (I.IterateeG s el m a) 
+  | BDIterN String Int (a -> b) (I.IterateeG s el m a)
+  | BDList String ((s el) -> b) (s el)
 
 id1 name i = BDIter1 name id i
 idN name i = BDIterN name 5 id i
@@ -38,10 +37,7 @@ makeBench (BDIterN n csize eval i) = bench n $
   proc eval runIdentity (enumPureNChunk [1..10000] csize) i
 makeBench (BDList n f l) = bench n $ B f l
 
-isIter (BDList _ _ _) = False
-isIter _          = True
-
-proc :: (Functor m, Monad m)
+proc :: (StreamChunk s el, Functor m, Monad m)
   => (a -> b) --function to force evaluation of result
   -> (m a -> a)
   -> I.Enumerator s m a

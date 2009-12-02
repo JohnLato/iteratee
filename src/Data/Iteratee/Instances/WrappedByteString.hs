@@ -76,3 +76,16 @@ instance LL.ListLike (WrappedByteString Char) Char where
   fromList      = WrapBS . BC.pack
   toList        = BC.unpack . unWrap
   rigidMap f    = WrapBS . BC.map f . unWrap
+
+instance SC.StreamChunk WrappedByteString Char where
+  cMap          = bcmap
+
+bcmap :: (SC.StreamChunk s' el') =>
+  (Char -> el')
+   -> WrappedByteString Char
+   -> s' el'
+bcmap f xs = step xs
+  where
+  step bs
+    | LL.null bs = mempty
+    | True     = f (LL.head bs) `LL.cons` step (LL.tail bs)

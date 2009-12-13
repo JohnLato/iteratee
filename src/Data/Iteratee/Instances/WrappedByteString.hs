@@ -7,7 +7,7 @@ module Data.Iteratee.Instances.WrappedByteString (
 where
 
 import Data.Iteratee.Base.ReadableChunk
-import Data.Iteratee.Base.LooseMap
+import Data.Iteratee.Base
 import qualified Data.ByteString as BW
 import qualified Data.ByteString.Char8 as BC
 import qualified Data.ByteString.Internal as BBase
@@ -95,3 +95,12 @@ instance LooseMap WrappedByteString Char Word8 where
 
 instance LooseMap WrappedByteString Word8 Char where
   lMap f = WrapBS . BW.map (BBase.c2w . f) . unWrap
+
+instance Nullable (WrappedByteString Word8) where
+  null = BW.null . unWrap
+  empty = WrapBS BW.empty
+
+instance Nullable (WrappedByteString Char) where
+  null = BC.null . unWrap
+  empty = WrapBS BC.empty
+

@@ -7,6 +7,7 @@ module Data.Iteratee.Instances.WrappedByteString (
 where
 
 import Data.Iteratee.Base.ReadableChunk
+import Data.Iteratee.Base.LooseMap
 import qualified Data.ByteString as BW
 import qualified Data.ByteString.Char8 as BC
 import qualified Data.ByteString.Internal as BBase
@@ -77,15 +78,20 @@ instance LL.ListLike (WrappedByteString Char) Char where
   toList        = BC.unpack . unWrap
   rigidMap f    = WrapBS . BC.map f . unWrap
 
-instance SC.StreamChunk WrappedByteString Char where
-  cMap          = bcmap
+instance LL.StringLike (WrappedByteString Char) where
+  toString = BC.unpack . unWrap
+  fromString = WrapBS . BC.pack
+  lines      = LL.fromList . map WrapBS . BC.lines . unWrap
+  words      = LL.fromList . map WrapBS . BC.words . unWrap
 
-bcmap :: (SC.StreamChunk s' el') =>
-  (Char -> el')
-   -> WrappedByteString Char
-   -> s' el'
-bcmap f xs = step xs
-  where
-  step bs
-    | LL.null bs = mempty
-    | True     = f (LL.head bs) `LL.cons` step (LL.tail bs)
+instance LooseMap WrappedByteString Word8 Word8 where
+  lMap f = WrapBS . BW.map f . unWrap
+
+instance LooseMap WrappedByteString Char Char where
+  lMap f = WrapBS . BC.map f . unWrap
+
+instance LooseMap WrappedByteString Char Word8 where
+  lMap f = WrapBS . BW.map (f . BBase.w2c) . unWrap
+
+instance LooseMap WrappedByteString Word8 Char where
+  lMap f = WrapBS . BW.map (BBase.c2w . f) . unWrap

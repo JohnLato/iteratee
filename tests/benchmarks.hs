@@ -3,9 +3,14 @@
 -- some basic benchmarking of iteratee
 
 module Main where
-import qualified Data.Iteratee as I
-import Data.Iteratee (enumPure1Chunk, enumPureNChunk, stream2list, stream2stream)
-import Data.Iteratee.Base.StreamChunk
+
+import Data.Iteratee.Iteratee
+import qualified Data.Iteratee.ListLike as I
+import Data.Iteratee.ListLike (enumPureNChunk, stream2list, stream2stream)
+import Data.Iteratee.Instances.WrappedByteString
+import Data.Word
+import Data.Monoid
+import qualified Data.ByteString as BS
 import Control.Monad.Identity
 import Control.Monad
 import qualified Data.ListLike as LL
@@ -26,9 +31,9 @@ instance DeepSeq (WrappedByteString a) where
 -- for easy comparison of different streams.
 -- BDList is for creating baseline comparison functions.  Although the name
 -- is BDList, it will work for any stream type (e.g. bytestrings).
-data BD a b s el m = BDIter1 String (a -> b) (I.IterateeG s el m a) 
-  | BDIterN String Int (a -> b) (I.IterateeG s el m a)
-  | BDList String ((s el) -> b) (s el)
+data BD i a b s (m :: * -> *) = BDIter1 String (a -> b) (i s m a) 
+  | BDIterN String Int (a -> b) (i s m a)
+  | BDList String (s -> b) s
 
 id1 name i = BDIter1 name id i
 idN name i = BDIterN name 5 id i
@@ -67,17 +72,24 @@ takeRbench = makeGroup "TakeR benchmarks" takeRBenches
 mapbench = makeGroup "Map benchmarks" mapBenches
 miscbench = makeGroup "Other iteratee benchmarks" miscBenches
 
-listbenchbs =  makeGroupBS "stream2List" slistBenches
-streambenchbs = makeGroupBS "stream" streamBenches
-breakbenchbs = makeGroupBS "break" breakBenches
-headsbenchbs = makeGroupBS "heads" headsBenches
-dropbenchbs = makeGroupBS "drop" dropBenches
-lengthbenchbs = makeGroupBS "length" listBenches
-takebenchbs = makeGroupBS "take" takeBenches
-takeRbenchbs = makeGroupBS "takeR" takeRBenches
-mapbenchbs = makeGroupBS "map" mapBenches
-convbenchbs = makeGroupBS "convStream" convBenches
-miscbenchbs = makeGroupBS "other" miscBenches
+listbenchbs = bgroup "stream2List" [makeGroupBS "monadic" b, makeGroupBSPure "pure" b]
+  where b = slistBenches
+streambenchbs = bgroup "stream" [makeGroupBS "monadic" b, makeGroupBSPure "pure" b]
+  where b = streamBenches
+breakbenchbs = bgroup "break" [makeGroupBS "monadic" b, makeGroupBSPure "pure" b]
+  where b = breakBenches
+headsbenchbs = bgroup "heads" [makeGroupBS "monadic" headsBenches, makeGroupBSPure "pure" headsBenches]
+dropbenchbs = bgroup "drop" [makeGroupBS "monadic" b, makeGroupBSPure "pure" b]
+  where b = dropBenches
+lengthbenchbs = bgroup "length" [makeGroupBS "monadic" listBenches, makeGroupBSPure "pure" listBenches]
+takebenchbs = bgroup "take" [makeGroupBS "monadic" b, makeGroupBSPure "pure" b]
+  where b = takeBenches
+takeRbenchbs = bgroup "takeR" [makeGroupBS "monadic" b, makeGroupBSPure "pure" b]
+  where b = takeRBenches
+mapbenchbs = bgroup "map" [makeGroupBS "monadic" b, makeGroupBSPure "pure" b]
+  where b = mapBenches
+convbenchbs = bgroup "convStream" [makeGroupBS "monadic" convBenches, makeGroupBSPure "pure" convBenches]
+miscbenchbs = bgroup "other" [makeGroupBS "monadic" miscBenches, makeGroupBSPure "pure" miscBenches]
 
 allListBenches = bgroup "list" [listbench, streambench, breakbench, headsbench, dropbench, lengthbench, takebench, takeRbench, mapbench, convbench, miscbench]
 
@@ -103,10 +115,10 @@ break4 = idN "break never chunked" (I.break (<0)) -- not ever true
 break5 = idN "break late chunked" (I.break (>8000))
 breakBenches = [break1, break2, break3, break4, break5]
 
-heads1 = id1 "heads null" (I.heads [])
-heads2 = id1 "heads 1" (I.heads [1])
-heads3 = id1 "heads 100" (I.heads [1.100])
-heads4 = idN "heads 100 over chunks" (I.heads [1.100])
+heads1 = id1 "heads null" (I.heads $ LL.fromList [])
+heads2 = id1 "heads 1" (I.heads $ LL.fromList [1])
+heads3 = id1 "heads 100" (I.heads $ LL.fromList [1..100])
+heads4 = idN "heads 100 over chunks" (I.heads $ LL.fromList [1..100])
 headsBenches = [heads1, heads2, heads3, heads4]
 
 benchpeek = id1 "peek" I.peek

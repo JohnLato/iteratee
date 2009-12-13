@@ -31,8 +31,8 @@ instance DeepSeq (WrappedByteString a) where
 -- for easy comparison of different streams.
 -- BDList is for creating baseline comparison functions.  Although the name
 -- is BDList, it will work for any stream type (e.g. bytestrings).
-data BD i a b s (m :: * -> *) = BDIter1 String (a -> b) (i s m a) 
-  | BDIterN String Int (a -> b) (i s m a)
+data BD a b s (m :: * -> *) = BDIter1 String (a -> b) (Iteratee s m a) 
+  | BDIterN String Int (a -> b) (Iteratee s m a)
   | BDList String (s -> b) s
 
 id1 name i = BDIter1 name id i
@@ -46,7 +46,16 @@ makeBench (BDIterN n csize eval i) = bench n $
   proc eval runIdentity (enumPureNChunk [1..10000] csize) i
 makeBench (BDList n f l) = bench n $ B f l
 
-proc :: (StreamChunk s el, Functor m, Monad m)
+packedBS :: WrappedByteString Word8
+packedBS  = WrapBS (BS.pack [1..10000])
+
+makeBenchBS (BDIter1 n eval i) = bench n $
+  proc eval runIdentity (enumPure1Chunk packedBS) i
+makeBenchBS (BDIterN n csize eval i) = bench n $
+  proc eval runIdentity (enumPureNChunk packedBS csize) i
+makeBenchBS (BDList n f l) = error "makeBenchBS can't be called on BDList"
+
+proc :: (Functor m, Monad m)
   => (a -> b) --function to force evaluation of result
   -> (m a -> a)
   -> I.Enumerator s m a
@@ -59,37 +68,34 @@ defaultNProc = proc id runIdentity (enumPureNChunk [1..10000] 5)
 
 -- -------------------------------------------------------------
 -- benchmark groups
-makeGroup n bs = bgroup n $ map makeBench bs
+makeGroup n = bgroup n . map makeBench
 
-listbench = makeGroup "Stream2List benchmarks" slistBenches
-streambench = makeGroup "stream benchmarks" streamBenches
-breakbench = makeGroup "Break benchmarks" breakBenches
-headsbench = makeGroup "Heads benchmarks" headsBenches
-dropbench = makeGroup "Drop benchmarks" dropBenches
-lengthbench = makeGroup "Length benchmarks" listBenches
-takebench = makeGroup "Take benchmarks" takeBenches
-takeRbench = makeGroup "TakeR benchmarks" takeRBenches
-mapbench = makeGroup "Map benchmarks" mapBenches
-miscbench = makeGroup "Other iteratee benchmarks" miscBenches
+makeGroupBS n = bgroup n . map makeBenchBS
 
-listbenchbs = bgroup "stream2List" [makeGroupBS "monadic" b, makeGroupBSPure "pure" b]
-  where b = slistBenches
-streambenchbs = bgroup "stream" [makeGroupBS "monadic" b, makeGroupBSPure "pure" b]
-  where b = streamBenches
-breakbenchbs = bgroup "break" [makeGroupBS "monadic" b, makeGroupBSPure "pure" b]
-  where b = breakBenches
-headsbenchbs = bgroup "heads" [makeGroupBS "monadic" headsBenches, makeGroupBSPure "pure" headsBenches]
-dropbenchbs = bgroup "drop" [makeGroupBS "monadic" b, makeGroupBSPure "pure" b]
-  where b = dropBenches
-lengthbenchbs = bgroup "length" [makeGroupBS "monadic" listBenches, makeGroupBSPure "pure" listBenches]
-takebenchbs = bgroup "take" [makeGroupBS "monadic" b, makeGroupBSPure "pure" b]
-  where b = takeBenches
-takeRbenchbs = bgroup "takeR" [makeGroupBS "monadic" b, makeGroupBSPure "pure" b]
-  where b = takeRBenches
-mapbenchbs = bgroup "map" [makeGroupBS "monadic" b, makeGroupBSPure "pure" b]
-  where b = mapBenches
-convbenchbs = bgroup "convStream" [makeGroupBS "monadic" convBenches, makeGroupBSPure "pure" convBenches]
-miscbenchbs = bgroup "other" [makeGroupBS "monadic" miscBenches, makeGroupBSPure "pure" miscBenches]
+listbench = makeGroup "stream2List" (list1 : slistBenches :: [BD [Int] () [Int] Identity])
+streambench = makeGroup "stream" (streamBenches :: [BD [Int] () [Int] Identity])
+breakbench = makeGroup "break" $ break0 : break0' : breakBenches
+headsbench = makeGroup "heads" headsBenches
+dropbench = makeGroup "drop" $ drop0 : dropBenches
+lengthbench = makeGroup "length" listBenches
+takebench = makeGroup "take" $ take0 : takeBenches
+takeRbench = makeGroup "takeR" $ takeR0 : takeRBenches
+mapbench = makeGroup "map" $ map0 : mapBenches
+convbench = makeGroup "convStream" convBenches
+miscbench = makeGroup "other" miscBenches
+
+listbenchbs = makeGroupBS "stream2List" slistBenches
+streambenchbs = makeGroupBS "stream" streamBenches
+breakbenchbs = makeGroupBS "break" breakBenches
+headsbenchbs = makeGroupBS "heads" headsBenches
+dropbenchbs = makeGroupBS "drop" dropBenches
+lengthbenchbs = makeGroupBS "length" listBenches
+takebenchbs = makeGroupBS "take" takeBenches
+takeRbenchbs = makeGroupBS "takeR" takeRBenches
+mapbenchbs = makeGroupBS "map" mapBenches
+convbenchbs = makeGroupBS "convStream" convBenches
+miscbenchbs = makeGroupBS "other" miscBenches
+
 
 allListBenches = bgroup "list" [listbench, streambench, breakbench, headsbench, dropbench, lengthbench, takebench, takeRbench, mapbench, convbench, miscbench]
 

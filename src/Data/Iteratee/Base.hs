@@ -1,23 +1,30 @@
-{-# LANGUAGE TypeFamilies, FlexibleContexts, FlexibleInstances #-}
+{-# LANGUAGE TypeFamilies, FlexibleContexts, FlexibleInstances, Rank2Types,
+    DeriveDataTypeable #-}
 
 -- |Monadic and General Iteratees:
 -- incremental input parsers, processors and transformers
 
 module Data.Iteratee.Base (
   -- * Types
-  ErrMsg (..)
+  CtrlMsg (..)
   ,StreamG (..)
   ,StreamStatus (..)
   -- ** Iteratees
-  ,IterV (..)
   ,Iteratee (..)
+  ,run
   -- * Functions
+  -- ** Iteratee Combinator
+  ,idone
+  ,icont
+  ,idoneM
+  ,icontM
+  ,liftI
   -- ** Stream Functions
   ,strMap
   ,setEOF
-  -- ** Iteratee and IterateePure functions
-  ,run
-  ,(>>==)
+  -- ** Error handling functions/utilities
+  ,excEof
+  ,excDivergent
   -- * Classes
   ,Nullable (..)
   ,module Data.Iteratee.Base.LooseMap
@@ -30,9 +37,10 @@ import Data.Iteratee.IO.Base
 import Data.Monoid
 import qualified Data.ByteString as B
 
-import Control.Monad
 import Control.Monad.Trans
 import Control.Applicative hiding (empty)
+import Control.Exception
+import Data.Data
 
 
 -- |A stream is a (continuing) sequence of elements bundled in Chunks.
@@ -45,17 +53,9 @@ import Control.Applicative hiding (empty)
 -- to arrive.
 
 data StreamG c =
-  EOF (Maybe ErrMsg)
+  EOF (Maybe SomeException)
   | Chunk c
-
-instance Eq c => Eq (StreamG c) where
-  EOF mErr1 == EOF mErr2 = mErr1 == mErr2
-  Chunk xs == Chunk ys   = xs == ys
-  _ == _ = False
-
-instance Show c => Show (StreamG c) where
-  show (EOF mErr) = "StreamG: EOF " ++ show mErr
-  show (Chunk xs) = "StreamG: Chunk " ++ show xs
+  deriving (Show, Typeable)
 
 instance Monoid c => Monoid (StreamG c) where
   mempty = Chunk mempty
@@ -72,34 +72,26 @@ strMap _ (EOF mErr) = EOF mErr
 data StreamStatus =
   DataRemaining
   | EofNoError
-  | EofError ErrMsg
-  deriving (Show, Eq)
+  | EofError SomeException
+  deriving (Show, Typeable)
 
-data ErrMsg = Err String
-              | Seek FileOffset
-              deriving (Show, Eq)
-
-instance Monoid ErrMsg where
-  mempty = Err ""
-  mappend (Err s1) (Err s2)  = Err (s1 ++ s2)
-  mappend e@(Err _) _        = e
-  mappend _        e@(Err _) = e
-  mappend (Seek _) (Seek b)  = Seek b
+data CtrlMsg = Seek FileOffset
+               | Err SomeException
+               deriving (Show, Typeable)
 
 
 -- |Produce the EOF error message.  If the stream was terminated because
 -- of an error, keep the original error message.
-setEOF :: StreamG c -> ErrMsg
+setEOF :: StreamG c -> SomeException
 setEOF (EOF (Just e)) = e
-setEOF _              = Err "EOF"
+setEOF _              = excEof
 
-data IterV s m a =
-  Done a (StreamG s)
-  | Cont (StreamG s -> Iteratee s m a) (Maybe ErrMsg)
+excEof :: SomeException
+excEof = toException $ ErrorCall "EOF"
 
-instance (Show a) => Show (IterV s m a) where
-  show (Done a _str)  = "IterV :: Done " ++ show a
-  show (Cont _k mErr) = "IterV :: Cont, mErr :: " ++ show mErr
+excDivergent :: SomeException
+excDivergent = toException $ ErrorCall "divergent iteratee"
+
 
 -- ----------------------------------------------
 -- Nullable container class
@@ -118,97 +110,68 @@ instance Nullable B.ByteString where
 
 -- ----------------------------------------------
 -- | Monadic iteratee
-newtype Iteratee s m a = Iteratee{ runIter :: m (IterV s m a)}
+newtype Iteratee s m a = Iteratee{ runIter :: forall r.
+          (a -> StreamG s -> m r) ->
+          ((StreamG s -> Iteratee s m a) -> Maybe CtrlMsg -> m r) ->
+          m r}
 
 -- ----------------------------------------------
 
-infixl 1 >>==
-(>>==)
-  :: Monad m =>
-     Iteratee s m a
-     -> (IterV s m a -> Iteratee s' m b)
-     -> Iteratee s' m b
-m >>== f = Iteratee (runIter m >>= runIter . f)
-
-{-# INLINE (>>==) #-}
-
-
 idone :: Monad m => a -> StreamG s -> Iteratee s m a
-idone a s = Iteratee . return $ Done a s
+idone a s = Iteratee $ \onDone _ -> onDone a s
 
-icont
+icont :: (StreamG s -> Iteratee s m a) -> Maybe CtrlMsg -> Iteratee s m a
+icont k e = Iteratee $ \_ onCont -> onCont k e
+
+liftI :: Monad m => (StreamG s -> Iteratee s m a) -> Iteratee s m a
+liftI k = Iteratee $ \_ onCont -> onCont k Nothing
+
+-- Monadic versions, frequently used by enumerators
+idoneM :: Monad m => a -> StreamG s -> m (Iteratee s m a)
+idoneM x str = return $ Iteratee $ \onDone _ -> onDone x str
+
+icontM
   :: Monad m =>
      (StreamG s -> Iteratee s m a)
-     -> Maybe ErrMsg
-     -> Iteratee s m a
-icont k m = Iteratee . return $ Cont k m
+     -> Maybe CtrlMsg
+     -> m (Iteratee s m a)
+icontM k e = return $ Iteratee $ \_ onCont -> onCont k e
 
 instance (Functor m, Monad m) => Functor (Iteratee s m) where
-  fmap f m = m >>== docase
-    where
-      docase (Done a str)  = idone (f a) str
-      docase (Cont k mErr) = icont (fmap f . k) mErr
+  fmap f m = Iteratee $ \onDone onCont ->
+    let od   = onDone . f
+        oc k = onCont (fmap f . k)
+    in runIter m od oc
 
 instance (Functor m, Monad m, Nullable s) => Applicative (Iteratee s m) where
     pure x  = idone x (Chunk empty)
     m <*> a = m >>= flip fmap a
 
 instance (Monad m, Nullable s) => Monad (Iteratee s m) where
-  return x = idone x (Chunk empty)
-  (>>=)    = iterBind
-
-iterBind
-  :: (Monad m, Nullable s) =>
-     Iteratee s m a
-     -> (a -> Iteratee s m b)
-     -> Iteratee s m b
-iterBind m f = m >>== docase
-  where
-    -- the null case isn't required, but it is more efficient
-    docase (Done a (Chunk s)) | null s = f a
-    docase (Done a str)  = f a >>== check
-      where
-        check (Done x _str)  = idone x str
-        check (Cont k _mErr) = k str
-    docase (Cont k mErr) = icont ((`iterBind` f) . k) mErr
-
-{-# INLINE iterBind #-}
+  {-# INLINE return #-}
+  return x = Iteratee $ \onDone _ -> onDone x (Chunk empty)
+  {-# INLINE (>>=) #-}
+  m >>= f = Iteratee $ \onDone onCont -> 
+     let m_done a (Chunk s)
+           | null s      = runIter (f a) onDone onCont
+         m_done a stream = runIter (f a) (\x _ -> onDone x stream) f_cont
+           where f_cont k Nothing = runIter (k stream) onDone onCont
+                 f_cont k e       = onCont k e
+     in runIter m m_done (\k -> onCont ((>>= f) . k))
 
 instance Monoid s => MonadTrans (Iteratee s) where
-  lift = Iteratee . liftM (flip Done mempty)
+  lift m = Iteratee $ \onDone _ -> m >>= \x -> onDone x mempty
 
 instance (MonadIO m, Nullable s, Monoid s) => MonadIO (Iteratee s m) where
   liftIO = lift . liftIO
 
--- ----------------------------------------------
--- non-typeclass Iteratee and IterateePure functions
-
--- | Run an 'Iteratee' and get the result.  An 'EOF' is sent to the
--- iteratee as it is run.
--- If the iteratee does not complete, an error is raised.
-run :: (Monad m) => Iteratee s m a -> m a
-run iter = runIter iter >>= check1
-  where
-    check1 (Done x _)       = return x
-    check1 (Cont k Nothing) = runIter (k $ EOF Nothing) >>= check2
-    check1 (Cont _ e)       = error $ "control message: " ++ show e
-    check2 (Done x _)       = return x
-    check2 (Cont _ Nothing) = error
-      "control message: iteratee did not terminate on EOF"
-    check2 (Cont _ e)       = error $ "control message: " ++ show e
-
-
--- the join functions are similar to monadic join, with one difference.
--- the inner stream may be of a different type than the outer stream.
--- In this case, there are no more elements of the inner stream to feed to
--- the inner iteratee after the join operation, so the inner iteratee
--- is terminated with EOF.
-joinIM
-  :: (Monad m) =>
-     Iteratee s m (Iteratee s' m a)
-     -> Iteratee s m a
-joinIM = Iteratee . (docase <=< runIter)
-  where
-    docase (Done ma str) = liftM (flip Done str) $ run ma
-    docase (Cont k mErr) = return $ Cont (joinIM . k) mErr
+-- |Send EOF to the Iteratee and disregard the unconsumed part of the stream.
+-- It is an error to call run on an Iteratee that does not terminate on EOF.
+run :: Monad m => Iteratee s m a -> m a
+run iter = runIter iter onDone onCont
+ where
+   onDone  x _       = return x
+   onCont  k Nothing = runIter (k (EOF Nothing)) onDone onCont'
+   onCont  _ e       = error $ "control message: " ++ show e
+   onCont' _ e       = error $ "control message: " ++ show e
 

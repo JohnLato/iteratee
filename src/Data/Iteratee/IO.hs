@@ -5,18 +5,18 @@
 module Data.Iteratee.IO(
   -- * File enumerators
   -- ** Handle-based enumerators
-  enumHandle,
-  enumHandleRandom,
+  -- enumHandle,
+  -- enumHandleRandom,
 #if defined(USE_POSIX)
   -- ** FileDescriptor based enumerators
   enumFd,
-  enumFdRandom,
+  -- enumFdRandom,
 #endif
   -- * Iteratee drivers
   --   These are FileDescriptor-based on POSIX systems, otherwise they are
   --   Handle-based.
   fileDriver,
-  fileDriverRandom,
+  -- fileDriverRandom,
 )
 
 where
@@ -24,7 +24,7 @@ where
 import Data.Iteratee.Base.ReadableChunk
 import Data.Iteratee.Iteratee
 import Data.Iteratee.Binary()
-import Data.Iteratee.IO.Handle
+--import Data.Iteratee.IO.Handle
 
 #if defined(USE_POSIX)
 import Data.Iteratee.IO.Fd
@@ -44,6 +44,7 @@ fileDriver
      -> m a
 fileDriver = fileDriverFd
 
+{-
 -- |Process a file using the given Iteratee.  This function wraps
 -- enumFdRandom as a convenience.
 fileDriverRandom
@@ -52,6 +53,7 @@ fileDriverRandom
      -> FilePath
      -> m a
 fileDriverRandom = fileDriverRandomFd
+-}
 
 #else
 

@@ -8,7 +8,7 @@ module Data.Iteratee (
   module Data.Iteratee.Base,
   module Data.Iteratee.Binary,
   fileDriver,
-  fileDriverRandom
+  -- fileDriverRandom
 )
 
 where

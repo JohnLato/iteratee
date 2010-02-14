@@ -20,9 +20,9 @@ module Data.Iteratee.Char (
   ,Iteratee
   ,Line
   -- * Word and Line processors
-  ,line
+  -- ,line
   ,printLines
-  ,readLines
+  -- ,readLines
   ,enumLines
   ,enumLinesBS
   ,enumWords
@@ -46,16 +46,6 @@ type Stream = StreamG String
 
 -- Useful combinators for implementing iteratees and enumerators
 
-idone :: (Monad m) => a -> StreamG s -> Iteratee s m a
-idone a = Iteratee . return . Done a
-
-icont
-  :: (Monad m) =>
-     (StreamG s -> Iteratee s m a)
-     -> Maybe ErrMsg -> Iteratee s m a
-icont k = Iteratee . return . Cont k
-
-
 type Line = String      -- The line of text, terminators are not included
 
 -- |Determine the behavior of line/word operators on EOF.
@@ -69,6 +59,7 @@ data EofBehavior = ErrOnEof | EolOnEof
 -- on the setting of EofBehavior.
 -- The returned line is the string read so far.
 
+{-
 -- The code is the same as that of pure Iteratee, only the signature
 -- has changed.
 -- Compare the code below with GHCBufferIO.line_lazy
@@ -89,6 +80,7 @@ line EolOnEof = Iter.break (\c -> c == '\r' || c == '\n') >>= \l ->
     check l EofNoError    = return . Right $ l
     check l (EofError _)  = return . Left $ l
     terminators = heads "\r\n" >>= \l -> if l == 0 then heads "\n" else return l
+-}
 
 -- Line iteratees: processors of a stream whose elements are made of Lines
 
@@ -116,6 +108,7 @@ printLines = lines'
 -- EOF is treated as either a stream error or an implicit EOL depending
 -- upon the EofBehavior
 
+{-
 readLines
   :: (Monad m) =>
      EofBehavior
@@ -126,6 +119,7 @@ readLines eb = lines' []
     check acc (Left _)   = return . Left . reverse $ acc
     check acc (Right "") = return . Right . reverse $ acc
     check acc (Right l)  = lines' (l:acc)
+-}
 
 -- |Convert the stream of characters to the stream of lines, and
 -- apply the given iteratee to enumerate the latter.
@@ -145,17 +139,17 @@ enumLines = convStream getter
     lChar = (== '\n') . last . LL.toString
     step (Chunk xs)
       | LL.null xs = getter
-      | lChar xs   = idone (Just $ LL.lines xs) mempty
+      | lChar xs   = idone (LL.lines xs) mempty
       | True       = icont (step' xs) Nothing
-    step str       = idone Nothing str
+    step str       = getter
     step' xs (Chunk ys)
       | LL.null ys = icont (step' xs) Nothing
-      | lChar ys   = idone (Just . LL.lines . mappend xs $ ys) mempty
+      | lChar ys   = idone (LL.lines . mappend xs $ ys) mempty
       | True       = let w' = LL.lines $ mappend xs ys
                          ws = init w'
                          ck = last w'
-                     in idone (Just ws) (Chunk ck)
-    step' xs str   = idone (Just $ LL.lines xs) str
+                     in idone ws (Chunk ck)
+    step' xs str   = idone (LL.lines xs) str
 
 -- |Convert the stream of characters to the stream of words, and
 -- apply the given iteratee to enumerate the latter.
@@ -174,17 +168,17 @@ enumWords = convStream getter
     lChar = isSpace . last . LL.toString
     step (Chunk xs)
       | LL.null xs = getter
-      | lChar xs   = idone (Just $ LL.words xs) mempty
+      | lChar xs   = idone (LL.words xs) mempty
       | True       = icont (step' xs) Nothing
-    step str       = idone Nothing str
+    step str       = getter
     step' xs (Chunk ys)
       | LL.null ys = icont (step' xs) Nothing
-      | lChar ys   = idone (Just . LL.words . mappend xs $ ys) mempty
+      | lChar ys   = idone (LL.words . mappend xs $ ys) mempty
       | True       = let w' = LL.words $ mappend xs ys
                          ws = init w'
                          ck = last w'
-                     in idone (Just ws) (Chunk ck)
-    step' xs str   = idone (Just $ LL.words xs) str
+                     in idone ws (Chunk ck)
+    step' xs str   = idone (LL.words xs) str
 
 {-# INLINE enumWords #-}
 
@@ -200,17 +194,17 @@ enumWordsBS iter = convStream getter iter
     lChar = isSpace . BC.last
     step (Chunk xs)
       | BC.null xs = getter
-      | lChar xs   = idone (Just $ BC.words xs) (Chunk BC.empty)
+      | lChar xs   = idone (BC.words xs) (Chunk BC.empty)
       | True       = icont (step' xs) Nothing
-    step str       = idone Nothing str
+    step str       = getter
     step' xs (Chunk ys)
       | BC.null ys = icont (step' xs) Nothing
-      | lChar ys   = idone (Just . BC.words . BC.append xs $ ys) mempty
+      | lChar ys   = idone (BC.words . BC.append xs $ ys) mempty
       | True       = let w' = BC.words . BC.append xs $ ys
                          ws = init w'
                          ck = last w'
-                     in idone (Just ws) (Chunk ck)
-    step' xs str   = idone (Just $ BC.words xs) str
+                     in idone ws (Chunk ck)
+    step' xs str   = idone (BC.words xs) str
 
 {-# INLINE enumWordsBS #-}
 
@@ -224,15 +218,15 @@ enumLinesBS = convStream getter
     lChar = (== '\n') . BC.last
     step (Chunk xs)
       | BC.null xs = getter
-      | lChar xs   = idone (Just $ BC.lines xs) (Chunk BC.empty)
+      | lChar xs   = idone (BC.lines xs) (Chunk BC.empty)
       | True       = icont (step' xs) Nothing
-    step str       = idone Nothing str
+    step str       = icont step Nothing
     step' xs (Chunk ys)
       | BC.null ys = icont (step' xs) Nothing
-      | lChar ys   = idone (Just . BC.lines . BC.append xs $ ys) mempty
+      | lChar ys   = idone (BC.lines . BC.append xs $ ys) mempty
       | True       = let w' = BC.lines $ BC.append xs ys
                          ws = init w'
                          ck = last w'
-                     in idone (Just ws) (Chunk ck)
-    step' xs str   = idone (Just $ BC.lines xs) str
+                     in idone ws (Chunk ck)
+    step' xs str   = idone (BC.lines xs) str
 

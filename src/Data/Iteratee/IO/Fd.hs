@@ -9,10 +9,10 @@ module Data.Iteratee.IO.Fd(
   -- * File enumerators
   -- ** FileDescriptor based enumerators for monadic iteratees
   enumFd
-  ,enumFdRandom
+  -- ,enumFdRandom
   -- * Iteratee drivers
   ,fileDriverFd
-  ,fileDriverRandomFd
+  -- ,fileDriverRandomFd
 #endif
 )
 
@@ -24,12 +24,14 @@ import Data.Iteratee.Iteratee
 import Data.Iteratee.Binary()
 import Data.Iteratee.IO.Base
 
+import Control.Exception
 import Control.Monad
 import Control.Monad.Trans
 
 import Foreign.Ptr
 import Foreign.ForeignPtr
 import Foreign.Storable
+import Foreign.Marshal.Alloc
 
 import System.IO (SeekMode(..))
 
@@ -46,28 +48,26 @@ enumFd
   :: forall s el m a.(Nullable s, ReadableChunk s el, MonadIO m) =>
      Fd
      -> Enumerator s m a
-enumFd fd iter' = Iteratee $
-  liftIO (mallocForeignPtrBytes (fromIntegral buffer_size)) >>= loop iter'
+enumFd fd iter' = do
+  p <- liftIO $ mallocBytes (fromIntegral buffer_size)
+  r <- loop p iter'
+  liftIO $ free p
+  return r
   where
     buffer_size = fromIntegral $ 4096 - mod 4096 (sizeOf (undefined :: el))
-    loop iter fp = do
-      s <- liftIO . withForeignPtr fp $ \p -> do
+    loop p iter = runIter iter idoneM (on_cont p)
+    on_cont p k Nothing = do_read k p
+    on_cont p k e = return $ icont k e
+    do_read k p = do
         liftIO $ GHC.Conc.threadWaitRead fd
-        n <- myfdRead fd (castPtr p) buffer_size
+        n <- liftIO $ myfdRead fd (castPtr p) buffer_size
         case n of
-          Left _errno -> return $ Left "IO error"
-          Right 0     -> return $ Right Nothing
-          Right n'    -> liftM (Right . Just) $ readFromPtr p (fromIntegral n')
-      checkres fp iter s
-    checkres fp iter =
-      either (runIter . flip enumErr iter)
-             (maybe (runIter iter)
-                    (\c -> runIter iter >>= check fp (Chunk c)))
-    check _p s (Done x _)          = return $ Done x s
-    check p  s (Cont i Nothing)    = loop (i s) p
-    check _p _ c@(Cont _ (Just _)) = return c
+          Left _errno -> return $ k (EOF (Just (toException (ErrorCall "IO error"))))
+          Right 0     -> return $ liftI k
+          Right n'    -> liftIO (readFromPtr p (fromIntegral n')) >>= loop p . k . Chunk
 
 
+{-
 -- |The enumerator of a POSIX File Descriptor: a variation of enumFd that
 -- supports RandomIO (seek requests)
 enumFdRandom
@@ -82,12 +82,6 @@ enumFdRandom fd iter' = Iteratee $
   buffer_size = fromIntegral $ 4096 - mod 4096 (sizeOf (undefined :: el))
   -- the first argument of loop is (off,len), describing which part
   -- of the file is currently in the buffer 'fp'
-{-
-  loop :: (FileOffset,Int) ->
-          Iteratee s m a ->
-          ForeignPtr el ->
-          m (Iteratee s m a)
--}
     -- Thanks to John Lato for the strictness annotation
     -- Otherwise, the `off + fromIntegral len' below accumulates thunks
   loop (off,len) _iter _fp | off `seq` len `seq` False = undefined
@@ -122,6 +116,7 @@ enumFdRandom fd iter' = Iteratee $
   check o fp  s (Cont i Nothing)           = loop o (i s) fp
   check o fp  s (Cont i (Just (Seek off))) = seekTo o off (i s) fp
   check _ _fp _ c@(Cont _ (Just _))        = return c
+-}
 
 -- |Process a file using the given Iteratee.  This function wraps
 -- enumFd as a convenience.
@@ -132,11 +127,12 @@ fileDriverFd
      -> m a
 fileDriverFd iter filepath = do
   fd <- liftIO $ openFd filepath ReadOnly Nothing defaultFileFlags
-  result <- run $ enumFd fd iter
+  result <- run =<< enumFd fd iter
   liftIO $ closeFd fd
   return result
 
 
+{-
 -- |Process a file using the given Iteratee.  This function wraps
 -- enumFdRandom as a convenience.
 fileDriverRandomFd
@@ -149,5 +145,6 @@ fileDriverRandomFd iter filepath = do
   result <- run $ enumFdRandom fd iter
   liftIO $ closeFd fd
   return result
+-}
 
 #endif

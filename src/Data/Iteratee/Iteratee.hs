@@ -11,7 +11,6 @@ module Data.Iteratee.Iteratee (
   checkErr,
   -- ** Basic Iteratees
   identity,
-  getStatus,
   skipToEof,
   -- ** Nested iteratee combinators
   convStream,
@@ -24,7 +23,8 @@ module Data.Iteratee.Iteratee (
   enumErr,
   enumPure1Chunk,
   -- ** Enumerator Combinators
-  (>.),
+  (>>>),
+  eneeCheckIfDone,
   -- * Misc.
   seek,
   FileOffset,
@@ -39,46 +39,48 @@ import qualified Prelude as P
 import Data.Iteratee.IO.Base
 import Data.Iteratee.Base
 import Control.Monad
+import Control.Exception
 import Data.Monoid
-
--- ------------------------------------------------------------------------
--- useful functions
-idone :: (Monad m) => a -> StreamG s -> Iteratee s m a
-idone a = Iteratee . return . Done a
-
-icont :: (Monad m) => (StreamG s -> Iteratee s m a) -> Maybe ErrMsg -> Iteratee s m a
-icont k = Iteratee . return . Cont k
-
 
 -- ------------------------------------------------------------------------
 -- Primitive iteratees
 
 -- |Report and propagate an unrecoverable error.
 --  Disregard the input first and then propagate the error.
-throwErr :: (Monad m) => ErrMsg -> Iteratee s m a
-throwErr e = icont (const $ throwErr e) (Just e)
+throwErr :: (Monad m) => SomeException -> Iteratee s m a
+throwErr e = icont (const (throwErr e)) (Just $ Err e)
 
 -- |Propagate a recoverable error.
--- Disregard input while in the error state.
-throwRecoverableErr :: (Monad m, Nullable s) => ErrMsg -> Iteratee s m ()
-throwRecoverableErr = icont (const identity) . Just
+throwRecoverableErr
+  :: (Monad m, Nullable s) =>
+     SomeException
+     -> (StreamG s -> Iteratee s m a)
+     -> Iteratee s m a
+throwRecoverableErr e i = icont i (Just $ Err e)
+
+-- |Generate a control message.
+controlMsg
+  :: (Monad m) =>
+     CtrlMsg
+     -> (StreamG s -> Iteratee s m a)
+     -> Iteratee s m a
+controlMsg c i = icont i (Just c)
 
 
 -- |Check if an iteratee produces an error.
--- Returns 'Right a' if it completes without errors, otherwise 'Left ErrMsg'
+-- Returns 'Right a' if it completes without errors, otherwise 'Left CtrlMsg'
 -- checkErr is useful for iteratees that may not terminate, such as 'head'
 -- with an empty stream.  In particular, it enables them to be used with
 -- 'convStream'.
 checkErr
-  :: (Monad m, Monoid s) =>
+  :: (Monad m, Nullable s) =>
      Iteratee s m a
-     -> Iteratee s m (Either ErrMsg a)
-checkErr iter = iter >>== check
-  where
-  check (Done a str)        = idone (Right a) str
-  check (Cont _ (Just err)) = idone (Left err) mempty
-  check (Cont k Nothing)    = icont (checkErr . k) Nothing
-
+     -> Iteratee s m (Either CtrlMsg a)
+checkErr iter = Iteratee $ \onDone onCont ->
+  let od a str     = onDone (Right a) str
+      oc k Nothing = onCont (checkErr . k) Nothing
+      oc _ (Just e) = onDone (Left e) (Chunk empty)
+  in runIter iter od oc
 
 -- ------------------------------------------------------------------------
 -- Parser combinators
@@ -88,12 +90,11 @@ identity :: (Monad m, Nullable s) => Iteratee s m ()
 identity = return ()
 
 -- |Get the stream status of an iteratee.
-getStatus :: (Monad m) => Iteratee s m StreamStatus
-getStatus = icont check Nothing
+isStreamFinished :: Monad m => Iteratee s m (Maybe SomeException)
+isStreamFinished = liftI check
   where
-    check s@(EOF Nothing)  = idone EofNoError s
-    check s@(EOF (Just e)) = idone (EofError e) s
-    check s                = idone DataRemaining s
+    check s@(EOF e) = idone (Just $ maybe excEof id e) s
+    check s         = idone Nothing s
 
 -- |Skip the rest of the stream
 skipToEof :: (Monad m) => Iteratee s m ()
@@ -116,39 +117,50 @@ type Enumeratee sFrom sTo (m :: * -> *) a =
   Iteratee sTo m a
   -> Iteratee sFrom m (Iteratee sTo m a)
 
+-- The following pattern appears often in Enumeratee code
+{-# INLINE eneeCheckIfDone #-}
+
+eneeCheckIfDone
+ :: (Monad m, Monoid elo) =>
+    ((StreamG eli -> Iteratee eli m a) -> Iteratee elo m (Iteratee eli m a))
+    -> Enumeratee elo eli m a
+eneeCheckIfDone f inner = Iteratee $ \od oc -> 
+  let on_done x s = od (idone x s) mempty
+      on_cont k Nothing  = runIter (f k) od oc
+      on_cont _ (Just (Err e)) = runIter (throwErr e) od oc
+  in runIter inner on_done on_cont
+
+
 -- |Convert one stream into another, not necessarily in `lockstep'
 -- The transformer mapStream maps one element of the outer stream
 -- to one element of the nested stream.  The transformer below is more
 -- general: it may take several elements of the outer stream to produce
 -- one element of the inner stream, or the other way around.
 -- The transformation from one stream to the other is specified as
--- Iteratee s el (Maybe s').  The Maybe type is in case of
--- errors, or end of stream.
+-- Iteratee s el s'.
 convStream
   :: (Monad m, Nullable s, Monoid s, Nullable s') =>
-     Iteratee s m (Maybe s')
+     Iteratee s m s'
      -> Enumeratee s s' m a
-convStream fi iter = fi >>= check
+convStream fi = eneeCheckIfDone check
   where
-    check (Just xs) = enumPure1Chunk xs iter >>== docase
-    check (Nothing) = return iter
-    docase (Done a _)          = idone (return a) mempty
-    docase (Cont k Nothing)    = icont next Nothing
-      where
-        next = flip enumStream (convStream fi $ icont k Nothing)
-    docase (Cont _ j@(Just e)) = icont (const $ throwErr e) j
-
-{-# INLINE convStream #-}
+    check k = isStreamFinished >>= maybe (step k) (idone (liftI k) . EOF . Just)
+    step  k = fi >>= \v -> convStream fi $ k (Chunk v)
 
 joinI
   :: (Monad m, Nullable s) =>
      Iteratee s m (Iteratee s' m a)
      -> Iteratee s m a
-joinI m = m >>= (\i -> enumEof i >>== check)
-  where
-    check (Done a _)        = return a
-    check (Cont _ Nothing)  = throwErr $ Err "joinI: divergent iteratee"
-    check (Cont _ (Just e)) = throwErr e
+joinI outer = outer >>=
+  \inner -> Iteratee $ \od oc ->
+  let on_done  x _        = od x (Chunk empty)
+      on_cont  k Nothing  = runIter (k (EOF Nothing)) on_done on_cont'
+      on_cont  _ (Just (Err e)) = runIter (throwErr e) od oc
+      on_cont' _ e        = runIter (throwErr (maybe excDivergent fromErr e)) od oc
+  in runIter inner on_done on_cont
+
+fromErr :: CtrlMsg -> SomeException
+fromErr (Err e) = e
 
 -- ------------------------------------------------------------------------
 -- Enumerators
@@ -158,7 +170,7 @@ joinI m = m >>= (\i -> enumEof i >>== check)
 -- or when the iteratee moves to the done state, whichever comes first.
 -- When to stop is of course up to the enumerator...
 
-type Enumerator s (m :: * -> *) a = Iteratee s m a -> Iteratee s m a
+type Enumerator s m a = Iteratee s m a -> m (Iteratee s m a)
 
 -- We have two choices of composition: compose iteratees or compose
 -- enumerators. The latter is useful when one iteratee
@@ -168,44 +180,43 @@ type Enumerator s (m :: * -> *) a = Iteratee s m a -> Iteratee s m a
 -- stream. The result is the iteratee in the Done state.  It is an error
 -- if the iteratee does not terminate on EOF.
 enumEof :: (Monad m) => Enumerator s m a
-enumEof iter = iter >>== check False
+enumEof iter = runIter iter onDone onCont
   where
-    check _ (Done x _)           = idone x (EOF Nothing)
-    check _ (Cont k e@(Just _))  = icont k e
-    check False (Cont k Nothing) = k (EOF Nothing) >>== check True
-    check True  _ = throwErr . Err $ "Divergent Iteratee"
+    onDone  x str     = return $ idone x (EOF Nothing)
+    onCont  k Nothing = runIter (k (EOF Nothing)) onDone onCont'
+    onCont  k e       = return $ icont k e
+    onCont' k Nothing = return $ throwErr excDivergent
+    onCont' k e       = return $ icont k e
 
--- |Another primitive enumerator: report an error
-enumErr
-  :: (Monad m, Nullable s) =>
-     String
-     -> Enumerator s m a
-enumErr e iter = iter >>== check False
+-- |Another primitive enumerator: tell the Iteratee the stream terminated
+-- with an error.
+enumErr :: (Monad m, Nullable s) => SomeException -> Enumerator s m a
+enumErr e iter = runIter iter onDone onCont
   where
-    check _ (Done x _)           = idone x (EOF . Just . Err $ e)
-    check _ (Cont k j@(Just _))  = icont k j
-    check False (Cont k Nothing) = k (EOF . Just . Err $ e) >>== check True
-    check True _                 = throwErr . Err $ "Divergent Iteratee"
+    onDone  x _       = return $ idone x (EOF $ Just e)
+    onCont  k Nothing = runIter (k (EOF (Just e))) onDone onCont'
+    onCont  k e       = return $ icont k e
+    onCont' k Nothing = return $ throwErr excDivergent
+    onCont' k e       = return $ icont k e
 
 
 -- |The composition of two enumerators: essentially the functional composition
 -- It is convenient to flip the order of the arguments of the composition
 -- though: in e1 >. e2, e1 is executed first
 
-(>.)
+(>>>)
   :: (Monad m) =>
      Enumerator s m a -> Enumerator s m a -> Enumerator s m a
-(>.) = flip (.)
+e1 >>> e2 =  \i -> e1 i >>= e2
 
 -- |The pure 1-chunk enumerator
 -- It passes a given list of elements to the iteratee in one chunk
 -- This enumerator does no IO and is useful for testing of base parsing
 enumPure1Chunk :: (Monad m) => s -> Enumerator s m a
-enumPure1Chunk str iter = iter >>== check
+enumPure1Chunk str iter = runIter iter idoneM onCont
   where
-    check (Cont k Nothing) = k (Chunk str)
-    check (Cont k e)       = icont k e
-    check (Done a _)       = idone a (Chunk str)
+    onCont k Nothing = return $ k $ Chunk str
+    onCont k e       = return $ icont k e
 
 enumStream :: (Monad m) => StreamG s -> Enumerator s m a
 enumStream (EOF _)    = enumEof

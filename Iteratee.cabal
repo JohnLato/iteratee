@@ -70,7 +70,7 @@ library
     Data.Iteratee.Binary
     Data.Iteratee.Char
     Data.Iteratee.IO
-    Data.Iteratee.IO.Handle
+    --Data.Iteratee.IO.Handle
     Data.Iteratee.Iteratee
     Data.Iteratee.ListLike
     Data.Iteratee.Instances.WrappedByteString

@@ -10,7 +10,6 @@ module Data.Iteratee.Base.ReadableChunk (
 where
 
 import Prelude hiding (head, tail, dropWhile, length, splitAt )
-import qualified Prelude as P
 
 import qualified Data.ListLike as LL
 import qualified Data.ByteString as B
@@ -19,7 +18,6 @@ import Foreign.C
 import Foreign.Ptr
 import Foreign.Storable
 import Foreign.Marshal.Array
-import System.IO
 
 -- |Class of streams which can be filled from a 'Ptr'.  Typically these
 -- are streams which can be read from a file.

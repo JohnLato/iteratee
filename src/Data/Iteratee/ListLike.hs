@@ -19,7 +19,7 @@ module Data.Iteratee.ListLike (
   length,
   -- ** Nested iteratee combinators
   take,
-  takeR,
+  --takeR,
   mapStream,
   filter,
   -- ** Folds
@@ -33,31 +33,21 @@ module Data.Iteratee.ListLike (
   -- ** Basic enumerators
   enumPureNChunk,
   -- ** Enumerator Combinators
-  enumPair,
+  -- enumPair,
   -- * Classes
   module Data.Iteratee.Iteratee
 )
 where
 
 import Prelude hiding (null, head, drop, dropWhile, take, break, foldl, foldl1, length, filter, sum, product)
-import qualified Prelude as P
+--import qualified Prelude as P
 
 import qualified Data.ListLike as LL
 import qualified Data.ListLike.FoldableLL as FLL
 import Data.Iteratee.Iteratee
 import Control.Monad
-import Control.Parallel
 import Data.Monoid
 
-idone :: (Monad m) => a -> StreamG s -> Iteratee s m a
-idone a = Iteratee . return . Done a
-
-icont
-  :: (Monad m) =>
-     (StreamG s -> Iteratee s m a)
-     -> Maybe ErrMsg
-     -> Iteratee s m a
-icont k = Iteratee . return . Cont k
 
 -- Useful combinators for implementing iteratees and enumerators
 
@@ -102,7 +92,7 @@ break cpred = icont (step mempty) Nothing
   where
     step bfr (Chunk str)
       | LL.null str       =  icont (step bfr) Nothing
-    step bfr (Chunk str)  =  case LL.break cpred str of
+      | True              =  case LL.break cpred str of
         (str', tail')
           | LL.null tail' -> icont (step (bfr `mappend` str)) Nothing
           | otherwise     -> idone (bfr `mappend` str') (Chunk tail')
@@ -117,7 +107,7 @@ head = icont step Nothing
   step (Chunk vec)
     | LL.null vec  = icont step Nothing
     | otherwise    = idone (LL.head vec) (Chunk $ LL.tail vec)
-  step stream      = icont step (Just (setEOF stream))
+  step stream      = icont step (Just (Err $ setEOF stream))
 
 
 -- |Given a sequence of characters, attempt to match them against
@@ -199,26 +189,20 @@ length = length' 0
 -- read exactly n elements (even if the iteratee has accepted fewer).
 take :: (Monad m, Nullable s, LL.ListLike s el) => Int -> Enumeratee s s m a
 take 0 iter  = return iter
-take n' iter = icont (step n') Nothing
+take n' iter = Iteratee $ \od oc -> runIter iter (on_done od oc) (on_cont od oc)
   where
-    step n (Chunk str)
-      | LL.null str        = icont (step n') Nothing
-      | LL.length str <= n = iter >>== check
-      where
-        n2 = n - LL.length str
-        check (Done x _)        = drop n2 >> return (return x)
-        check (Cont k Nothing)  = take n2 $ k $ Chunk str
-        check (Cont _ (Just e)) = drop n2 >> throwErr e
-    step n (Chunk str) = done' (Chunk s1) (Chunk s2)
+    on_done od oc x _ = runIter (drop n' >> (return $ return x)) od oc
+    on_cont od oc k Nothing = if n' == 0 then od (liftI k) (Chunk mempty)
+                                 else runIter (liftI (step n' k)) od oc
+    on_cont od oc _ (Just (Err e)) = runIter (drop n' >> throwErr e) od oc
+    step n k (Chunk str)
+      | LL.null str        = liftI (step n k)
+      | LL.length str <= n = take (n - LL.length str) $ k (Chunk str)
+      | True               = idone (k (Chunk s1)) (Chunk s2)
       where (s1, s2) = LL.splitAt n str
-    step _n stream            = done' stream stream
-    done' s1 s2 = iter >>== check
-      where
-        check (Done x _)       = idone (return x) s2
-        check (Cont k Nothing) = idone (k s1) s2
-        check (Cont k e)       = icont (const . return $ icont k e) e
+    step _n k stream       = idone (k stream) stream
 
-
+{-
 -- |Read n elements from a stream and apply the given iteratee to the
 -- stream of the read elements. If the given iteratee accepted fewer
 -- elements, we stop.
@@ -247,6 +231,7 @@ takeR i iter = icont (step i) Nothing
         check' (Cont k Nothing)  = idone (k $ Chunk s1) (Chunk s2)
         check' (Cont _ (Just e)) = throwErr e
     done' _ _             = error "Internal error in takeR"
+-}
 
 
 -- |Map the stream: yet another iteratee transformer
@@ -262,12 +247,12 @@ mapStream
       LooseMap s el el') =>
      (el -> el')
       -> Enumeratee (s el) (s el') m a
-mapStream f i = go i
+mapStream f = eneeCheckIfDone (liftI . step)
   where
-    go = (>>== check)
-    check (Done a s)        = idone (idone a s) mempty
-    check (Cont k Nothing)  = icont (go . k . strMap (lMap f)) Nothing
-    check (Cont _ (Just e)) = throwErr e
+    step k (Chunk xs)
+      | LL.null xs = liftI (step k)
+      | True       = mapStream f $ k (Chunk $ lMap f xs)
+    step k s       = idone (liftI k) s
 
 
 -- |Creates an enumerator with only elements from the stream that
@@ -280,8 +265,8 @@ filter p = convStream f'
     f' = icont step Nothing
     step (Chunk xs)
       | LL.null xs = f'
-      | otherwise  = idone (Just $ LL.filter p xs) mempty
-    step stream    = idone Nothing stream
+      | otherwise  = idone (LL.filter p xs) mempty
+    step _ = f'
 
 -- ------------------------------------------------------------------------
 -- Folds
@@ -327,7 +312,7 @@ foldl1 f = icont step Nothing
     -- the accumulator.
       | LL.null xs = icont step Nothing
       | otherwise  = foldl f $ FLL.foldl1 f xs
-    step stream    = icont step (Just (setEOF stream))
+    step stream    = icont step (Just $ Err (setEOF stream))
 
 -- | Sum of a stream.
 sum :: (Monad m, LL.ListLike s el, Num el) => Iteratee s m el
@@ -350,6 +335,7 @@ product = icont (step 1) Nothing
 -- ------------------------------------------------------------------------
 -- Zips
 
+{-
 -- |Enumerate two iteratees over a single stream simultaneously.
 enumPair
   :: (Monad m, LL.ListLike s el) =>
@@ -371,6 +357,7 @@ enumPair i1 i2 = Iteratee check
        (Cont k mErr, Done _ _bstr) -> return $ Cont (flip enumPair i2 . k) mErr
        (Cont a aEr,  Cont b bEr)   -> return $ Cont (\s -> enumPair (a s) (b s))
                                                     (aEr `mappend` bEr)
+-}
 
 -- ------------------------------------------------------------------------
 -- Enumerators
@@ -385,12 +372,11 @@ enumPureNChunk
      -> Int
      -> Enumerator s m a
 enumPureNChunk str n iter
-  | LL.null str = iter
-  | n > 0       = iter >>== check
+  | LL.null str = return $ iter
+  | n > 0       = runIter iter idoneM on_cont
   | otherwise   = error $ "enumPureNChunk called with n==" ++ show n
   where
     (s1, s2) = LL.splitAt n str
-    check (Done a _s)       = idone a $ Chunk str
-    check (Cont k Nothing)  = enumPureNChunk s2 n . k $ Chunk s1
-    check (Cont k (Just e)) = icont k (Just e)
+    on_cont k Nothing = enumPureNChunk s2 n . k $ Chunk s1
+    on_cont k e       = return $ icont k e
 

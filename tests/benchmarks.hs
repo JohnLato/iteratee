@@ -61,7 +61,7 @@ proc :: (Functor m, Monad m)
   -> I.Enumerator s m a
   -> I.Iteratee s m a
   -> B (I.Iteratee s m a) b
-proc eval runner enum iter = B (eval . runner . I.run . enum) iter
+proc eval runner enum iter = B (eval . runner . (I.run <=< enum)) iter
 
 defaultProc = proc id runIdentity (enumPure1Chunk [1..10000])
 defaultNProc = proc id runIdentity (enumPureNChunk [1..10000] 5)
@@ -79,7 +79,8 @@ headsbench = makeGroup "heads" headsBenches
 dropbench = makeGroup "drop" $ drop0 : dropBenches
 lengthbench = makeGroup "length" listBenches
 takebench = makeGroup "take" $ take0 : takeBenches
-takeRbench = makeGroup "takeR" $ takeR0 : takeRBenches
+--takeRbench = makeGroup "takeR" $ takeR0 : takeRBenches
+takeRbench = makeGroup "takeR" []
 mapbench = makeGroup "map" $ map0 : mapBenches
 convbench = makeGroup "convStream" convBenches
 miscbench = makeGroup "other" miscBenches
@@ -159,6 +160,7 @@ take5 = id1 "take length long one go" (I.joinI $ I.take 1000 I.length)
 take6 = idN "take length long chunked" (I.joinI $ I.take 1000 I.length)
 takeBenches = [take1, take2, take3, take4, take5, take6]
 
+{-
 takeR0 = makeList "take length of list long" (Prelude.length . Prelude.take 1000)
 takeR1 = id1 "takeR head short one go" (I.joinI $ I.take 20 I.head)
 takeR2 = id1 "takeR head long one go" (I.joinI $ I.takeR 1000 I.head)
@@ -167,6 +169,8 @@ takeR4 = idN "takeR head long chunked" (I.joinI $ I.takeR 1000 I.head)
 takeR5 = id1 "takeR length long one go" (I.joinI $ I.takeR 1000 I.length)
 takeR6 = idN "takeR length long chunked" (I.joinI $ I.takeR 1000 I.length)
 takeRBenches = [takeR1, takeR2, takeR3, takeR4, takeR5, takeR6]
+-}
+takeRBenches = []
 
 map0 = makeList "map of list" (Prelude.length . Prelude.map id)
 map1 = id1 "map length one go" (I.joinI $ I.mapStream id I.length)
@@ -177,10 +181,9 @@ mapBenches = [map1, map2, map3, map4]
 
 conv1 = idN "convStream id head chunked" (I.joinI . I.convStream idChunk $ I.head)
 conv2 = idN "convStream id length chunked" (I.joinI . I.convStream idChunk $ I.length)
-idChunk = Iteratee . return $ Cont step Nothing
+idChunk = I.liftI step
   where
     step (I.Chunk xs)
       | LL.null xs      = idChunk
-      | True            = Iteratee . return $ Done (Just xs) (I.Chunk mempty)
-    step s@(I.EOF mErr) = Iteratee . return $ Done Nothing s
+      | True            = idone xs (I.Chunk mempty)
 convBenches = [conv1, conv2]

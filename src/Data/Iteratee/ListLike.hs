@@ -372,11 +372,13 @@ enumPureNChunk
      -> Int
      -> Enumerator s m a
 enumPureNChunk str n iter
-  | LL.null str = return $ iter
-  | n > 0       = runIter iter idoneM on_cont
+  | LL.null str = return iter
+  | n > 0       = enum' str iter
   | otherwise   = error $ "enumPureNChunk called with n==" ++ show n
   where
-    (s1, s2) = LL.splitAt n str
-    on_cont k Nothing = enumPureNChunk s2 n . k $ Chunk s1
-    on_cont k e       = return $ icont k e
-
+    enum' str' iter'
+      | LL.null str' = return iter'
+      | True         = let (s1, s2) = LL.splitAt n str'
+                           on_cont k Nothing = enum' s2 . k $ Chunk s1
+                           on_cont k e = return $ icont k e
+                       in runIter iter' idoneM on_cont

@@ -176,8 +176,8 @@ length :: (Monad m, Num a, LL.ListLike s el) => Iteratee s m a
 length = length' 0
   where
     length' !n = icont (step n) Nothing
-    step i (Chunk xs) = length' $ i + fromIntegral (LL.length xs)
-    step i stream     = idone i stream
+    step i (Chunk xs) = length' (i + LL.length xs)
+    step i stream     = idone (fromIntegral i) stream
 
 
 -- ---------------------------------------------------

@@ -154,7 +154,7 @@ instance (Monad m, Nullable s) => Monad (Iteratee s m) where
   m >>= f = Iteratee $ \onDone onCont -> 
      let m_done a (Chunk s)
            | null s      = runIter (f a) onDone onCont
-         m_done a stream = runIter (f a) (\x _ -> onDone x stream) f_cont
+         m_done a stream = runIter (f a) (const . flip onDone stream) f_cont
            where f_cont k Nothing = runIter (k stream) onDone onCont
                  f_cont k e       = onCont k e
      in runIter m m_done (\k -> onCont ((>>= f) . k))

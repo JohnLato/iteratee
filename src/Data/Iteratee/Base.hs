@@ -151,7 +151,7 @@ instance (Monad m, Nullable s) => Monad (Iteratee s m) where
   {-# INLINE return #-}
   return x = Iteratee $ \onDone _ -> onDone x (Chunk empty)
   {-# INLINE (>>=) #-}
-  m >>= f = Iteratee $ \onDone onCont -> 
+  m >>= f = Iteratee $ \onDone onCont ->
      let m_done a (Chunk s)
            | null s      = runIter (f a) onDone onCont
          m_done a stream = runIter (f a) (const . flip onDone stream) f_cont
@@ -160,7 +160,7 @@ instance (Monad m, Nullable s) => Monad (Iteratee s m) where
      in runIter m m_done (\k -> onCont ((>>= f) . k))
 
 instance Monoid s => MonadTrans (Iteratee s) where
-  lift m = Iteratee $ \onDone _ -> m >>= \x -> onDone x mempty
+  lift m = Iteratee $ \onDone _ -> m >>= flip onDone mempty
 
 instance (MonadIO m, Nullable s, Monoid s) => MonadIO (Iteratee s m) where
   liftIO = lift . liftIO

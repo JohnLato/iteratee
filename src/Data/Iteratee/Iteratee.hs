@@ -77,8 +77,8 @@ checkErr
      Iteratee s m a
      -> Iteratee s m (Either CtrlMsg a)
 checkErr iter = Iteratee $ \onDone onCont ->
-  let od a str     = onDone (Right a) str
-      oc k Nothing = onCont (checkErr . k) Nothing
+  let od            = onDone . Right
+      oc k Nothing  = onCont (checkErr . k) Nothing
       oc _ (Just e) = onDone (Left e) (Chunk empty)
   in runIter iter od oc
 

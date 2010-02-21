@@ -37,6 +37,7 @@ module Data.Iteratee.Base (
   ,enStrExc
   ,wrapIterExc
   -- * Classes
+  ,NullPoint (..)
   ,Nullable (..)
   ,module Data.Iteratee.Base.LooseMap
 )
@@ -219,19 +220,26 @@ setEOF _              = toException EofException
 
 
 -- ----------------------------------------------
--- Nullable container class
-class Nullable c where
-  null :: c -> Bool
+-- |NullPoint class.  Containers that have a null representation.
+class NullPoint c where
   empty :: c
+
+instance NullPoint [a] where
+  empty   = []
+
+instance NullPoint B.ByteString where
+  empty = B.empty
+
+-- |Nullable container class
+class NullPoint c => Nullable c where
+  null :: c -> Bool
 
 instance Nullable [a] where
   null [] = True
   null _  = False
-  empty   = []
 
 instance Nullable B.ByteString where
   null = B.null
-  empty = B.empty
 
 -- ----------------------------------------------
 -- | Monadic iteratee

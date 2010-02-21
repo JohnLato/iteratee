@@ -73,7 +73,6 @@ library
     Data.Iteratee.IO.Handle
     Data.Iteratee.Iteratee
     Data.Iteratee.ListLike
-    Data.Iteratee.Instances.WrappedByteString
 
   other-modules:
     Data.Iteratee.IO.Base

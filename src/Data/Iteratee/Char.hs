@@ -92,8 +92,7 @@ line EolOnEof = Iter.break (\c -> c == '\r' || c == '\n') >>= \l ->
 printLines :: Iteratee String IO ()
 printLines = lines'
   where
-  lines' = Iter.break (\c -> c == '\r' || c == '\n') >>= \l ->
-               terminators >>= check l
+  lines' = Iter.break (`elem` "\r\n") >>= \l -> terminators >>= check l
   check _  0 = return ()
   check "" _ = return ()
   check l  _ = liftIO (putStrLn l) >> lines'
@@ -141,7 +140,7 @@ enumLines = convStream getter
       | LL.null xs = getter
       | lChar xs   = idone (LL.lines xs) mempty
       | True       = icont (step' xs) Nothing
-    step str       = getter
+    step _str      = getter
     step' xs (Chunk ys)
       | LL.null ys = icont (step' xs) Nothing
       | lChar ys   = idone (LL.lines . mappend xs $ ys) mempty
@@ -170,7 +169,7 @@ enumWords = convStream getter
       | LL.null xs = getter
       | lChar xs   = idone (LL.words xs) mempty
       | True       = icont (step' xs) Nothing
-    step str       = getter
+    step _str      = getter
     step' xs (Chunk ys)
       | LL.null ys = icont (step' xs) Nothing
       | lChar ys   = idone (LL.words . mappend xs $ ys) mempty
@@ -196,7 +195,7 @@ enumWordsBS iter = convStream getter iter
       | BC.null xs = getter
       | lChar xs   = idone (BC.words xs) (Chunk BC.empty)
       | True       = icont (step' xs) Nothing
-    step str       = getter
+    step _str      = getter
     step' xs (Chunk ys)
       | BC.null ys = icont (step' xs) Nothing
       | lChar ys   = idone (BC.words . BC.append xs $ ys) mempty
@@ -220,7 +219,7 @@ enumLinesBS = convStream getter
       | BC.null xs = getter
       | lChar xs   = idone (BC.lines xs) (Chunk BC.empty)
       | True       = icont (step' xs) Nothing
-    step str       = icont step Nothing
+    step _str      = icont step Nothing
     step' xs (Chunk ys)
       | BC.null ys = icont (step' xs) Nothing
       | lChar ys   = idone (BC.lines . BC.append xs $ ys) mempty

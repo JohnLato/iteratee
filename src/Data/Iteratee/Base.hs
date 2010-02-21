@@ -1,14 +1,25 @@
 {-# LANGUAGE TypeFamilies, FlexibleContexts, FlexibleInstances, Rank2Types,
-    DeriveDataTypeable #-}
+    DeriveDataTypeable, ExistentialQuantification #-}
 
 -- |Monadic and General Iteratees:
 -- incremental input parsers, processors and transformers
 
 module Data.Iteratee.Base (
   -- * Types
-  CtrlMsg (..)
-  ,StreamG (..)
+  StreamG (..)
   ,StreamStatus (..)
+  -- ** Exception types
+  ,IFException (..)
+  -- *** Enumerator exceptions
+  ,EnumException (..)
+  ,DivergentException (..)
+  ,EnumStringException (..)
+  ,EnumUnhandledIterException (..)
+  -- *** Iteratee exceptions
+  ,IException (..)
+  ,IterException (..)
+  ,SeekException (..)
+  ,EofException (..)
   -- ** Iteratees
   ,Iteratee (..)
   ,run
@@ -22,9 +33,9 @@ module Data.Iteratee.Base (
   -- ** Stream Functions
   ,strMap
   ,setEOF
-  -- ** Error handling functions/utilities
-  ,excEof
-  ,excDivergent
+  -- ** Exception handling
+  ,enStrExc
+  ,wrapIterExc
   -- * Classes
   ,Nullable (..)
   ,module Data.Iteratee.Base.LooseMap
@@ -40,6 +51,7 @@ import qualified Data.ByteString as B
 import Control.Monad.Trans
 import Control.Applicative hiding (empty)
 import Control.Exception
+import Control.Failure
 import Data.Data
 
 
@@ -75,22 +87,135 @@ data StreamStatus =
   | EofError SomeException
   deriving (Show, Typeable)
 
-data CtrlMsg = Seek FileOffset
-               | Err SomeException
-               deriving (Show, Typeable)
+-- ----------------------------------------------
+-- create exception type hierarchy
+
+-- |Root of Iteratee Framework exception hierarchy
+data IFException = forall e . Exception e => IFException e
+  deriving Typeable
+
+instance Show IFException where
+  show (IFException e) = show e
+
+instance Exception IFException
+
+ifExceptionToException :: Exception e => e -> SomeException
+ifExceptionToException = toException . IFException
+
+ifExceptionFromException :: Exception e => SomeException -> Maybe e
+ifExceptionFromException x = do
+  IFException a <- fromException x
+  cast a
+
+-- enumerator exceptions
+data EnumException = forall e . Exception e => EnumException e
+  deriving Typeable
+
+instance Show EnumException where
+  show (EnumException e) = show e
+
+instance Exception EnumException where
+  toException   = ifExceptionToException
+  fromException = ifExceptionFromException
+
+enumExceptionToException :: Exception e => e -> SomeException
+enumExceptionToException = toException . IterException
+
+enumExceptionFromException :: Exception e => SomeException -> Maybe e
+enumExceptionFromException x = do
+  IterException a <- fromException x
+  cast a
+
+-- |The iteratee diverged upon receiving EOF.
+data DivergentException = DivergentException
+  deriving (Show, Typeable)
+
+instance Exception DivergentException where
+  toException   = enumExceptionToException
+  fromException = enumExceptionFromException
+
+-- |Unspecified enumerator exception
+data EnumStringException = EnumStringException String
+  deriving (Show, Typeable)
+
+instance Exception EnumStringException where
+  toException   = enumExceptionToException
+  fromException = enumExceptionFromException
+
+enStrExc :: String -> EnumException
+enStrExc = EnumException . EnumStringException
+
+-- |The enumerator received an IterException it could not handle
+data EnumUnhandledIterException = EnumUnhandledIterException IterException
+  deriving (Show, Typeable)
+
+instance Exception EnumUnhandledIterException where
+  toException   = enumExceptionToException
+  fromException = enumExceptionFromException
+
+wrapIterExc :: IterException -> EnumException
+wrapIterExc = EnumException . EnumUnhandledIterException
+
+-- iteratee exceptions
+
+class Exception e => IException e where
+  toIterException   :: e -> IterException
+  toIterException   = IterException
+  fromIterException :: IterException -> Maybe e
+  fromIterException = fromException . toException
+
+instance IException NullException where
+instance IException NothingException where
+
+-- |An exception within an iteratee.
+data IterException = forall e . Exception e => IterException e
+  deriving Typeable
+
+instance Show IterException where
+  show (IterException e) = show e
+
+instance Exception IterException where
+  toException   = ifExceptionToException
+  fromException = ifExceptionFromException
+
+iterExceptionToException :: Exception e => e -> SomeException
+iterExceptionToException = toException . IterException
+
+iterExceptionFromException :: Exception e => SomeException -> Maybe e
+iterExceptionFromException x = do
+  IterException a <- fromException x
+  cast a
+
+instance IException IterException where
+  toIterException   = id
+  fromIterException = Just
+
+-- |A seek request from an iteratee
+data SeekException = SeekException FileOffset
+  deriving (Typeable, Show)
+
+instance Exception SeekException where
+  toException   = iterExceptionToException
+  fromException = iterExceptionFromException
+
+instance IException SeekException where
+
+-- |Iteratee needs more data to complete but received EOF.
+data EofException = EofException
+  deriving (Typeable, Show)
+
+instance Exception EofException where
+  toException   = iterExceptionToException
+  fromException = iterExceptionFromException
+
+instance IException EofException where
 
 
 -- |Produce the EOF error message.  If the stream was terminated because
 -- of an error, keep the original error message.
 setEOF :: StreamG c -> SomeException
 setEOF (EOF (Just e)) = e
-setEOF _              = excEof
-
-excEof :: SomeException
-excEof = toException $ ErrorCall "EOF"
-
-excDivergent :: SomeException
-excDivergent = toException $ ErrorCall "divergent iteratee"
+setEOF _              = toException EofException
 
 
 -- ----------------------------------------------
@@ -112,7 +237,7 @@ instance Nullable B.ByteString where
 -- | Monadic iteratee
 newtype Iteratee s m a = Iteratee{ runIter :: forall r.
           (a -> StreamG s -> m r) ->
-          ((StreamG s -> Iteratee s m a) -> Maybe CtrlMsg -> m r) ->
+          ((StreamG s -> Iteratee s m a) -> Maybe SomeException -> m r) ->
           m r}
 
 -- ----------------------------------------------
@@ -120,7 +245,7 @@ newtype Iteratee s m a = Iteratee{ runIter :: forall r.
 idone :: Monad m => a -> StreamG s -> Iteratee s m a
 idone a s = Iteratee $ \onDone _ -> onDone a s
 
-icont :: (StreamG s -> Iteratee s m a) -> Maybe CtrlMsg -> Iteratee s m a
+icont :: (StreamG s -> Iteratee s m a) -> Maybe SomeException -> Iteratee s m a
 icont k e = Iteratee $ \_ onCont -> onCont k e
 
 liftI :: Monad m => (StreamG s -> Iteratee s m a) -> Iteratee s m a
@@ -133,7 +258,7 @@ idoneM x str = return $ Iteratee $ \onDone _ -> onDone x str
 icontM
   :: Monad m =>
      (StreamG s -> Iteratee s m a)
-     -> Maybe CtrlMsg
+     -> Maybe SomeException
      -> m (Iteratee s m a)
 icontM k e = return $ Iteratee $ \_ onCont -> onCont k e
 

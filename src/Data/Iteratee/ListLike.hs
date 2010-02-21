@@ -107,7 +107,7 @@ head = icont step Nothing
   step (Chunk vec)
     | LL.null vec  = icont step Nothing
     | otherwise    = idone (LL.head vec) (Chunk $ LL.tail vec)
-  step stream      = icont step (Just (Err $ setEOF stream))
+  step stream      = icont step (Just (setEOF stream))
 
 
 -- |Given a sequence of characters, attempt to match them against
@@ -191,10 +191,10 @@ take :: (Monad m, Nullable s, LL.ListLike s el) => Int -> Enumeratee s s m a
 take 0 iter  = return iter
 take n' iter = Iteratee $ \od oc -> runIter iter (on_done od oc) (on_cont od oc)
   where
-    on_done od oc x _ = runIter (drop n' >> (return $ return x)) od oc
+    on_done od oc x _ = runIter (drop n' >> return (return x)) od oc
     on_cont od oc k Nothing = if n' == 0 then od (liftI k) (Chunk mempty)
                                  else runIter (liftI (step n' k)) od oc
-    on_cont od oc _ (Just (Err e)) = runIter (drop n' >> throwErr e) od oc
+    on_cont od oc _ (Just e) = runIter (drop n' >> throwErr e) od oc
     step n k (Chunk str)
       | LL.null str        = liftI (step n k)
       | LL.length str <= n = take (n - LL.length str) $ k (Chunk str)
@@ -312,7 +312,7 @@ foldl1 f = icont step Nothing
     -- the accumulator.
       | LL.null xs = icont step Nothing
       | otherwise  = foldl f $ FLL.foldl1 f xs
-    step stream    = icont step (Just $ Err (setEOF stream))
+    step stream    = icont step (Just (setEOF stream))
 
 -- | Sum of a stream.
 sum :: (Monad m, LL.ListLike s el, Num el) => Iteratee s m el

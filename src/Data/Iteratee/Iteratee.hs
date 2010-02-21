@@ -1,4 +1,4 @@
-{-# LANGUAGE KindSignatures, FlexibleContexts #-}
+{-# LANGUAGE KindSignatures, FlexibleContexts, ScopedTypeVariables #-}
 
 -- |Monadic and General Iteratees:
 -- incremental input parsers, processors and transformers
@@ -22,6 +22,8 @@ module Data.Iteratee.Iteratee (
   enumEof,
   enumErr,
   enumPure1Chunk,
+  enumFromCallback,
+  enumFromCallbackCatch,
   -- ** Enumerator Combinators
   (>>>),
   eneeCheckIfDone,
@@ -34,13 +36,20 @@ module Data.Iteratee.Iteratee (
 where
 
 import Prelude hiding (head, drop, dropWhile, take, break, foldl, foldl1, length, filter, sum, product)
-import qualified Prelude as P
 
 import Data.Iteratee.IO.Base
 import Data.Iteratee.Base
+
 import Control.Monad
+import Control.Monad.Trans
 import Control.Exception
+import Control.Failure
+import Data.Maybe
 import Data.Monoid
+
+-- exception helpers
+excDivergent :: SomeException
+excDivergent = toException DivergentException
 
 -- ------------------------------------------------------------------------
 -- Primitive iteratees
@@ -48,7 +57,7 @@ import Data.Monoid
 -- |Report and propagate an unrecoverable error.
 --  Disregard the input first and then propagate the error.
 throwErr :: (Monad m) => SomeException -> Iteratee s m a
-throwErr e = icont (const (throwErr e)) (Just $ Err e)
+throwErr e = icont (const (throwErr e)) (Just e)
 
 -- |Propagate a recoverable error.
 throwRecoverableErr
@@ -56,26 +65,18 @@ throwRecoverableErr
      SomeException
      -> (StreamG s -> Iteratee s m a)
      -> Iteratee s m a
-throwRecoverableErr e i = icont i (Just $ Err e)
-
--- |Generate a control message.
-controlMsg
-  :: (Monad m) =>
-     CtrlMsg
-     -> (StreamG s -> Iteratee s m a)
-     -> Iteratee s m a
-controlMsg c i = icont i (Just c)
+throwRecoverableErr e i = icont i (Just e)
 
 
 -- |Check if an iteratee produces an error.
--- Returns 'Right a' if it completes without errors, otherwise 'Left CtrlMsg'
--- checkErr is useful for iteratees that may not terminate, such as 'head'
--- with an empty stream.  In particular, it enables them to be used with
--- 'convStream'.
+-- Returns 'Right a' if it completes without errors, otherwise
+-- 'Left SomeException' checkErr is useful for iteratees that may not
+-- terminate, such as 'head' with an empty stream.
+-- In particular, it enables them to be used with 'convStream'.
 checkErr
   :: (Monad m, Nullable s) =>
      Iteratee s m a
-     -> Iteratee s m (Either CtrlMsg a)
+     -> Iteratee s m (Either SomeException a)
 checkErr iter = Iteratee $ \onDone onCont ->
   let od            = onDone . Right
       oc k Nothing  = onCont (checkErr . k) Nothing
@@ -93,8 +94,9 @@ identity = return ()
 isStreamFinished :: Monad m => Iteratee s m (Maybe SomeException)
 isStreamFinished = liftI check
   where
-    check s@(EOF e) = idone (Just $ maybe excEof id e) s
+    check s@(EOF e) = idone (Just $ fromMaybe (toException EofException) e) s
     check s         = idone Nothing s
+{-# INLINE isStreamFinished #-}
 
 -- |Skip the rest of the stream
 skipToEof :: (Monad m) => Iteratee s m ()
@@ -106,7 +108,7 @@ skipToEof = icont check Nothing
 
 -- |Seek to a position in the stream
 seek :: (Monad m, Nullable s) => FileOffset -> Iteratee s m ()
-seek = icont (const identity) . Just . Seek
+seek o = throwRecoverableErr (toException $ SeekException o) (const identity)
 
 
 -- ---------------------------------------------------
@@ -127,7 +129,7 @@ eneeCheckIfDone
 eneeCheckIfDone f inner = Iteratee $ \od oc -> 
   let on_done x s = od (idone x s) mempty
       on_cont k Nothing  = runIter (f k) od oc
-      on_cont _ (Just (Err e)) = runIter (throwErr e) od oc
+      on_cont _ (Just e) = runIter (throwErr e) od oc
   in runIter inner on_done on_cont
 
 
@@ -155,12 +157,10 @@ joinI outer = outer >>=
   \inner -> Iteratee $ \od oc ->
   let on_done  x _        = od x (Chunk empty)
       on_cont  k Nothing  = runIter (k (EOF Nothing)) on_done on_cont'
-      on_cont  _ (Just (Err e)) = runIter (throwErr e) od oc
-      on_cont' _ e        = runIter (throwErr (maybe excDivergent fromErr e)) od oc
+      on_cont  _ (Just e) = runIter (throwErr e) od oc
+      on_cont' _ e        = runIter (throwErr (fromMaybe excDivergent e)) od oc
   in runIter inner on_done on_cont
 
-fromErr :: CtrlMsg -> SomeException
-fromErr (Err e) = e
 
 -- ------------------------------------------------------------------------
 -- Enumerators
@@ -182,22 +182,22 @@ type Enumerator s m a = Iteratee s m a -> m (Iteratee s m a)
 enumEof :: (Monad m) => Enumerator s m a
 enumEof iter = runIter iter onDone onCont
   where
-    onDone  x str     = return $ idone x (EOF Nothing)
+    onDone  x _str    = return $ idone x (EOF Nothing)
     onCont  k Nothing = runIter (k (EOF Nothing)) onDone onCont'
     onCont  k e       = return $ icont k e
-    onCont' k Nothing = return $ throwErr excDivergent
+    onCont' _ Nothing = return $ throwErr excDivergent
     onCont' k e       = return $ icont k e
 
 -- |Another primitive enumerator: tell the Iteratee the stream terminated
 -- with an error.
-enumErr :: (Monad m, Nullable s) => SomeException -> Enumerator s m a
+enumErr :: (Exception e, Monad m, Nullable s) => e -> Enumerator s m a
 enumErr e iter = runIter iter onDone onCont
   where
-    onDone  x _       = return $ idone x (EOF $ Just e)
-    onCont  k Nothing = runIter (k (EOF (Just e))) onDone onCont'
-    onCont  k e       = return $ icont k e
-    onCont' k Nothing = return $ throwErr excDivergent
-    onCont' k e       = return $ icont k e
+    onDone  x _       = return $ idone x (EOF . Just $ toException e)
+    onCont  k Nothing = runIter (k (EOF (Just (toException e)))) onDone onCont'
+    onCont  k e'      = return $ icont k e'
+    onCont' _ Nothing = return $ throwErr excDivergent
+    onCont' k e'      = return $ icont k e'
 
 
 -- |The composition of two enumerators: essentially the functional composition
@@ -218,7 +218,28 @@ enumPure1Chunk str iter = runIter iter idoneM onCont
     onCont k Nothing = return $ k $ Chunk str
     onCont k e       = return $ icont k e
 
-enumStream :: (Monad m) => StreamG s -> Enumerator s m a
-enumStream (EOF _)    = enumEof
-enumStream (Chunk xs) = enumPure1Chunk xs
+-- |Create an enumerator from a callback function
+enumFromCallback ::
+  (Nullable s, MonadIO m) =>
+  m (Either SomeException (Bool, s)) -> Enumerator s m a
+enumFromCallback = flip enumFromCallbackCatch
+  (\NothingException -> return Nothing)
+
+-- |Create an enumerator from a callback function with an exception handler.
+-- The exception handler is called if an iteratee reports an exception.
+-- The two exceptions `e' and `e2' must have different types.
+enumFromCallbackCatch ::
+  (IException e, Nullable s, MonadIO m) =>
+  m (Either SomeException (Bool, s))
+  -> (e -> m (Maybe EnumException))
+  -> Enumerator s m a
+enumFromCallbackCatch c handler = loop
+  where
+    loop iter = runIter iter idoneM on_cont
+    on_cont k Nothing = c >>= either (return . k . EOF . Just) (uncurry check)
+      where
+        check b = if b then loop . k . Chunk else return . k . Chunk
+    on_cont k j@(Just e) = maybe (return (icont k j))
+                                 (on_cont k . fmap toException <=< handler)
+                                 (fromException e)
 

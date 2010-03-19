@@ -31,7 +31,6 @@ module Data.Iteratee.Base (
   ,icontM
   ,liftI
   -- ** Stream Functions
-  ,strMap
   ,setEOF
   -- ** Exception handling
   ,enStrExc
@@ -77,9 +76,9 @@ instance Monoid c => Monoid (StreamG c) where
   mappend (Chunk s1) (Chunk s2) = Chunk (s1 `mappend` s2)
 
 -- |Map a function over a stream.
-strMap :: (c -> c') -> StreamG c -> StreamG c'
-strMap f (Chunk xs) = Chunk $ f xs
-strMap _ (EOF mErr) = EOF mErr
+instance Functor StreamG where
+  fmap f (Chunk xs) = Chunk $ f xs
+  fmap _ (EOF mErr) = EOF mErr
 
 -- |Describe the status of a stream of data.
 data StreamStatus =

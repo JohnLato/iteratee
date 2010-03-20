@@ -244,6 +244,7 @@ mapStream
   :: (Monad m,
       LL.ListLike (s el) el,
       LL.ListLike (s el') el',
+      NullPoint (s el),
       LooseMap s el el') =>
      (el -> el')
       -> Enumeratee (s el) (s el') m a

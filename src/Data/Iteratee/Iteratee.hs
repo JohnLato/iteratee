@@ -61,7 +61,7 @@ throwErr e = icont (const (throwErr e)) (Just e)
 
 -- |Propagate a recoverable error.
 throwRecoverableErr
-  :: (Monad m, Nullable s) =>
+  :: (Monad m) =>
      SomeException
      -> (StreamG s -> Iteratee s m a)
      -> Iteratee s m a
@@ -74,7 +74,7 @@ throwRecoverableErr e i = icont i (Just e)
 -- terminate, such as 'head' with an empty stream.
 -- In particular, it enables them to be used with 'convStream'.
 checkErr
-  :: (Monad m, Nullable s) =>
+  :: (Monad m, NullPoint s) =>
      Iteratee s m a
      -> Iteratee s m (Either SomeException a)
 checkErr iter = Iteratee $ \onDone onCont ->
@@ -87,8 +87,8 @@ checkErr iter = Iteratee $ \onDone onCont ->
 -- Parser combinators
 
 -- |The identity iterator.  Doesn't do anything.
-identity :: (Monad m, Nullable s) => Iteratee s m ()
-identity = return ()
+identity :: (Monad m, NullPoint s) => Iteratee s m ()
+identity = idone () (Chunk empty)
 
 -- |Get the stream status of an iteratee.
 isStreamFinished :: Monad m => Iteratee s m (Maybe SomeException)
@@ -107,7 +107,7 @@ skipToEof = icont check Nothing
 
 
 -- |Seek to a position in the stream
-seek :: (Monad m, Nullable s) => FileOffset -> Iteratee s m ()
+seek :: (Monad m, NullPoint s) => FileOffset -> Iteratee s m ()
 seek o = throwRecoverableErr (toException $ SeekException o) (const identity)
 
 
@@ -123,11 +123,11 @@ type Enumeratee sFrom sTo (m :: * -> *) a =
 {-# INLINE eneeCheckIfDone #-}
 
 eneeCheckIfDone
- :: (Monad m, Monoid elo) =>
+ :: (Monad m, NullPoint elo) =>
     ((StreamG eli -> Iteratee eli m a) -> Iteratee elo m (Iteratee eli m a))
     -> Enumeratee elo eli m a
 eneeCheckIfDone f inner = Iteratee $ \od oc -> 
-  let on_done x s = od (idone x s) mempty
+  let on_done x s = od (idone x s) (Chunk empty)
       on_cont k Nothing  = runIter (f k) od oc
       on_cont _ (Just e) = runIter (throwErr e) od oc
   in runIter inner on_done on_cont
@@ -141,13 +141,13 @@ eneeCheckIfDone f inner = Iteratee $ \od oc ->
 -- The transformation from one stream to the other is specified as
 -- Iteratee s el s'.
 convStream
-  :: (Monad m, Nullable s, Monoid s, Nullable s') =>
+  :: (Monad m, Monoid s, Nullable s) =>
      Iteratee s m s'
      -> Enumeratee s s' m a
 convStream fi = eneeCheckIfDone check
   where
     check k = isStreamFinished >>= maybe (step k) (idone (liftI k) . EOF . Just)
-    step  k = fi >>= \v -> convStream fi $ k (Chunk v)
+    step k = fi >>= convStream fi . k . Chunk
 
 joinI
   :: (Monad m, Nullable s) =>
@@ -190,7 +190,7 @@ enumEof iter = runIter iter onDone onCont
 
 -- |Another primitive enumerator: tell the Iteratee the stream terminated
 -- with an error.
-enumErr :: (Exception e, Monad m, Nullable s) => e -> Enumerator s m a
+enumErr :: (Exception e, Monad m) => e -> Enumerator s m a
 enumErr e iter = runIter iter onDone onCont
   where
     onDone  x _       = return $ idone x (EOF . Just $ toException e)
@@ -220,7 +220,7 @@ enumPure1Chunk str iter = runIter iter idoneM onCont
 
 -- |Create an enumerator from a callback function
 enumFromCallback ::
-  (Nullable s, MonadIO m) =>
+  (MonadIO m) =>
   m (Either SomeException (Bool, s)) -> Enumerator s m a
 enumFromCallback = flip enumFromCallbackCatch
   (\NothingException -> return Nothing)
@@ -229,7 +229,7 @@ enumFromCallback = flip enumFromCallbackCatch
 -- The exception handler is called if an iteratee reports an exception.
 -- The two exceptions `e' and `e2' must have different types.
 enumFromCallbackCatch ::
-  (IException e, Nullable s, MonadIO m) =>
+  (IException e, MonadIO m) =>
   m (Either SomeException (Bool, s))
   -> (e -> m (Maybe EnumException))
   -> Enumerator s m a

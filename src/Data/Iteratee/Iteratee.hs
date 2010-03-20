@@ -12,6 +12,7 @@ module Data.Iteratee.Iteratee (
   -- ** Basic Iteratees
   identity,
   skipToEof,
+  isStreamFinished,
   -- ** Nested iteratee combinators
   convStream,
   joinI,

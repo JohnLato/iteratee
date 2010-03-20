@@ -1,5 +1,5 @@
 {-# LANGUAGE TypeFamilies, FlexibleContexts, FlexibleInstances, Rank2Types,
-    DeriveDataTypeable, ExistentialQuantification #-}
+    DeriveDataTypeable, ExistentialQuantification, OverlappingInstances #-}
 
 -- |Monadic and General Iteratees:
 -- incremental input parsers, processors and transformers

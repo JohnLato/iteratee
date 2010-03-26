@@ -23,6 +23,7 @@ module Data.Iteratee.Base (
   -- ** Iteratees
   ,Iteratee (..)
   ,run
+  ,mapIteratee
   -- * Functions
   -- ** Iteratee Combinator
   ,idone
@@ -42,15 +43,16 @@ module Data.Iteratee.Base (
 )
 where
 
-import Prelude hiding (null)
+import Prelude hiding (null, catch)
 import Data.Iteratee.Base.LooseMap
 import Data.Iteratee.IO.Base
 import Data.Monoid
 import qualified Data.ByteString as B
 
 import Control.Monad.Trans
+import Control.Monad.CatchIO
 import Control.Applicative hiding (empty)
-import Control.Exception
+import Control.Exception hiding (catch, block, unblock)
 import Control.Failure
 import Data.Data
 
@@ -297,8 +299,15 @@ instance Monoid s => MonadTrans (Iteratee s) where
 instance (MonadIO m, Nullable s, Monoid s) => MonadIO (Iteratee s m) where
   liftIO = lift . liftIO
 
+instance (MonadCatchIO m, Nullable s, Monoid s) =>
+  MonadCatchIO (Iteratee s m) where
+    m `catch` f = Iteratee $ \od oc -> runIter m od oc `catch` (\e -> runIter (f e) od oc)
+    block       = mapIteratee block
+    unblock     = mapIteratee unblock
+
 -- |Send EOF to the Iteratee and disregard the unconsumed part of the stream.
--- It is an error to call run on an Iteratee that does not terminate on EOF.
+-- It is an error to call @run@ on an @Iteratee@ that does not
+-- terminate on EOF.
 run :: Monad m => Iteratee s m a -> m a
 run iter = runIter iter onDone onCont
  where
@@ -307,3 +316,9 @@ run iter = runIter iter onDone onCont
    onCont  _ e       = error $ "control message: " ++ show e
    onCont' _ e       = error $ "control message: " ++ show e
 
+-- |Transform a computation inside an @Iteratee@.
+mapIteratee :: (Monoid s, Monad n, Monad m) =>
+  (m a -> n b)
+  -> Iteratee s m a
+  -> Iteratee s n b
+mapIteratee f = lift . f . run

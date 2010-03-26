@@ -30,7 +30,7 @@ import Data.Iteratee.IO.Handle
 import Data.Iteratee.IO.Fd
 #endif
 
-import Control.Monad.Trans
+import Control.Monad.CatchIO
 
 -- If Posix is available, use the fileDriverRandomFd as fileDriverRandom.  Otherwise, use a handle-based variant.
 #if defined(USE_POSIX)
@@ -38,7 +38,7 @@ import Control.Monad.Trans
 -- |Process a file using the given Iteratee.  This function wraps
 -- enumFd as a convenience.
 fileDriver
-  :: (MonadIO m, Nullable s, ReadableChunk s el) =>
+  :: (MonadCatchIO m, Nullable s, ReadableChunk s el) =>
      Iteratee s m a
      -> FilePath
      -> m a
@@ -47,7 +47,7 @@ fileDriver = fileDriverFd
 -- |Process a file using the given Iteratee.  This function wraps
 -- enumFdRandom as a convenience.
 fileDriverRandom
-  :: (MonadIO m, Nullable s, ReadableChunk s el) =>
+  :: (MonadCatchIO m, Nullable s, ReadableChunk s el) =>
      Iteratee s m a
      -> FilePath
      -> m a
@@ -61,7 +61,7 @@ fileDriverRandom = fileDriverRandomFd
 -- |Process a file using the given Iteratee.  This function wraps
 -- enumHandle as a convenience.
 fileDriver
-  :: (MonadIO m, ReadableChunk s el) =>
+  :: (MonadCatchIO m, ReadableChunk s el) =>
      Iteratee s m a
      -> FilePath
      -> m a
@@ -70,7 +70,7 @@ fileDriver = fileDriverHandle
 -- |Process a file using the given Iteratee.  This function wraps
 -- enumFdHandle as a convenience.
 fileDriverRandom
-  :: (MonadIO m, ReadableChunk s el) =>
+  :: (MonadCatchIO m, ReadableChunk s el) =>
      Iteratee s m a
      -> FilePath
      -> m a

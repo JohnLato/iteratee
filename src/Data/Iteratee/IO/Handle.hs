@@ -23,6 +23,7 @@ import Data.Iteratee.Binary()
 import Data.Monoid
 import Control.Exception
 import Control.Monad
+import Control.Monad.CatchIO as CIO
 import Control.Monad.Trans
 
 import Foreign.Ptr
@@ -42,7 +43,7 @@ makeHandleCallback ::
   -> Handle
   -> IO (Either SomeException (Bool, s))
 makeHandleCallback p bufsize h = do
-  n' <- try $ hGetBuf h p bufsize :: IO (Either SomeException Int)
+  n' <- CIO.try $ hGetBuf h p bufsize :: IO (Either SomeException Int)
   case n' of
     Left e -> return $ Left e
     Right 0 -> return $ Right (False, mempty)
@@ -73,7 +74,7 @@ enumHandleRandom h i = do
        liftM (either
               (Just . EnumException :: IOException -> Maybe EnumException)
               (const Nothing))
-             . liftIO . try $ hSeek h AbsoluteSeek $ fromIntegral off
+             . liftIO . CIO.try $ hSeek h AbsoluteSeek $ fromIntegral off
   p <- liftIO $ mallocBytes bufsize
   enumFromCallbackCatch (liftIO $ makeHandleCallback p bufsize h) handler i
 
@@ -84,25 +85,23 @@ enumHandleRandom h i = do
 -- |Process a file using the given Iteratee.  This function wraps
 -- enumHandle as a convenience.
 fileDriverHandle
-  :: (MonadIO m, Nullable s, ReadableChunk s el) =>
+  :: (MonadCatchIO m, Nullable s, ReadableChunk s el) =>
      Iteratee s m a
      -> FilePath
      -> m a
-fileDriverHandle iter filepath = do
-  h <- liftIO $ openBinaryFile filepath ReadMode
-  result <- run =<< enumHandle h iter
-  liftIO $ hClose h
-  return result
+fileDriverHandle iter filepath = CIO.bracket
+  (liftIO $ openBinaryFile filepath ReadMode)
+  (liftIO . hClose)
+  (run <=< flip enumHandle iter)
 
 -- |Process a file using the given Iteratee.  This function wraps
 -- enumHandleRandom as a convenience.
 fileDriverRandomHandle
-  :: (MonadIO m, Nullable s, ReadableChunk s el) =>
+  :: (MonadCatchIO m, Nullable s, ReadableChunk s el) =>
      Iteratee s m a
      -> FilePath
      -> m a
-fileDriverRandomHandle iter filepath = do
-  h <- liftIO $ openBinaryFile filepath ReadMode
-  result <- run =<< enumHandleRandom h iter
-  liftIO $ hClose h
-  return result
+fileDriverRandomHandle iter filepath = CIO.bracket
+  (liftIO $ openBinaryFile filepath ReadMode)
+  (liftIO . hClose)
+  (run <=< flip enumHandleRandom iter)

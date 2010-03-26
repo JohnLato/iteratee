@@ -27,6 +27,7 @@ import Data.Iteratee.IO.Base
 import Data.Monoid
 import Control.Exception
 import Control.Monad
+import Control.Monad.CatchIO as CIO
 import Control.Monad.Trans
 
 import Foreign.Ptr
@@ -89,27 +90,25 @@ enumFdRandom fd iter = do
 -- |Process a file using the given Iteratee.  This function wraps
 -- enumFd as a convenience.
 fileDriverFd
-  :: (MonadIO m, Nullable s, ReadableChunk s el) =>
+  :: (MonadCatchIO m, Nullable s, ReadableChunk s el) =>
      Iteratee s m a
      -> FilePath
      -> m a
-fileDriverFd iter filepath = do
-  fd <- liftIO $ openFd filepath ReadOnly Nothing defaultFileFlags
-  result <- run =<< enumFd fd iter
-  liftIO $ closeFd fd
-  return result
+fileDriverFd iter filepath = CIO.bracket
+  (liftIO $ openFd filepath ReadOnly Nothing defaultFileFlags)
+  (liftIO . closeFd)
+  (run <=< flip enumFd iter)
 
 -- |Process a file using the given Iteratee.  This function wraps
 -- enumFdRandom as a convenience.
 fileDriverRandomFd
-  :: (MonadIO m, Nullable s, ReadableChunk s el) =>
+  :: (MonadCatchIO m, Nullable s, ReadableChunk s el) =>
      Iteratee s m a
      -> FilePath
      -> m a
-fileDriverRandomFd iter filepath = do
-  fd <- liftIO $ openFd filepath ReadOnly Nothing defaultFileFlags
-  result <- run =<< enumFdRandom fd iter
-  liftIO $ closeFd fd
-  return result
+fileDriverRandomFd iter filepath = CIO.bracket
+  (liftIO $ openFd filepath ReadOnly Nothing defaultFileFlags)
+  (liftIO . closeFd)
+  (run <=< flip enumFdRandom iter)
 
 #endif

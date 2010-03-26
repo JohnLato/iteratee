@@ -61,22 +61,24 @@ makefdCallback p bufsize fd = do
 -- the iteratee.  In particular, seeking is not supported.
 enumFd
   :: forall s el m a.(Nullable s, ReadableChunk s el, MonadIO m) =>
-     Fd
+     Int
+     -> Fd
      -> Enumerator s m a
-enumFd fd iter = do
-  let bufsize = fromIntegral $ 4096 - mod 4096 (sizeOf (undefined :: el))
+enumFd bs fd iter = do
+  let bufsize = bs * (sizeOf (undefined :: el))
   p <- liftIO $ mallocBytes bufsize
   enumFromCallback (liftIO $ makefdCallback p (fromIntegral bufsize) fd) iter
 
 
--- |The enumerator of a POSIX File Descriptor: a variation of enumFd that
--- supports RandomIO (seek requests)
+-- |The enumerator of a POSIX File Descriptor: a variation of @enumFd@ that
+-- supports RandomIO (seek requests).
 enumFdRandom
   :: forall s el m a.(Nullable s, ReadableChunk s el, MonadIO m) =>
-     Fd
+     Int
+     -> Fd
      -> Enumerator s m a
-enumFdRandom fd iter = do
-  let bufsize = fromIntegral $ 4096 - mod 4096 (sizeOf (undefined :: el))
+enumFdRandom bs fd iter = do
+  let bufsize = bs * (sizeOf (undefined :: el))
   let handler (SeekException off) =
        liftM (either
               (const . Just $ enStrExc "Error seeking within file descriptor")
@@ -86,29 +88,34 @@ enumFdRandom fd iter = do
   enumFromCallbackCatch (liftIO $ makefdCallback p (fromIntegral bufsize) fd)
                         handler iter
 
+fileDriver
+  :: (MonadCatchIO m, Nullable s, ReadableChunk s el) =>
+     (Int -> Fd -> Enumerator s m a)
+     -> Int
+     -> Iteratee s m a
+     -> FilePath
+     -> m a
+fileDriver enumf bufsize iter filepath = CIO.bracket
+  (liftIO $ openFd filepath ReadOnly Nothing defaultFileFlags)
+  (liftIO . closeFd)
+  (run <=< flip (enumf bufsize) iter)
 
--- |Process a file using the given Iteratee.  This function wraps
--- enumFd as a convenience.
+-- |Process a file using the given @Iteratee@.
 fileDriverFd
   :: (MonadCatchIO m, Nullable s, ReadableChunk s el) =>
-     Iteratee s m a
+     Int -- ^Buffer size (number of elements)
+     -> Iteratee s m a
      -> FilePath
      -> m a
-fileDriverFd iter filepath = CIO.bracket
-  (liftIO $ openFd filepath ReadOnly Nothing defaultFileFlags)
-  (liftIO . closeFd)
-  (run <=< flip enumFd iter)
+fileDriverFd = fileDriver enumFd
 
--- |Process a file using the given Iteratee.  This function wraps
--- enumFdRandom as a convenience.
+-- |A version of fileDriverFd that supports seeking.
 fileDriverRandomFd
   :: (MonadCatchIO m, Nullable s, ReadableChunk s el) =>
-     Iteratee s m a
+     Int
+     -> Iteratee s m a
      -> FilePath
      -> m a
-fileDriverRandomFd iter filepath = CIO.bracket
-  (liftIO $ openFd filepath ReadOnly Nothing defaultFileFlags)
-  (liftIO . closeFd)
-  (run <=< flip enumFdRandom iter)
+fileDriverRandomFd = fileDriver enumFdRandom
 
 #endif

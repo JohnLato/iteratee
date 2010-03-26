@@ -53,23 +53,27 @@ makeHandleCallback p bufsize h = do
 -- |The (monadic) enumerator of a file Handle.  This version enumerates
 -- over the entire contents of a file, in order, unless stopped by
 -- the iteratee.  In particular, seeking is not supported.
+-- Data is read into a buffer of the specified size.
 enumHandle :: forall s el m a.(ReadableChunk s el, Nullable s, MonadIO m) =>
-  Handle ->
-  Enumerator s m a
-enumHandle h i = do
-  let bufsize = 4096 - mod 4096 (sizeOf (undefined :: el))
+  Int -- ^Buffer size (number of elements per read)
+  -> Handle
+  -> Enumerator s m a
+enumHandle bs h i = do
+  let bufsize = bs * (sizeOf (undefined :: el))
   p <- liftIO $ mallocBytes bufsize
   enumFromCallback (liftIO $ makeHandleCallback p bufsize h) i
 
 
 -- |The enumerator of a Handle: a variation of enumHandle that
--- supports RandomIO (seek requests)
+-- supports RandomIO (seek requests).
+-- Data is read into a buffer of the specified size.
 enumHandleRandom
   :: forall s el m a.(ReadableChunk s el, Nullable s, MonadIO m) =>
-     Handle
+     Int -- ^Buffer size (number of elements per read)
+     -> Handle
      -> Enumerator s m a
-enumHandleRandom h i = do
-  let bufsize = 4096 - mod 4096 (sizeOf (undefined :: el))
+enumHandleRandom bs h i = do
+  let bufsize = bs * (sizeOf (undefined :: el))
   let handler (SeekException off) =
        liftM (either
               (Just . EnumException :: IOException -> Maybe EnumException)
@@ -82,26 +86,33 @@ enumHandleRandom h i = do
 -- ----------------------------------------------
 -- File Driver wrapper functions.
 
--- |Process a file using the given Iteratee.  This function wraps
--- enumHandle as a convenience.
+fileDriver :: (MonadCatchIO m, Nullable s, ReadableChunk s el) =>
+  (Int -> Handle -> Enumerator s m a)
+  -> Int -- ^Buffer size
+  -> Iteratee s m a
+  -> FilePath
+  -> m a
+fileDriver enumf bufsize iter filepath = CIO.bracket
+  (liftIO $ openBinaryFile filepath ReadMode)
+  (liftIO . hClose)
+  (run <=< flip (enumf bufsize) iter)
+
+-- |Process a file using the given @Iteratee@.  This function wraps
+-- @enumHandle@ as a convenience.
 fileDriverHandle
   :: (MonadCatchIO m, Nullable s, ReadableChunk s el) =>
-     Iteratee s m a
+     Int -- ^Buffer size (number of elements)
+     -> Iteratee s m a
      -> FilePath
      -> m a
-fileDriverHandle iter filepath = CIO.bracket
-  (liftIO $ openBinaryFile filepath ReadMode)
-  (liftIO . hClose)
-  (run <=< flip enumHandle iter)
+fileDriverHandle = fileDriver enumHandle
 
--- |Process a file using the given Iteratee.  This function wraps
--- enumHandleRandom as a convenience.
+-- |A version of @fileDriverHandle@ that supports seeking.
 fileDriverRandomHandle
   :: (MonadCatchIO m, Nullable s, ReadableChunk s el) =>
-     Iteratee s m a
+     Int
+     -> Iteratee s m a
      -> FilePath
      -> m a
-fileDriverRandomHandle iter filepath = CIO.bracket
-  (liftIO $ openBinaryFile filepath ReadMode)
-  (liftIO . hClose)
-  (run <=< flip enumHandleRandom iter)
+fileDriverRandomHandle = fileDriver enumHandleRandom
+

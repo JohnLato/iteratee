@@ -14,9 +14,12 @@ module Data.Iteratee.IO(
 #endif
   -- * Iteratee drivers
   --   These are FileDescriptor-based on POSIX systems, otherwise they are
-  --   Handle-based.
+  --   Handle-based.  The Handle-based drivers are accessible on POSIX systems
+  --   at Data.Iteratee.IO.Handle
   fileDriver,
+  fileDriverVBuf,
   fileDriverRandom,
+  fileDriverRandomVBuf,
 )
 
 where
@@ -32,6 +35,9 @@ import Data.Iteratee.IO.Fd
 
 import Control.Monad.CatchIO
 
+defaultBufSize :: Int
+defaultBufSize = 4096
+
 -- If Posix is available, use the fileDriverRandomFd as fileDriverRandom.  Otherwise, use a handle-based variant.
 #if defined(USE_POSIX)
 
@@ -42,7 +48,16 @@ fileDriver
      Iteratee s m a
      -> FilePath
      -> m a
-fileDriver = fileDriverFd
+fileDriver = fileDriverFd defaultBufSize
+
+-- |A version of fileDriver with a user-specified buffer size (in elements).
+fileDriverVBuf
+  :: (MonadCatchIO m, Nullable s, ReadableChunk s el) =>
+     Int
+     -> Iteratee s m a
+     -> FilePath
+     -> m a
+fileDriverVBuf = fileDriverFd
 
 -- |Process a file using the given Iteratee.  This function wraps
 -- enumFdRandom as a convenience.
@@ -51,7 +66,15 @@ fileDriverRandom
      Iteratee s m a
      -> FilePath
      -> m a
-fileDriverRandom = fileDriverRandomFd
+fileDriverRandom = fileDriverRandomFd defaultBufSize
+
+fileDriverRandomVBuf
+  :: (MonadCatchIO m, Nullable s, ReadableChunk s el) =>
+     Int
+     -> Iteratee s m a
+     -> FilePath
+     -> m a
+fileDriverRandomVBuf = fileDriverRandomFd
 
 #else
 
@@ -59,21 +82,37 @@ fileDriverRandom = fileDriverRandomFd
 -- Handle-based operations for compatibility.
 
 -- |Process a file using the given Iteratee.  This function wraps
--- enumHandle as a convenience.
+-- @enumHandle@ as a convenience.
 fileDriver
   :: (MonadCatchIO m, ReadableChunk s el) =>
      Iteratee s m a
      -> FilePath
      -> m a
+fileDriver = fileDriverHandle defaultBufSize
+
+fileDriverVBuf
+  :: (MonadCatchIO m, ReadableChunk s el) =>
+     Int
+     -> Iteratee s m a
+     -> FilePath
+     -> m a
 fileDriver = fileDriverHandle
 
 -- |Process a file using the given Iteratee.  This function wraps
--- enumFdHandle as a convenience.
+-- @enumRandomHandle@ as a convenience.
 fileDriverRandom
   :: (MonadCatchIO m, ReadableChunk s el) =>
      Iteratee s m a
      -> FilePath
      -> m a
-fileDriverRandom = fileDriverRandomHandle
+fileDriverRandom = fileDriverRandomHandle defaultBufSize
+
+fileDriverRandomVBuf
+  :: (MonadCatchIO m, ReadableChunk s el) =>
+     Int
+     -> Iteratee s m a
+     -> FilePath
+     -> m a
+fileDriverRandomVBuf = fileDriverRandomHandle
 
 #endif

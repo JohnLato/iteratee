@@ -9,6 +9,7 @@ module Data.Iteratee.IO.Fd(
   -- * File enumerators
   -- ** FileDescriptor based enumerators for monadic iteratees
   enumFd
+  ,enumFdCatch
   ,enumFdRandom
   -- * Iteratee drivers
   ,fileDriverFd
@@ -69,6 +70,19 @@ enumFd bs fd iter = do
   p <- liftIO $ mallocBytes bufsize
   enumFromCallback (liftIO $ makefdCallback p (fromIntegral bufsize) fd) iter
 
+-- |A variant of enumFd that catches exceptions raised by the @Iteratee@.
+enumFdCatch
+  :: forall e s el m a.(IException e, Nullable s, ReadableChunk s el, MonadIO m)
+     => Int
+     -> Fd
+     -> (e -> m (Maybe EnumException))
+     -> Enumerator s m a
+enumFdCatch bs fd handler iter = do
+  let bufsize = bs * (sizeOf (undefined :: el))
+  p <- liftIO $ mallocBytes bufsize
+  enumFromCallbackCatch (liftIO $ makefdCallback p (fromIntegral bufsize) fd)
+    handler iter
+
 
 -- |The enumerator of a POSIX File Descriptor: a variation of @enumFd@ that
 -- supports RandomIO (seek requests).
@@ -77,16 +91,13 @@ enumFdRandom
      Int
      -> Fd
      -> Enumerator s m a
-enumFdRandom bs fd iter = do
-  let bufsize = bs * (sizeOf (undefined :: el))
-  let handler (SeekException off) =
-       liftM (either
-              (const . Just $ enStrExc "Error seeking within file descriptor")
-              (const Nothing))
-             . liftIO . myfdSeek fd AbsoluteSeek $ fromIntegral off
-  p <- liftIO $ mallocBytes bufsize
-  enumFromCallbackCatch (liftIO $ makefdCallback p (fromIntegral bufsize) fd)
-                        handler iter
+enumFdRandom bs fd iter = enumFdCatch bs fd handler iter
+  where
+    handler (SeekException off) =
+      liftM (either
+             (const . Just $ enStrExc "Error seeking within file descriptor")
+             (const Nothing))
+            . liftIO . myfdSeek fd AbsoluteSeek $ fromIntegral off
 
 fileDriver
   :: (MonadCatchIO m, Nullable s, ReadableChunk s el) =>

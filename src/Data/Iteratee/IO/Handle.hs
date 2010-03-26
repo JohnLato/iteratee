@@ -8,6 +8,7 @@
 module Data.Iteratee.IO.Handle(
   -- * File enumerators
   enumHandle
+  ,enumHandleCatch
   ,enumHandleRandom
   -- * Iteratee drivers
   ,fileDriverHandle
@@ -63,6 +64,19 @@ enumHandle bs h i = do
   p <- liftIO $ mallocBytes bufsize
   enumFromCallback (liftIO $ makeHandleCallback p bufsize h) i
 
+-- |An enumerator of a file handle that catches exceptions raised by
+-- the Iteratee.
+enumHandleCatch
+  :: forall e s el m a.(IException e, ReadableChunk s el, Nullable s, MonadIO m)
+     => Int -- ^Buffer size (number of elements per read)
+     -> Handle
+     -> (e -> m (Maybe EnumException))
+     -> Enumerator s m a
+enumHandleCatch bs h handler i = do
+  let bufsize = bs * (sizeOf (undefined :: el))
+  p <- liftIO $ mallocBytes bufsize
+  enumFromCallbackCatch (liftIO $ makeHandleCallback p bufsize h) handler i
+
 
 -- |The enumerator of a Handle: a variation of enumHandle that
 -- supports RandomIO (seek requests).
@@ -72,16 +86,13 @@ enumHandleRandom
      Int -- ^Buffer size (number of elements per read)
      -> Handle
      -> Enumerator s m a
-enumHandleRandom bs h i = do
-  let bufsize = bs * (sizeOf (undefined :: el))
-  let handler (SeekException off) =
+enumHandleRandom bs h i = enumHandleCatch bs h handler i
+  where
+    handler (SeekException off) =
        liftM (either
               (Just . EnumException :: IOException -> Maybe EnumException)
               (const Nothing))
              . liftIO . CIO.try $ hSeek h AbsoluteSeek $ fromIntegral off
-  p <- liftIO $ mallocBytes bufsize
-  enumFromCallbackCatch (liftIO $ makeHandleCallback p bufsize h) handler i
-
 
 -- ----------------------------------------------
 -- File Driver wrapper functions.

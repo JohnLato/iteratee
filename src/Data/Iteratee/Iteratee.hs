@@ -42,7 +42,6 @@ import Data.Iteratee.IO.Base
 import Data.Iteratee.Base
 
 import Control.Monad
-import Control.Monad.Trans
 import Control.Exception
 import Control.Failure
 import Data.Maybe
@@ -221,16 +220,15 @@ enumPure1Chunk str iter = runIter iter idoneM onCont
 
 -- |Create an enumerator from a callback function
 enumFromCallback ::
-  (MonadIO m) =>
+  (Monad m) =>
   m (Either SomeException (Bool, s)) -> Enumerator s m a
 enumFromCallback = flip enumFromCallbackCatch
   (\NothingException -> return Nothing)
 
 -- |Create an enumerator from a callback function with an exception handler.
 -- The exception handler is called if an iteratee reports an exception.
--- The two exceptions `e' and `e2' must have different types.
 enumFromCallbackCatch ::
-  (IException e, MonadIO m) =>
+  (IException e, Monad m) =>
   m (Either SomeException (Bool, s))
   -> (e -> m (Maybe EnumException))
   -> Enumerator s m a

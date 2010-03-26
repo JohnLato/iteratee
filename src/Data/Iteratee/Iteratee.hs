@@ -153,13 +153,13 @@ joinI
   :: (Monad m, Nullable s) =>
      Iteratee s m (Iteratee s' m a)
      -> Iteratee s m a
-joinI outer = outer >>=
+joinI = (>>=
   \inner -> Iteratee $ \od oc ->
   let on_done  x _        = od x (Chunk empty)
       on_cont  k Nothing  = runIter (k (EOF Nothing)) on_done on_cont'
       on_cont  _ (Just e) = runIter (throwErr e) od oc
       on_cont' _ e        = runIter (throwErr (fromMaybe excDivergent e)) od oc
-  in runIter inner on_done on_cont
+  in runIter inner on_done on_cont)
 
 
 -- ------------------------------------------------------------------------
@@ -207,7 +207,7 @@ enumErr e iter = runIter iter onDone onCont
 (>>>)
   :: (Monad m) =>
      Enumerator s m a -> Enumerator s m a -> Enumerator s m a
-e1 >>> e2 =  \i -> e1 i >>= e2
+(e1 >>> e2) i =  e1 i >>= e2
 
 -- |The pure 1-chunk enumerator
 -- It passes a given list of elements to the iteratee in one chunk

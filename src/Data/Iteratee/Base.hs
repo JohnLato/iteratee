@@ -273,8 +273,8 @@ icontM k e = return $ Iteratee $ \_ onCont -> onCont k e
 
 instance (Functor m, Monad m) => Functor (Iteratee s m) where
   fmap f m = Iteratee $ \onDone onCont ->
-    let od   = onDone . f
-        oc k = onCont (fmap f . k)
+    let od = onDone . f
+        oc = onCont . (fmap f .)
     in runIter m od oc
 
 instance (Functor m, Monad m, Nullable s) => Applicative (Iteratee s m) where
@@ -291,7 +291,7 @@ instance (Monad m, Nullable s) => Monad (Iteratee s m) where
          m_done a stream = runIter (f a) (const . flip onDone stream) f_cont
            where f_cont k Nothing = runIter (k stream) onDone onCont
                  f_cont k e       = onCont k e
-     in runIter m m_done (\k -> onCont ((>>= f) . k))
+     in runIter m m_done (onCont . ((>>= f) .))
 
 instance Monoid s => MonadTrans (Iteratee s) where
   lift m = Iteratee $ \onDone _ -> m >>= flip onDone mempty

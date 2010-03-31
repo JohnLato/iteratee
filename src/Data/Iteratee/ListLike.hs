@@ -33,7 +33,7 @@ module Data.Iteratee.ListLike (
   -- ** Basic enumerators
   enumPureNChunk,
   -- ** Enumerator Combinators
-  -- enumPair,
+  enumPair,
   -- * Classes
   module Data.Iteratee.Iteratee
 )
@@ -46,6 +46,7 @@ import qualified Data.ListLike as LL
 import qualified Data.ListLike.FoldableLL as FLL
 import Data.Iteratee.Iteratee
 import Control.Monad
+import Control.Monad.Trans
 import Data.Monoid
 
 
@@ -212,16 +213,16 @@ takeR :: (Monad m, Nullable s, LL.ListLike s el) => Int -> Enumeratee s s m a
 takeR 0 iter = return iter
 takeR i iter = Iteratee $ \od oc -> runIter iter (onDone od oc) (onCont od oc)
   where
-    onDone od oc x _ = runIter (return (return x)) od oc
-    onCont od oc k Nothing = if i == 0 then od (liftI k) (Chunk mempty)
+    onDone od oc x _        = runIter (return (return x)) od oc
+    onCont od oc k Nothing  = if i == 0 then od (liftI k) (Chunk mempty)
                                  else runIter (liftI (step i k)) od oc
     onCont od oc _ (Just e) = runIter (throwErr e) od oc
     step n k (Chunk str)
-      | LL.null str        = liftI (step n k)
-      | LL.length str <= n = takeR (n - LL.length str) $ k (Chunk str)
-      | True               = idone (k (Chunk s1)) (Chunk s2)
+      | LL.null str         = liftI (step n k)
+      | LL.length str <= n  = takeR (n - LL.length str) $ k (Chunk str)
+      | True                = idone (k (Chunk s1)) (Chunk s2)
       where (s1, s2) = LL.splitAt n str
-    step _n k stream       = idone (k stream) stream
+    step _n k stream        = idone (k stream) stream
 
 
 -- |Map the stream: yet another iteratee transformer
@@ -326,29 +327,31 @@ product = icont (step 1) Nothing
 -- ------------------------------------------------------------------------
 -- Zips
 
-{-
 -- |Enumerate two iteratees over a single stream simultaneously.
 enumPair
-  :: (Monad m, LL.ListLike s el) =>
+  :: (Monad m, Nullable s, LL.ListLike s el) =>
      Iteratee s m a
      -> Iteratee s m b
      -> Iteratee s m (a,b)
-enumPair i1 i2 = Iteratee check
- where
-   longest c1@(Chunk xs) c2@(Chunk ys) = if LL.length xs > LL.length ys
-                                         then c1 else c2
-   longest e@(EOF _)  _          = e
-   longest _          e@(EOF _)  = e
-   check = do
-     ia <- runIter i1
-     ib <- runIter i2
-     case (ia, ib) of
-       (Done a astr, Done b bstr)  -> return . Done (a,b) $ longest astr bstr
-       (Done _ _astr, Cont k mErr) -> return $ Cont (enumPair i1 . k ) mErr
-       (Cont k mErr, Done _ _bstr) -> return $ Cont (flip enumPair i2 . k) mErr
-       (Cont a aEr,  Cont b bEr)   -> return $ Cont (\s -> enumPair (a s) (b s))
-                                                    (aEr `mappend` bEr)
--}
+enumPair i1 i2 = Iteratee $ \od oc -> runIter i1 (onDone od oc) (onCont od oc)
+  where
+    onDone od oc x s        = runIter i2 (oD12 od oc x s) (onCont' od oc x)
+    oD12 od oc x1 s1 x2 s2  = runIter (idone (x1,x2) (longest s1 s2)) od oc
+    onCont od oc k mErr     = runIter (icont (step k) mErr) od oc
+      where
+    onCont' od oc x1 k mErr = runIter (icont (step2 x1 k) mErr) od oc
+    step k c@(Chunk str)
+      | null str            = liftI (step k)
+      | True                = lift (enumPure1Chunk str i2) >>= enumPair (k c)
+    step k s@(EOF Nothing)  = lift (enumEof i2) >>= enumPair (k s)
+    step k s@(EOF (Just e)) = lift (enumErr e i2) >>= enumPair (k s)
+    step2 x1 k (Chunk str)
+      | null str            = liftI (step2 x1 k)
+    step2 x1 k str          = enumPair (return x1) (k str)
+    longest c1@(Chunk xs) c2@(Chunk ys) = if LL.length xs > LL.length ys
+                                          then c1 else c2
+    longest e@(EOF _)  _         = e
+    longest _          e@(EOF _) = e
 
 -- ------------------------------------------------------------------------
 -- Enumerators

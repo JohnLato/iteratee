@@ -19,7 +19,7 @@ module Data.Iteratee.ListLike (
   length,
   -- ** Nested iteratee combinators
   take,
-  --takeR,
+  takeR,
   mapStream,
   filter,
   -- ** Folds
@@ -202,7 +202,6 @@ take n' iter = Iteratee $ \od oc -> runIter iter (on_done od oc) (on_cont od oc)
       where (s1, s2) = LL.splitAt n str
     step _n k stream       = idone (k stream) stream
 
-{-
 -- |Read n elements from a stream and apply the given iteratee to the
 -- stream of the read elements. If the given iteratee accepted fewer
 -- elements, we stop.
@@ -211,27 +210,18 @@ take n' iter = Iteratee $ \od oc -> runIter iter (on_done od oc) (on_cont od oc)
 -- finished early.
 takeR :: (Monad m, Nullable s, LL.ListLike s el) => Int -> Enumeratee s s m a
 takeR 0 iter = return iter
-takeR i iter = icont (step i) Nothing
+takeR i iter = Iteratee $ \od oc -> runIter iter (onDone od oc) (onCont od oc)
   where
-    step n s@(Chunk str)
-      | LL.null str        = icont (step i) Nothing
-      | LL.length str <= n = iter >>== check (n - LL.length str) s
-      | otherwise          = done' n s
-    step _ st              = iter >>== final st
-      where
-        final str (Done a _)       = idone (idone a str) str
-        final str (Cont k Nothing) = idone (k str) str
-        final str (Cont k e)       = idone (k str) (EOF e)
-    check _ str (Done a _)    = idone (return a) str
-    check n str (Cont k _) = takeR n $ k str
-    done' n s@(Chunk str) = iter >>== check'
-      where
-        (s1, s2) = LL.splitAt n str
-        check' (Done a _)        = idone (idone a (Chunk s1)) s
-        check' (Cont k Nothing)  = idone (k $ Chunk s1) (Chunk s2)
-        check' (Cont _ (Just e)) = throwErr e
-    done' _ _             = error "Internal error in takeR"
--}
+    onDone od oc x _ = runIter (return (return x)) od oc
+    onCont od oc k Nothing = if i == 0 then od (liftI k) (Chunk mempty)
+                                 else runIter (liftI (step i k)) od oc
+    onCont od oc _ (Just e) = runIter (throwErr e) od oc
+    step n k (Chunk str)
+      | LL.null str        = liftI (step n k)
+      | LL.length str <= n = takeR (n - LL.length str) $ k (Chunk str)
+      | True               = idone (k (Chunk s1)) (Chunk s2)
+      where (s1, s2) = LL.splitAt n str
+    step _n k stream       = idone (k stream) stream
 
 
 -- |Map the stream: yet another iteratee transformer

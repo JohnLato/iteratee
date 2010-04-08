@@ -20,6 +20,7 @@ module Data.Iteratee.Base (
   ,IterException (..)
   ,SeekException (..)
   ,EofException (..)
+  ,IterStringException (..)
   -- ** Iteratees
   ,Iteratee (..)
   ,run
@@ -35,6 +36,7 @@ module Data.Iteratee.Base (
   ,setEOF
   -- ** Exception handling
   ,enStrExc
+  ,iterStrExc
   ,wrapIterExc
   -- * Classes
   ,NullPoint (..)
@@ -212,6 +214,13 @@ instance Exception EofException where
 
 instance IException EofException where
 
+data IterStringException = IterStringException String deriving (Typeable, Show)
+
+instance Exception IterStringException where
+  toException   = iterExceptionToException
+  fromException = iterExceptionFromException
+
+instance IException IterStringException where
 
 -- |Produce the EOF error message.  If the stream was terminated because
 -- of an error, keep the original error message.
@@ -219,6 +228,9 @@ setEOF :: StreamG c -> SomeException
 setEOF (EOF (Just e)) = e
 setEOF _              = toException EofException
 
+-- |Create an iteratee exception from a string.
+iterStrExc :: String -> SomeException
+iterStrExc= toException . IterStringException
 
 -- ----------------------------------------------
 -- |NullPoint class.  Containers that have a null representation.

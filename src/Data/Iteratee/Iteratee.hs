@@ -16,6 +16,7 @@ module Data.Iteratee.Iteratee (
   -- ** Nested iteratee combinators
   convStream,
   joinI,
+  joinIM,
   -- * Enumerators
   Enumerator,
   Enumeratee,
@@ -160,6 +161,9 @@ joinI = (>>=
       on_cont  _ (Just e) = runIter (throwErr e) od oc
       on_cont' _ e        = runIter (throwErr (fromMaybe excDivergent e)) od oc
   in runIter inner on_done on_cont)
+
+joinIM :: (Monad m) => m (Iteratee s m a) -> Iteratee s m a
+joinIM mIter = Iteratee $ \od oc -> mIter >>= \iter -> runIter iter od oc
 
 
 -- ------------------------------------------------------------------------

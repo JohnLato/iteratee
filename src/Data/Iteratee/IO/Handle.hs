@@ -37,13 +37,13 @@ import System.IO
 -- Binary Random IO enumerators
 
 makeHandleCallback ::
-  (NullPoint s, ReadableChunk s el) =>
+  (MonadCatchIO m, NullPoint s, ReadableChunk s el) =>
   Ptr el
   -> Int
   -> Handle
-  -> IO (Either SomeException (Bool, s))
-makeHandleCallback p bufsize h = do
-  n' <- CIO.try $ hGetBuf h p bufsize :: IO (Either SomeException Int)
+  -> m (Either SomeException (Bool, s))
+makeHandleCallback p bsize h = do
+  n' <- liftIO $ (CIO.try $ hGetBuf h p bsize :: IO (Either SomeException Int))
   case n' of
     Left e -> return $ Left e
     Right 0 -> return $ Right (False, empty)
@@ -54,37 +54,42 @@ makeHandleCallback p bufsize h = do
 -- over the entire contents of a file, in order, unless stopped by
 -- the iteratee.  In particular, seeking is not supported.
 -- Data is read into a buffer of the specified size.
-enumHandle :: forall s el m a.(NullPoint s, ReadableChunk s el, MonadIO m) =>
+enumHandle ::
+ forall s el m a.(NullPoint s, ReadableChunk s el, MonadCatchIO m) =>
   Int -- ^Buffer size (number of elements per read)
   -> Handle
   -> Enumerator s m a
 enumHandle bs h i = do
   let bufsize = bs * (sizeOf (undefined :: el))
   p <- liftIO $ mallocBytes bufsize
-  enumFromCallback (liftIO $ makeHandleCallback p bufsize h) i
+  enumFromCallback (makeHandleCallback p bufsize h) i
 
 -- |An enumerator of a file handle that catches exceptions raised by
 -- the Iteratee.
 enumHandleCatch
- :: forall e s el m a.(IException e, NullPoint s, ReadableChunk s el, MonadIO m)
-    => Int -- ^Buffer size (number of elements per read)
-    -> Handle
-    -> (e -> m (Maybe EnumException))
-    -> Enumerator s m a
+ ::
+ forall e s el m a.(IException e,
+                    NullPoint s,
+                    ReadableChunk s el,
+                    MonadCatchIO m) =>
+  Int -- ^Buffer size (number of elements per read)
+  -> Handle
+  -> (e -> m (Maybe EnumException))
+  -> Enumerator s m a
 enumHandleCatch bs h handler i = do
   let bufsize = bs * (sizeOf (undefined :: el))
   p <- liftIO $ mallocBytes bufsize
-  enumFromCallbackCatch (liftIO $ makeHandleCallback p bufsize h) handler i
+  enumFromCallbackCatch (makeHandleCallback p bufsize h) handler i
 
 
 -- |The enumerator of a Handle: a variation of enumHandle that
 -- supports RandomIO (seek requests).
 -- Data is read into a buffer of the specified size.
-enumHandleRandom
-  :: forall s el m a.(NullPoint s, ReadableChunk s el, MonadIO m) =>
-     Int -- ^ Buffer size (number of elements per read)
-     -> Handle
-     -> Enumerator s m a
+enumHandleRandom ::
+ forall s el m a.(NullPoint s, ReadableChunk s el, MonadCatchIO m) =>
+  Int -- ^ Buffer size (number of elements per read)
+  -> Handle
+  -> Enumerator s m a
 enumHandleRandom bs h i = enumHandleCatch bs h handler i
   where
     handler (SeekException off) =

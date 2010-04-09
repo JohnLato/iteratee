@@ -43,14 +43,14 @@ import GHC.Conc
 -- Binary Random IO enumerators
 
 makefdCallback ::
-  (NullPoint s, ReadableChunk s el) =>
+  (MonadIO m, NullPoint s, ReadableChunk s el) =>
   Ptr el
   -> ByteCount
   -> Fd
-  -> IO (Either SomeException (Bool, s))
+  -> m (Either SomeException (Bool, s))
 makefdCallback p bufsize fd = do
-  GHC.Conc.threadWaitRead fd
-  n <- myfdRead fd (castPtr p) bufsize
+  liftIO $ GHC.Conc.threadWaitRead fd
+  n <- liftIO $ myfdRead fd (castPtr p) bufsize
   case n of
     Left _   -> return $ Left undefined
     Right 0  -> return $ Right (False, empty)
@@ -67,7 +67,7 @@ enumFd
 enumFd bs fd iter = do
   let bufsize = bs * (sizeOf (undefined :: el))
   p <- liftIO $ mallocBytes bufsize
-  enumFromCallback (liftIO $ makefdCallback p (fromIntegral bufsize) fd) iter
+  enumFromCallback (makefdCallback p (fromIntegral bufsize) fd) iter
 
 -- |A variant of enumFd that catches exceptions raised by the @Iteratee@.
 enumFdCatch
@@ -79,7 +79,7 @@ enumFdCatch
 enumFdCatch bs fd handler iter = do
   let bufsize = bs * (sizeOf (undefined :: el))
   p <- liftIO $ mallocBytes bufsize
-  enumFromCallbackCatch (liftIO $ makefdCallback p (fromIntegral bufsize) fd)
+  enumFromCallbackCatch (makefdCallback p (fromIntegral bufsize) fd)
     handler iter
 
 

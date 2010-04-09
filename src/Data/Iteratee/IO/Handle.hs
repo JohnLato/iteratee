@@ -55,7 +55,7 @@ makeHandleCallback p bufsize h = do
 -- over the entire contents of a file, in order, unless stopped by
 -- the iteratee.  In particular, seeking is not supported.
 -- Data is read into a buffer of the specified size.
-enumHandle :: forall s el m a.(ReadableChunk s el, Nullable s, MonadIO m) =>
+enumHandle :: forall s el m a.(ReadableChunk s el, MonadIO m) =>
   Int -- ^Buffer size (number of elements per read)
   -> Handle
   -> Enumerator s m a
@@ -67,7 +67,7 @@ enumHandle bs h i = do
 -- |An enumerator of a file handle that catches exceptions raised by
 -- the Iteratee.
 enumHandleCatch
-  :: forall e s el m a.(IException e, ReadableChunk s el, Nullable s, MonadIO m)
+  :: forall e s el m a.(IException e, ReadableChunk s el, MonadIO m)
      => Int -- ^Buffer size (number of elements per read)
      -> Handle
      -> (e -> m (Maybe EnumException))
@@ -82,8 +82,8 @@ enumHandleCatch bs h handler i = do
 -- supports RandomIO (seek requests).
 -- Data is read into a buffer of the specified size.
 enumHandleRandom
-  :: forall s el m a.(ReadableChunk s el, Nullable s, MonadIO m) =>
-     Int -- ^Buffer size (number of elements per read)
+  :: forall s el m a.(ReadableChunk s el, MonadIO m) =>
+     Int -- ^ Buffer size (number of elements per read)
      -> Handle
      -> Enumerator s m a
 enumHandleRandom bs h i = enumHandleCatch bs h handler i
@@ -97,7 +97,7 @@ enumHandleRandom bs h i = enumHandleCatch bs h handler i
 -- ----------------------------------------------
 -- File Driver wrapper functions.
 
-fileDriver :: (MonadCatchIO m, Nullable s, ReadableChunk s el) =>
+fileDriver :: (MonadCatchIO m, ReadableChunk s el) =>
   (Int -> Handle -> Enumerator s m a)
   -> Int -- ^Buffer size
   -> Iteratee s m a
@@ -111,7 +111,7 @@ fileDriver enumf bufsize iter filepath = CIO.bracket
 -- |Process a file using the given @Iteratee@.  This function wraps
 -- @enumHandle@ as a convenience.
 fileDriverHandle
-  :: (MonadCatchIO m, Nullable s, ReadableChunk s el) =>
+  :: (MonadCatchIO m, ReadableChunk s el) =>
      Int -- ^Buffer size (number of elements)
      -> Iteratee s m a
      -> FilePath
@@ -120,7 +120,7 @@ fileDriverHandle = fileDriver enumHandle
 
 -- |A version of @fileDriverHandle@ that supports seeking.
 fileDriverRandomHandle
-  :: (MonadCatchIO m, Nullable s, ReadableChunk s el) =>
+  :: (MonadCatchIO m, ReadableChunk s el) =>
      Int
      -> Iteratee s m a
      -> FilePath

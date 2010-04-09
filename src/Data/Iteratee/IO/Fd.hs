@@ -61,7 +61,7 @@ makefdCallback p bufsize fd = do
 -- over the entire contents of a file, in order, unless stopped by
 -- the iteratee.  In particular, seeking is not supported.
 enumFd
-  :: forall s el m a.(Nullable s, ReadableChunk s el, MonadIO m) =>
+  :: forall s el m a.(ReadableChunk s el, MonadIO m) =>
      Int
      -> Fd
      -> Enumerator s m a
@@ -72,7 +72,7 @@ enumFd bs fd iter = do
 
 -- |A variant of enumFd that catches exceptions raised by the @Iteratee@.
 enumFdCatch
-  :: forall e s el m a.(IException e, Nullable s, ReadableChunk s el, MonadIO m)
+  :: forall e s el m a.(IException e, ReadableChunk s el, MonadIO m)
      => Int
      -> Fd
      -> (e -> m (Maybe EnumException))
@@ -87,7 +87,7 @@ enumFdCatch bs fd handler iter = do
 -- |The enumerator of a POSIX File Descriptor: a variation of @enumFd@ that
 -- supports RandomIO (seek requests).
 enumFdRandom
-  :: forall s el m a.(Nullable s, ReadableChunk s el, MonadIO m) =>
+  :: forall s el m a.(ReadableChunk s el, MonadIO m) =>
      Int
      -> Fd
      -> Enumerator s m a
@@ -100,7 +100,7 @@ enumFdRandom bs fd iter = enumFdCatch bs fd handler iter
             . liftIO . myfdSeek fd AbsoluteSeek $ fromIntegral off
 
 fileDriver
-  :: (MonadCatchIO m, Nullable s, ReadableChunk s el) =>
+  :: (MonadCatchIO m, ReadableChunk s el) =>
      (Int -> Fd -> Enumerator s m a)
      -> Int
      -> Iteratee s m a
@@ -113,7 +113,7 @@ fileDriver enumf bufsize iter filepath = CIO.bracket
 
 -- |Process a file using the given @Iteratee@.
 fileDriverFd
-  :: (MonadCatchIO m, Nullable s, ReadableChunk s el) =>
+  :: (MonadCatchIO m, ReadableChunk s el) =>
      Int -- ^Buffer size (number of elements)
      -> Iteratee s m a
      -> FilePath
@@ -122,7 +122,7 @@ fileDriverFd = fileDriver enumFd
 
 -- |A version of fileDriverFd that supports seeking.
 fileDriverRandomFd
-  :: (MonadCatchIO m, Nullable s, ReadableChunk s el) =>
+  :: (MonadCatchIO m, ReadableChunk s el) =>
      Int
      -> Iteratee s m a
      -> FilePath

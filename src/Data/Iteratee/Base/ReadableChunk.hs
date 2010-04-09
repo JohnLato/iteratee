@@ -1,4 +1,4 @@
-{-# LANGUAGE MultiParamTypeClasses, FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses, FlexibleInstances, FunctionalDependencies #-}
 
 -- |Monadic and General Iteratees:
 -- incremental input parsers, processors and transformers
@@ -11,7 +11,6 @@ where
 
 import Prelude hiding (head, tail, dropWhile, length, splitAt )
 
-import qualified Data.ListLike as LL
 import qualified Data.ByteString as B
 import Data.Word
 import Foreign.C
@@ -23,7 +22,7 @@ import Foreign.Marshal.Array
 -- are streams which can be read from a file.
 -- The Int parameter is the length of the data in bytes.
 -- N.B. The pointer must not be returned or used after readFromPtr completes.
-class (LL.ListLike c el, Storable el) => ReadableChunk c el where
+class (Storable el) => ReadableChunk c el | c -> el where
   readFromPtr :: Ptr el -> Int -> IO c
 
 instance ReadableChunk [Char] Char where

@@ -224,7 +224,7 @@ enumPure1Chunk str iter = runIter iter idoneM onCont
 
 -- |Create an enumerator from a callback function
 enumFromCallback ::
-  (Monad m) =>
+  (Monad m, NullPoint s) =>
   m (Either SomeException (Bool, s)) -> Enumerator s m a
 enumFromCallback = flip enumFromCallbackCatch
   (\NothingException -> return Nothing)
@@ -232,7 +232,7 @@ enumFromCallback = flip enumFromCallbackCatch
 -- |Create an enumerator from a callback function with an exception handler.
 -- The exception handler is called if an iteratee reports an exception.
 enumFromCallbackCatch ::
-  (IException e, Monad m) =>
+  (IException e, Monad m, NullPoint s) =>
   m (Either SomeException (Bool, s))
   -> (e -> m (Maybe EnumException))
   -> Enumerator s m a
@@ -242,7 +242,8 @@ enumFromCallbackCatch c handler = loop
     on_cont k Nothing = c >>= either (return . k . EOF . Just) (uncurry check)
       where
         check b = if b then loop . k . Chunk else return . k . Chunk
-    on_cont k j@(Just e) = maybe (return (icont k j))
-                                 (on_cont k . fmap toException <=< handler)
-                                 (fromException e)
+    on_cont k j@(Just e) = case fromException e of
+      Just e' -> handler e' >>= maybe (loop . k $ Chunk empty)
+                                 (return . icont k . Just) . fmap toException
+      Nothing -> return (icont k j)
 

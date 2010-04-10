@@ -43,7 +43,7 @@ makeHandleCallback ::
   -> Handle
   -> m (Either SomeException (Bool, s))
 makeHandleCallback p bsize h = do
-  n' <- liftIO $ (CIO.try $ hGetBuf h p bsize :: IO (Either SomeException Int))
+  n' <- liftIO (CIO.try $ hGetBuf h p bsize :: IO (Either SomeException Int))
   case n' of
     Left e -> return $ Left e
     Right 0 -> return $ Right (False, empty)
@@ -60,7 +60,7 @@ enumHandle ::
   -> Handle
   -> Enumerator s m a
 enumHandle bs h i = do
-  let bufsize = bs * (sizeOf (undefined :: el))
+  let bufsize = bs * sizeOf (undefined :: el)
   p <- liftIO $ mallocBytes bufsize
   enumFromCallback (makeHandleCallback p bufsize h) i
 
@@ -77,7 +77,7 @@ enumHandleCatch
   -> (e -> m (Maybe EnumException))
   -> Enumerator s m a
 enumHandleCatch bs h handler i = do
-  let bufsize = bs * (sizeOf (undefined :: el))
+  let bufsize = bs * sizeOf (undefined :: el)
   p <- liftIO $ mallocBytes bufsize
   enumFromCallbackCatch (makeHandleCallback p bufsize h) handler i
 

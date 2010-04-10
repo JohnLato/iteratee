@@ -360,11 +360,11 @@ enumPair i1 i2 = Iteratee $ \od oc -> runIter i1 (onDone od oc) (onCont od oc)
 -- It passes a given chunk of elements to the iteratee in n chunks
 -- This enumerator does no IO and is useful for testing of base parsing
 -- and handling of chunk boundaries
-enumPureNChunk
-  :: (Monad m, LL.ListLike s el) =>
-     s
-     -> Int
-     -> Enumerator s m a
+enumPureNChunk ::
+ (Monad m, LL.ListLike s el) =>
+  s
+  -> Int
+  -> Enumerator s m a
 enumPureNChunk str n iter
   | LL.null str = return iter
   | n > 0       = enum' str iter

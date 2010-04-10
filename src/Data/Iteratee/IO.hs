@@ -90,6 +90,7 @@ fileDriver
      -> m a
 fileDriver = fileDriverHandle defaultBufSize
 
+-- |A version of fileDriver with a user-specified buffer size (in elements).
 fileDriverVBuf
   :: (MonadCatchIO m, NullPoint s, ReadableChunk s el) =>
      Int

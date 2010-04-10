@@ -36,7 +36,7 @@ import Data.Iteratee.IO.Fd
 import Control.Monad.CatchIO
 
 defaultBufSize :: Int
-defaultBufSize = 4096
+defaultBufSize = 1024
 
 -- If Posix is available, use the fileDriverRandomFd as fileDriverRandom.  Otherwise, use a handle-based variant.
 #if defined(USE_POSIX)

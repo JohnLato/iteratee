@@ -42,7 +42,6 @@ import Prelude hiding (head, drop, dropWhile, take, break, foldl, foldl1, length
 import Data.Iteratee.IO.Base
 import Data.Iteratee.Base
 
-import Control.Monad
 import Control.Exception
 import Control.Failure
 import Data.Maybe

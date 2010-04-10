@@ -305,13 +305,13 @@ instance (Monad m, Nullable s) => Monad (Iteratee s m) where
                  f_cont k e       = onCont k e
      in runIter m m_done (onCont . ((>>= f) .))
 
-instance Monoid s => MonadTrans (Iteratee s) where
-  lift m = Iteratee $ \onDone _ -> m >>= flip onDone mempty
+instance NullPoint s => MonadTrans (Iteratee s) where
+  lift m = Iteratee $ \onDone _ -> m >>= flip onDone (Chunk empty)
 
-instance (MonadIO m, Nullable s, Monoid s) => MonadIO (Iteratee s m) where
+instance (MonadIO m, Nullable s, NullPoint s) => MonadIO (Iteratee s m) where
   liftIO = lift . liftIO
 
-instance (MonadCatchIO m, Nullable s, Monoid s) =>
+instance (MonadCatchIO m, Nullable s, NullPoint s) =>
   MonadCatchIO (Iteratee s m) where
     m `catch` f = Iteratee $ \od oc -> runIter m od oc `catch` (\e -> runIter (f e) od oc)
     block       = mapIteratee block
@@ -329,7 +329,7 @@ run iter = runIter iter onDone onCont
    onCont' _ e       = error $ "control message: " ++ show e
 
 -- |Transform a computation inside an @Iteratee@.
-mapIteratee :: (Monoid s, Monad n, Monad m) =>
+mapIteratee :: (NullPoint s, Monad n, Monad m) =>
   (m a -> n b)
   -> Iteratee s m a
   -> Iteratee s n b

@@ -33,8 +33,9 @@ where
 import Prelude hiding (null, catch)
 import Data.Iteratee.Base.LooseMap
 import Data.Iteratee.Exception
+import Data.Nullable
+import Data.NullPoint
 import Data.Monoid
-import qualified Data.ByteString as B
 
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
@@ -84,28 +85,6 @@ data StreamStatus =
 setEOF :: StreamG c -> SomeException
 setEOF (EOF (Just e)) = e
 setEOF _              = toException EofException
-
--- ----------------------------------------------
--- |NullPoint class.  Containers that have a null representation.
-class NullPoint c where
-  empty :: c
-
-instance NullPoint [a] where
-  empty   = []
-
-instance NullPoint B.ByteString where
-  empty = B.empty
-
--- |Nullable container class
-class NullPoint c => Nullable c where
-  null :: c -> Bool
-
-instance Nullable [a] where
-  null [] = True
-  null _  = False
-
-instance Nullable B.ByteString where
-  null = B.null
 
 -- ----------------------------------------------
 -- | Monadic iteratee

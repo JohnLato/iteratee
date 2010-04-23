@@ -2,16 +2,6 @@
 
 -- |Utilties for Char-based iteratee processing.
 
--- The running example, parts 1 and 2
--- Part 1 is reading the headers, the sequence of lines terminated by an
--- empty line. Each line is terminated by CR, LF, or CRLF.
--- We should return the headers in order. In the case of error,
--- we should return the headers read so far and the description of the error.
--- Part 2 is reading the headers and reading all the lines from the
--- HTTP-chunk-encoded content that follows the headers. Part 2 thus
--- verifies layering of streams, and processing of one stream
--- embedded (chunk encoded) into another stream.
-
 module Data.Iteratee.Char (
   -- * Types
   EofBehavior (..)

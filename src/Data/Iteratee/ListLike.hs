@@ -231,14 +231,14 @@ takeR i iter = Iteratee $ \od oc -> runIter iter (onDone od oc) (onCont od oc)
 -- given iteratee to it.
 -- Note the contravariance
 
-mapStream
-  :: (Monad m,
-      LL.ListLike (s el) el,
-      LL.ListLike (s el') el',
-      NullPoint (s el),
-      LooseMap s el el') =>
-     (el -> el')
-      -> Enumeratee (s el) (s el') m a
+mapStream ::
+ (Monad m,
+  LL.ListLike (s el) el,
+  LL.ListLike (s el') el',
+  NullPoint (s el),
+  LooseMap s el el') =>
+ (el -> el')
+ -> Enumeratee (s el) (s el') m a
 mapStream f = eneeCheckIfDone (liftI . step)
   where
     step k (Chunk xs)

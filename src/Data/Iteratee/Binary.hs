@@ -3,11 +3,11 @@
 -- |Iteratees for parsing binary data.
 module Data.Iteratee.Binary (
   -- * Types
-  Endian (..),
+  Endian (..)
   -- * Endian multi-byte iteratees
-  endianRead2,
-  endianRead3,
-  endianRead4
+  ,endianRead2
+  ,endianRead3
+  ,endianRead4
 )
 where
 

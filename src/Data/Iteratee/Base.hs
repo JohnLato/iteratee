@@ -1,5 +1,5 @@
 {-# LANGUAGE TypeFamilies, FlexibleContexts, FlexibleInstances, Rank2Types,
-    DeriveDataTypeable, ExistentialQuantification, OverlappingInstances #-}
+    DeriveDataTypeable, ExistentialQuantification #-}
 
 -- |Monadic and General Iteratees:
 -- incremental input parsers, processors and transformers
@@ -58,6 +58,12 @@ data StreamG c =
   EOF (Maybe SomeException)
   | Chunk c
   deriving (Show, Typeable)
+
+instance (Eq c) => Eq (StreamG c) where
+  (Chunk c1) == (Chunk c2)           = c1 == c2
+  (EOF Nothing) == (EOF Nothing)     = True
+  (EOF (Just e1)) == (EOF (Just e2)) = typeOf e1 == typeOf e2
+  _ == _                             = False
 
 instance Monoid c => Monoid (StreamG c) where
   mempty = Chunk mempty

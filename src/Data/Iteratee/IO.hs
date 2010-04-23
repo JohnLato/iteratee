@@ -83,21 +83,21 @@ fileDriverRandomVBuf = fileDriverRandomFd
 
 -- |Process a file using the given Iteratee.  This function wraps
 -- @enumHandle@ as a convenience.
-fileDriver
-  :: (MonadCatchIO m, NullPoint s, ReadableChunk s el) =>
-     Iteratee s m a
-     -> FilePath
-     -> m a
+fileDriver ::
+ (MonadCatchIO m, NullPoint s, ReadableChunk s el) =>
+  Iteratee s m a
+  -> FilePath
+  -> m a
 fileDriver = fileDriverHandle defaultBufSize
 
 -- |A version of fileDriver with a user-specified buffer size (in elements).
-fileDriverVBuf
-  :: (MonadCatchIO m, NullPoint s, ReadableChunk s el) =>
-     Int
-     -> Iteratee s m a
-     -> FilePath
-     -> m a
-fileDriver = fileDriverHandle
+fileDriverVBuf ::
+ (MonadCatchIO m, NullPoint s, ReadableChunk s el) =>
+  Int
+  -> Iteratee s m a
+  -> FilePath
+  -> m a
+fileDriverVBuf = fileDriverHandle
 
 -- |Process a file using the given Iteratee.  This function wraps
 -- @enumRandomHandle@ as a convenience.

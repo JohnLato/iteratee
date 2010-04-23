@@ -6,42 +6,41 @@
 module Data.Iteratee.ListLike (
   -- * Iteratees
   -- ** Iteratee Utilities
-  isFinished,
-  stream2list,
-  stream2stream,
+  isFinished
+  ,stream2list
+  ,stream2stream
   -- ** Basic Iteratees
-  break,
-  dropWhile,
-  drop,
-  head,
-  heads,
-  peek,
-  length,
+  ,break
+  ,dropWhile
+  ,drop
+  ,head
+  ,heads
+  ,peek
+  ,length
   -- ** Nested iteratee combinators
-  take,
-  takeR,
-  mapStream,
-  mapStreamR,
-  filter,
+  ,take
+  ,takeOnly
+  ,mapStream
+  ,mapStreamR
+  ,filter
   -- ** Folds
-  foldl,
-  foldl',
-  foldl1,
+  ,foldl
+  ,foldl'
+  ,foldl1
   -- ** Special Folds
-  sum,
-  product,
+  ,sum
+  ,product
   -- * Enumerators
   -- ** Basic enumerators
-  enumPureNChunk,
+  ,enumPureNChunk
   -- ** Enumerator Combinators
-  enumPair,
+  ,enumPair
   -- * Classes
-  module Data.Iteratee.Iteratee
+  ,module Data.Iteratee.Iteratee
 )
 where
 
 import Prelude hiding (null, head, drop, dropWhile, take, break, foldl, foldl1, length, filter, sum, product)
---import qualified Prelude as P
 
 import qualified Data.ListLike as LL
 import qualified Data.ListLike.FoldableLL as FLL
@@ -159,10 +158,10 @@ drop n' = icont (step n') Nothing
 
 -- |Skip all elements while the predicate is true.
 -- This is the analogue of List.dropWhile
-dropWhile
-  :: (Monad m, LL.ListLike s el) =>
-     (el -> Bool)
-     -> Iteratee s m ()
+dropWhile ::
+ (Monad m, LL.ListLike s el) =>
+  (el -> Bool)
+  -> Iteratee s m ()
 dropWhile p = icont step Nothing
   where
     step (Chunk str)
@@ -210,9 +209,10 @@ take n' iter = Iteratee $ \od oc -> runIter iter (on_done od oc) (on_cont od oc)
 -- This is the variation of `take' with the early termination
 -- of processing of the outer stream once the processing of the inner stream
 -- finished early.
-takeR :: (Monad m, Nullable s, LL.ListLike s el) => Int -> Enumeratee s s m a
-takeR 0 iter = return iter
-takeR i iter = Iteratee $ \od oc -> runIter iter (onDone od oc) (onCont od oc)
+takeOnly :: (Monad m, Nullable s, LL.ListLike s el) => Int -> Enumeratee s s m a
+takeOnly 0 iter = return iter
+takeOnly i iter = Iteratee $ \od oc ->
+  runIter iter (onDone od oc) (onCont od oc)
   where
     onDone od oc x _        = runIter (return (return x)) od oc
     onCont od oc k Nothing  = if i == 0 then od (liftI k) (Chunk mempty)
@@ -220,7 +220,7 @@ takeR i iter = Iteratee $ \od oc -> runIter iter (onDone od oc) (onCont od oc)
     onCont od oc _ (Just e) = runIter (throwErr e) od oc
     step n k (Chunk str)
       | LL.null str         = liftI (step n k)
-      | LL.length str <= n  = takeR (n - LL.length str) $ k (Chunk str)
+      | LL.length str <= n  = takeOnly (n - LL.length str) $ k (Chunk str)
       | True                = idone (k (Chunk s1)) (Chunk s2)
       where (s1, s2) = LL.splitAt n str
     step _n k stream        = idone (k stream) stream
@@ -265,9 +265,10 @@ mapStreamR f = eneeCheckIfDone (liftI . step)
 
 -- |Creates an enumerator with only elements from the stream that
 -- satisfy the predicate function.
-filter :: (Monad m, Nullable s, LL.ListLike s el) =>
-  (el -> Bool) ->
-  Enumeratee s s m a
+filter ::
+ (Monad m, Nullable s, LL.ListLike s el) =>
+  (el -> Bool)
+  -> Enumeratee s s m a
 filter p = convStream f'
   where
     f' = icont step Nothing
@@ -280,11 +281,11 @@ filter p = convStream f'
 -- Folds
 
 -- | Left-associative fold.
-foldl
-  :: (Monad m, LL.ListLike s el, FLL.FoldableLL s el) =>
-     (a -> el -> a)
-     -> a
-     -> Iteratee s m a
+foldl ::
+ (Monad m, LL.ListLike s el, FLL.FoldableLL s el) =>
+  (a -> el -> a)
+  -> a
+  -> Iteratee s m a
 foldl f i = icont (step i) Nothing
   where
     step acc (Chunk xs)
@@ -293,11 +294,11 @@ foldl f i = icont (step i) Nothing
     step acc stream    = idone acc stream
 
 -- | Left-associative fold that is strict in the accumulator.
-foldl'
-  :: (Monad m, LL.ListLike s el, FLL.FoldableLL s el) =>
-     (a -> el -> a)
-     -> a
-     -> Iteratee s m a
+foldl' ::
+ (Monad m, LL.ListLike s el, FLL.FoldableLL s el) =>
+  (a -> el -> a)
+  -> a
+  -> Iteratee s m a
 foldl' f i = icont (step i) Nothing
   where
     step acc (Chunk xs)
@@ -309,10 +310,10 @@ foldl' f i = icont (step i) Nothing
 
 -- | Variant of foldl with no base case.  Requires at least one element
 --   in the stream.
-foldl1
-  :: (Monad m, LL.ListLike s el, FLL.FoldableLL s el) =>
-     (el -> el -> el)
-     -> Iteratee s m el
+foldl1 ::
+ (Monad m, LL.ListLike s el, FLL.FoldableLL s el) =>
+  (el -> el -> el)
+  -> Iteratee s m el
 foldl1 f = icont step Nothing
   where
     step (Chunk xs)
@@ -344,11 +345,11 @@ product = icont (step 1) Nothing
 -- Zips
 
 -- |Enumerate two iteratees over a single stream simultaneously.
-enumPair
-  :: (Monad m, Nullable s, LL.ListLike s el) =>
-     Iteratee s m a
-     -> Iteratee s m b
-     -> Iteratee s m (a,b)
+enumPair ::
+ (Monad m, Nullable s, LL.ListLike s el) =>
+  Iteratee s m a
+  -> Iteratee s m b
+  -> Iteratee s m (a,b)
 enumPair i1 i2 = Iteratee $ \od oc -> runIter i1 (onDone od oc) (onCont od oc)
   where
     onDone od oc x s        = runIter i2 (oD12 od oc x s) (onCont' od oc x)

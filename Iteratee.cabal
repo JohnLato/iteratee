@@ -69,6 +69,7 @@ library
     Data.Iteratee.Base.LooseMap
     Data.Iteratee.Binary
     Data.Iteratee.Char
+    Data.Iteratee.Exception
     Data.Iteratee.IO
     Data.Iteratee.IO.Handle
     Data.Iteratee.Iteratee

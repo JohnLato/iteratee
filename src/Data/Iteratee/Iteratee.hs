@@ -6,34 +6,34 @@
 module Data.Iteratee.Iteratee (
   -- * Types
   -- ** Error handling
-  throwErr,
-  throwRecoverableErr,
-  checkErr,
+  throwErr
+  ,throwRecoverableErr
+  ,checkErr
   -- ** Basic Iteratees
-  identity,
-  skipToEof,
-  isStreamFinished,
+  ,identity
+  ,skipToEof
+  ,isStreamFinished
   -- ** Nested iteratee combinators
-  convStream,
-  joinI,
-  joinIM,
+  ,convStream
+  ,joinI
+  ,joinIM
   -- * Enumerators
-  Enumerator,
-  Enumeratee,
+  ,Enumerator
+  ,Enumeratee
   -- ** Basic enumerators
-  enumEof,
-  enumErr,
-  enumPure1Chunk,
-  enumFromCallback,
-  enumFromCallbackCatch,
+  ,enumEof
+  ,enumErr
+  ,enumPure1Chunk
+  ,enumFromCallback
+  ,enumFromCallbackCatch
   -- ** Enumerator Combinators
-  (>>>),
-  eneeCheckIfDone,
+  ,(>>>)
+  ,eneeCheckIfDone
   -- * Misc.
-  seek,
-  FileOffset,
+  ,seek
+  ,FileOffset
   -- * Classes
-  module Data.Iteratee.Base
+  ,module Data.Iteratee.Base
 )
 where
 
@@ -60,11 +60,11 @@ throwErr :: (Monad m) => SomeException -> Iteratee s m a
 throwErr e = icont (const (throwErr e)) (Just e)
 
 -- |Propagate a recoverable error.
-throwRecoverableErr
-  :: (Monad m) =>
-     SomeException
-     -> (StreamG s -> Iteratee s m a)
-     -> Iteratee s m a
+throwRecoverableErr ::
+ (Monad m) =>
+  SomeException
+  -> (StreamG s -> Iteratee s m a)
+  -> Iteratee s m a
 throwRecoverableErr e i = icont i (Just e)
 
 
@@ -73,10 +73,10 @@ throwRecoverableErr e i = icont i (Just e)
 -- 'Left SomeException' checkErr is useful for iteratees that may not
 -- terminate, such as 'head' with an empty stream.
 -- In particular, it enables them to be used with 'convStream'.
-checkErr
-  :: (Monad m, NullPoint s) =>
-     Iteratee s m a
-     -> Iteratee s m (Either SomeException a)
+checkErr ::
+ (Monad m, NullPoint s) =>
+  Iteratee s m a
+  -> Iteratee s m (Either SomeException a)
 checkErr iter = Iteratee $ \onDone onCont ->
   let od            = onDone . Right
       oc k Nothing  = onCont (checkErr . k) Nothing
@@ -122,10 +122,10 @@ type Enumeratee sFrom sTo (m :: * -> *) a =
 -- The following pattern appears often in Enumeratee code
 {-# INLINE eneeCheckIfDone #-}
 
-eneeCheckIfDone
- :: (Monad m, NullPoint elo) =>
-    ((StreamG eli -> Iteratee eli m a) -> Iteratee elo m (Iteratee eli m a))
-    -> Enumeratee elo eli m a
+eneeCheckIfDone ::
+ (Monad m, NullPoint elo) =>
+  ((StreamG eli -> Iteratee eli m a) -> Iteratee elo m (Iteratee eli m a))
+  -> Enumeratee elo eli m a
 eneeCheckIfDone f inner = Iteratee $ \od oc -> 
   let on_done x s = od (idone x s) (Chunk empty)
       on_cont k Nothing  = runIter (f k) od oc
@@ -140,19 +140,19 @@ eneeCheckIfDone f inner = Iteratee $ \od oc ->
 -- one element of the inner stream, or the other way around.
 -- The transformation from one stream to the other is specified as
 -- Iteratee s el s'.
-convStream
-  :: (Monad m, Monoid s, Nullable s) =>
-     Iteratee s m s'
-     -> Enumeratee s s' m a
+convStream ::
+ (Monad m, Monoid s, Nullable s) =>
+  Iteratee s m s'
+  -> Enumeratee s s' m a
 convStream fi = eneeCheckIfDone check
   where
     check k = isStreamFinished >>= maybe (step k) (idone (liftI k) . EOF . Just)
     step k = fi >>= convStream fi . k . Chunk
 
-joinI
-  :: (Monad m, Nullable s) =>
-     Iteratee s m (Iteratee s' m a)
-     -> Iteratee s m a
+joinI ::
+ (Monad m, Nullable s) =>
+  Iteratee s m (Iteratee s' m a)
+  -> Iteratee s m a
 joinI = (>>=
   \inner -> Iteratee $ \od oc ->
   let on_done  x _        = od x (Chunk empty)
@@ -207,9 +207,7 @@ enumErr e iter = runIter iter onDone onCont
 -- It is convenient to flip the order of the arguments of the composition
 -- though: in e1 >>> e2, e1 is executed first
 
-(>>>)
-  :: (Monad m) =>
-     Enumerator s m a -> Enumerator s m a -> Enumerator s m a
+(>>>) :: (Monad m) => Enumerator s m a -> Enumerator s m a -> Enumerator s m a
 (e1 >>> e2) i =  e1 i >>= e2
 
 -- |The pure 1-chunk enumerator
@@ -223,15 +221,16 @@ enumPure1Chunk str iter = runIter iter idoneM onCont
 
 -- |Create an enumerator from a callback function
 enumFromCallback ::
-  (Monad m, NullPoint s) =>
-  m (Either SomeException (Bool, s)) -> Enumerator s m a
+ (Monad m, NullPoint s) =>
+  m (Either SomeException (Bool, s))
+  -> Enumerator s m a
 enumFromCallback = flip enumFromCallbackCatch
   (\NothingException -> return Nothing)
 
 -- |Create an enumerator from a callback function with an exception handler.
 -- The exception handler is called if an iteratee reports an exception.
 enumFromCallbackCatch ::
-  (IException e, Monad m, NullPoint s) =>
+ (IException e, Monad m, NullPoint s) =>
   m (Either SomeException (Bool, s))
   -> (e -> m (Maybe EnumException))
   -> Enumerator s m a

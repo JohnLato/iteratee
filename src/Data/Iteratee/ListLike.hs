@@ -45,9 +45,9 @@ import Prelude hiding (null, head, drop, dropWhile, take, break, foldl, foldl1, 
 import qualified Data.ListLike as LL
 import qualified Data.ListLike.FoldableLL as FLL
 import Data.Iteratee.Iteratee
-import Control.Monad
-import Control.Monad.Trans
 import Data.Monoid
+import Control.Monad
+import Control.Monad.Trans.Class
 
 
 -- Useful combinators for implementing iteratees and enumerators

@@ -13,7 +13,7 @@ import Prelude hiding (head, tail, dropWhile, length, splitAt )
 
 import qualified Data.ByteString as B
 import Data.Word
-import Control.Monad.Trans
+import Control.Monad.IO.Class
 import Foreign.C
 import Foreign.Ptr
 import Foreign.Storable

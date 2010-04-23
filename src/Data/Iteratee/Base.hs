@@ -51,7 +51,8 @@ import Data.Iteratee.IO.Base
 import Data.Monoid
 import qualified Data.ByteString as B
 
-import Control.Monad.Trans
+import Control.Monad.IO.Class
+import Control.Monad.Trans.Class
 import Control.Monad.CatchIO
 import Control.Applicative hiding (empty)
 import Control.Exception hiding (catch, block, unblock)

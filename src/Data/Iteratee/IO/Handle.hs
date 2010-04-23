@@ -24,7 +24,7 @@ import Data.Iteratee.Binary()
 import Control.Exception
 import Control.Monad
 import Control.Monad.CatchIO as CIO
-import Control.Monad.Trans
+import Control.Monad.IO.Class
 
 import Foreign.Ptr
 import Foreign.Storable

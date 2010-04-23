@@ -37,7 +37,7 @@ import Data.Iteratee.ListLike (heads)
 import Data.Char
 import Data.Monoid
 import qualified Data.ListLike as LL
-import Control.Monad.Trans
+import Control.Monad.IO.Class
 import qualified Data.ByteString.Char8 as BC
 
 -- |A particular instance of StreamG: the stream of characters.

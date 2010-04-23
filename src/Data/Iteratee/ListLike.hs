@@ -21,6 +21,7 @@ module Data.Iteratee.ListLike (
   take,
   takeR,
   mapStream,
+  mapStreamR,
   filter,
   -- ** Folds
   foldl,
@@ -244,6 +245,21 @@ mapStream f = eneeCheckIfDone (liftI . step)
     step k (Chunk xs)
       | LL.null xs = liftI (step k)
       | True       = mapStream f $ k (Chunk $ lMap f xs)
+    step k s       = idone (liftI k) s
+
+-- |Map the stream rigidly.
+-- Like mapStream, but the element type cannot change.
+-- This function is necessary for ByteStrings and similar
+-- that cannot have LooseMap instances.
+mapStreamR ::
+ (Monad m, LL.ListLike (s el) el, NullPoint (s el)) =>
+  (el -> el)
+  -> Enumeratee (s el) (s el) m a
+mapStreamR f = eneeCheckIfDone (liftI . step)
+  where
+    step k (Chunk xs)
+      | LL.null xs = liftI (step k)
+      | True       = mapStreamR f $ k (Chunk $ LL.rigidMap f xs)
     step k s       = idone (liftI k) s
 
 

@@ -13,7 +13,7 @@ import Test.QuickCheck
 import Data.Iteratee hiding (head, break)
 import qualified Data.Iteratee.Char as IC
 import qualified Data.Iteratee as Iter
-import Control.Monad.Identity
+import Data.Functor.Identity
 import Data.Monoid
 import qualified Data.ListLike as LL
 
@@ -119,7 +119,7 @@ prop_skip xs = runner1 (enumPure1Chunk xs (skipToEof >> stream2list)) == []
 -- ---------------------------------------------
 -- Simple enumerator tests
 
-type I = IterateeT [Int] Int Identity [Int]
+type I = Iteratee [Int] Identity [Int]
 
 prop_enumChunks n xs i = n > 0  ==>
   runner1 (enumPure1Chunk xs i) == runner1 (enumPureNChunk xs n i)
@@ -129,22 +129,22 @@ prop_app1 xs ys i = runner1 (enumPure1Chunk ys (joinIM $ enumPure1Chunk xs i))
                     == runner1 (enumPure1Chunk (xs ++ ys) i)
   where types = (xs :: [Int], ys :: [Int], i :: I)
 
-prop_app2 xs ys = runner1 ((enumPure1Chunk xs >. enumPure1Chunk ys) stream2list)
+prop_app2 xs ys = runner1 ((enumPure1Chunk xs >>> enumPure1Chunk ys) stream2list)
                   == runner1 (enumPure1Chunk (xs ++ ys) stream2list)
   where types = (xs :: [Int], ys :: [Int])
 
-prop_app3 xs ys i = runner1 ((enumPure1Chunk xs >. enumPure1Chunk ys) i)
+prop_app3 xs ys i = runner1 ((enumPure1Chunk xs >>> enumPure1Chunk ys) i)
                     == runner1 (enumPure1Chunk (xs ++ ys) i)
   where types = (xs :: [Int], ys :: [Int], i :: I)
 
 prop_eof xs ys i = runner1 (enumPure1Chunk ys $ runIdentity $
-                           (enumPure1Chunk xs >. enumEof) i)
+                           (enumPure1Chunk xs >>> enumEof) i)
                  == runner1 (enumPure1Chunk xs i)
   where types = (xs :: [Int], ys :: [Int], i :: I)
 
-prop_isFinished = runner1 (enumEof (isFinished :: IterateeT [Int] Int Identity Bool)) == True
+prop_isFinished = runner1 (enumEof (isFinished :: Iteratee [Int] Identity Bool)) == True
 
-prop_isFinished2 = runner1 (enumErr "Error" (isFinished :: IterateeT [Int] Int Identity Bool)) == True
+prop_isFinished2 = runner1 (enumErr (iterStrExc "Error") (isFinished :: Iteratee [Int] Identity Bool)) == True
 
 prop_null xs i = runner1 (enumPure1Chunk xs =<< enumPure1Chunk [] i)
                  == runner1 (enumPure1Chunk xs i)
@@ -176,14 +176,14 @@ prop_mapjoin xs i =
   where types = (i :: I, xs :: [Int])
 
 
-convId :: (LL.ListLike s el, Monad m) => IterateeT s el m (Maybe s)
-convId = IterateeT (\str -> case str of
-  s@(Chunk xs) | LL.null xs -> return $ Cont convId Nothing
-  s@(Chunk xs) -> return $ Done (Just xs) (Chunk mempty)
-  s@(EOF e)   -> return $ Done Nothing (EOF e)
+convId :: (LL.ListLike s el, Monad m) => Iteratee s m s
+convId = liftI (\str -> case str of
+  s@(Chunk xs) | LL.null xs -> convId
+  s@(Chunk xs) -> idone xs (Chunk mempty)
+  s@(EOF e)    -> idone mempty (EOF e)
   )
 
-prop_convId xs = runner1 (enumPure1Chunk xs convId) == Just xs
+prop_convId xs = runner1 (enumPure1Chunk xs convId) == xs
   where types = xs :: [Int]
 
 prop_convstream xs i = P.length xs > 0 ==>
@@ -211,9 +211,9 @@ prop_take2 xs n = n > 0 ==>
                   == runner1 (enumPure1Chunk (P.take n xs) peek)
   where types = xs :: [Int]
 
-prop_takeR xs n = n >= 0 ==>
+prop_takeOnly xs n = n >= 0 ==>
                   runner2 (enumPure1Chunk xs $ Iter.take n stream2list)
-                  == runner2 (enumPure1Chunk xs $ takeR n stream2list)
+                  == runner2 (enumPure1Chunk xs $ takeOnly n stream2list)
   where types = xs :: [Int]
 
 -- ---------------------------------------------
@@ -275,7 +275,7 @@ tests = [
     ,testProperty "mapStream identity joinI" prop_mapjoin
     ,testProperty "take" prop_take
     ,testProperty "take (finished iteratee)" prop_take2
-    ,testProperty "takeR" prop_takeR
+    ,testProperty "takeOnly" prop_takeOnly
     ,testProperty "convStream EOF" prop_convstream2
     ,testProperty "convStream identity" prop_convstream
     ,testProperty "convStream identity 2" prop_convstream3

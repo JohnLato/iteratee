@@ -205,7 +205,7 @@ enumErr e iter = runIter iter onDone onCont
 
 -- |The composition of two enumerators: essentially the functional composition
 -- It is convenient to flip the order of the arguments of the composition
--- though: in e1 >. e2, e1 is executed first
+-- though: in e1 >>> e2, e1 is executed first
 
 (>>>)
   :: (Monad m) =>

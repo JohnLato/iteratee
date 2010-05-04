@@ -12,10 +12,12 @@ module Data.Iteratee.Base (
   ,module Data.Iteratee.Exception
   -- ** Iteratees
   ,Iteratee (..)
-  ,run
-  ,mapIteratee
   -- * Functions
-  -- ** Iteratee Combinator
+  -- ** Control functions
+  ,run
+  ,try
+  ,mapIteratee
+  -- ** Creating Iteratees
   ,idone
   ,icont
   ,idoneM
@@ -24,8 +26,8 @@ module Data.Iteratee.Base (
   -- ** Stream Functions
   ,setEOF
   -- * Classes
-  ,NullPoint (..)
-  ,Nullable (..)
+  ,module Data.NullPoint
+  ,module Data.Nullable
   ,module Data.Iteratee.Base.LooseMap
 )
 where
@@ -39,9 +41,11 @@ import Data.Monoid
 
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
-import Control.Monad.CatchIO
+import Control.Monad.CatchIO (MonadCatchIO (..), Exception (..),
+  catch, block, toException, fromException)
 import Control.Applicative hiding (empty)
-import Control.Exception hiding (catch, block, unblock)
+import Control.Exception (SomeException)
+import qualified Control.Exception as E
 import Data.Data
 
 
@@ -156,15 +160,31 @@ instance (MonadCatchIO m, Nullable s, NullPoint s) =>
     unblock     = mapIteratee unblock
 
 -- |Send EOF to the Iteratee and disregard the unconsumed part of the stream.
--- It is an error to call @run@ on an @Iteratee@ that does not
--- terminate on EOF.
+-- If the iteratee is in an exception state, that exception is thrown with
+-- Control.Exception.throw.  Iteratees that do not terminate on EOF will
+-- throw EofException.
 run :: Monad m => Iteratee s m a -> m a
 run iter = runIter iter onDone onCont
  where
-   onDone  x _       = return x
-   onCont  k Nothing = runIter (k (EOF Nothing)) onDone onCont'
-   onCont  _ e       = error $ "control message: " ++ show e
-   onCont' _ e       = error $ "control message: " ++ show e
+   onDone  x _        = return x
+   onCont  k Nothing  = runIter (k (EOF Nothing)) onDone onCont'
+   onCont  _ (Just e) = E.throw e
+   onCont' _ Nothing  = E.throw EofException
+   onCont' _ (Just e) = E.throw e
+
+-- |Run an iteratee, returning either the result or the iteratee exception.
+-- Note that only internal iteratee exceptions will be returned; exceptions
+-- thrown with Control.Exception.throw or Control.Monad.CatchIO.throw will
+-- not be returned.
+try :: (Exception e, Monad m) => Iteratee s m a -> m (Either e a)
+try iter = runIter iter onDone onCont
+  where
+    onDone  x _ = return $ Right x
+    onCont  k Nothing  = runIter (k (EOF Nothing)) onDone onCont'
+    onCont  _ (Just e) = return $ maybeExc e
+    onCont' _ Nothing  = return $ maybeExc (toException EofException)
+    onCont' _ (Just e) = return $ maybeExc e
+    maybeExc e = maybe (Left (E.throw e)) Left (fromException e)
 
 -- |Transform a computation inside an @Iteratee@.
 mapIteratee :: (NullPoint s, Monad n, Monad m) =>

@@ -4,10 +4,9 @@
 
 module Main where
 
-import Data.Iteratee.Iteratee
+import Data.Iteratee
 import qualified Data.Iteratee.ListLike as I
 import Data.Iteratee.ListLike (enumPureNChunk, stream2list, stream2stream)
-import Data.Iteratee.Instances.WrappedByteString
 import Data.Word
 import Data.Monoid
 import qualified Data.ByteString as BS
@@ -22,9 +21,6 @@ main = defaultMain [allListBenches, allByteStringBenches]
 
 -- -------------------------------------------------------------
 -- helper functions and data
-
-instance DeepSeq (WrappedByteString a) where
-  deepseq (WrapBS bs) = ()
 
 -- |Hold information about a benchmark.  This allows each
 -- benchmark (and baseline) to be created independently of the stream types,
@@ -46,8 +42,8 @@ makeBench (BDIterN n csize eval i) = bench n $
   proc eval runIdentity (enumPureNChunk [1..10000] csize) i
 makeBench (BDList n f l) = bench n $ B f l
 
-packedBS :: WrappedByteString Word8
-packedBS  = WrapBS (BS.pack [1..10000])
+packedBS :: BS.ByteString
+packedBS  = (BS.pack [1..10000])
 
 makeBenchBS (BDIter1 n eval i) = bench n $
   proc eval runIdentity (enumPure1Chunk packedBS) i
@@ -70,9 +66,10 @@ defaultNProc = proc id runIdentity (enumPureNChunk [1..10000] 5)
 -- benchmark groups
 makeGroup n = bgroup n . map makeBench
 
+makeGroupBS :: String -> [BD t t1 BS.ByteString Identity] -> Benchmark
 makeGroupBS n = bgroup n . map makeBenchBS
 
-listbench = makeGroup "stream2List" (list1 : slistBenches :: [BD [Int] () [Int] Identity])
+listbench = makeGroup "stream2List" (slistBenches :: [BD [Int] () [Int] Identity])
 streambench = makeGroup "stream" (streamBenches :: [BD [Int] () [Int] Identity])
 breakbench = makeGroup "break" $ break0 : break0' : breakBenches
 headsbench = makeGroup "heads" headsBenches
@@ -81,7 +78,7 @@ lengthbench = makeGroup "length" listBenches
 takebench = makeGroup "take" $ take0 : takeBenches
 --takeRbench = makeGroup "takeR" $ takeR0 : takeRBenches
 takeRbench = makeGroup "takeR" []
-mapbench = makeGroup "map" $ map0 : mapBenches
+mapbench = makeGroup "map" $ mapBenches
 convbench = makeGroup "convStream" convBenches
 miscbench = makeGroup "other" miscBenches
 
@@ -103,14 +100,14 @@ allListBenches = bgroup "list" [listbench, streambench, breakbench, headsbench, 
 allByteStringBenches = bgroup "bytestring" [listbenchbs, streambenchbs, breakbenchbs, headsbenchbs, dropbenchbs, lengthbenchbs, takebenchbs, takeRbenchbs, mapbenchbs, convbenchbs, miscbenchbs]
 
 list0 = makeList "list one go" deepseq
-list1 = BDIter1 "stream2list one go" deepseq stream2list
-list2 = BDIterN "stream2list chunk by 4" 4 deepseq stream2list
-list3 = BDIterN "stream2list chunk by 1024" 1024 deepseq stream2list
+list1 = BDIter1 "stream2list one go" (flip deepseq ()) stream2list
+list2 = BDIterN "stream2list chunk by 4" 4 (flip deepseq ()) stream2list
+list3 = BDIterN "stream2list chunk by 1024" 1024 (flip deepseq ()) stream2list
 slistBenches = [list1, list2, list3]
 
-stream1 = BDIter1 "stream2stream one go" deepseq stream2stream
-stream2 = BDIterN "stream2stream chunk by 4" 4 deepseq stream2stream
-stream3 = BDIterN "stream2stream chunk by 1024" 1024 deepseq stream2stream
+stream1 = BDIter1 "stream2stream one go" (flip deepseq ()) stream2stream
+stream2 = BDIterN "stream2stream chunk by 4" 4 (flip deepseq ()) stream2stream
+stream3 = BDIterN "stream2stream chunk by 1024" 1024 (flip deepseq ()) stream2stream
 streamBenches = [stream1, stream2, stream3]
 
 break0 = makeList "break early list" (fst . Prelude.break (>5))
@@ -172,11 +169,10 @@ takeRBenches = [takeR1, takeR2, takeR3, takeR4, takeR5, takeR6]
 -}
 takeRBenches = []
 
-map0 = makeList "map of list" (Prelude.length . Prelude.map id)
-map1 = id1 "map length one go" (I.joinI $ I.mapStream id I.length)
-map2 = idN "map length chunked" (I.joinI $ I.mapStream id I.length)
-map3 = id1 "map head one go" (I.joinI $ I.mapStream id I.head)
-map4 = idN "map head chunked" (I.joinI $ I.mapStream id I.head)
+map1 = id1 "map length one go" (I.joinI $ I.mapStreamR id I.length)
+map2 = idN "map length chunked" (I.joinI $ I.mapStreamR id I.length)
+map3 = id1 "map head one go" (I.joinI $ I.mapStreamR id I.head)
+map4 = idN "map head chunked" (I.joinI $ I.mapStreamR id I.head)
 mapBenches = [map1, map2, map3, map4]
 
 conv1 = idN "convStream id head chunked" (I.joinI . I.convStream idChunk $ I.head)
@@ -187,3 +183,5 @@ idChunk = I.liftI step
       | LL.null xs      = idChunk
       | True            = idone xs (I.Chunk mempty)
 convBenches = [conv1, conv2]
+
+instance NFData BS.ByteString where

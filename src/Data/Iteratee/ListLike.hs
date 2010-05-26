@@ -249,12 +249,12 @@ mapStream f = eneeCheckIfDone (liftI . step)
 
 -- |Map the stream rigidly.
 -- Like mapStream, but the element type cannot change.
--- This function is necessary for ByteStrings and similar
+-- This function is much more efficient for ByteStrings and similar
 -- that cannot have LooseMap instances.
 mapStreamR ::
- (Monad m, LL.ListLike (s el) el, NullPoint (s el)) =>
+ (Monad m, LL.ListLike s el, NullPoint s) =>
   (el -> el)
-  -> Enumeratee (s el) (s el) m a
+  -> Enumeratee s s m a
 mapStreamR f = eneeCheckIfDone (liftI . step)
   where
     step k (Chunk xs)

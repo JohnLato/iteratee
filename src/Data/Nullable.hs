@@ -1,8 +1,8 @@
--- |Nullable
--- Test if a type (container) is null.
+-- |Nullable:
+-- test if a type (container) is null.
 
 module Data.Nullable (
-  -- * Types
+  -- * Classes
   Nullable (..)
 )
 where

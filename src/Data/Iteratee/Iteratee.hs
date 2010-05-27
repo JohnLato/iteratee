@@ -55,11 +55,14 @@ excDivergent = toException DivergentException
 -- Primitive iteratees
 
 -- |Report and propagate an unrecoverable error.
---  Disregard the input first and then propagate the error.
+--  Disregard the input first and then propagate the error.  This error
+-- cannot be handled by 'enumFromCallbackCatch', although it can be cleared
+-- by 'checkErr'.
 throwErr :: (Monad m) => SomeException -> Iteratee s m a
 throwErr e = icont (const (throwErr e)) (Just e)
 
--- |Propagate a recoverable error.
+-- |Report and propagate a recoverable error.  This error can be handled by
+-- both 'enumFromCallbackCatch' and 'checkErr'.
 throwRecoverableErr ::
  (Monad m) =>
   SomeException
@@ -69,10 +72,9 @@ throwRecoverableErr e i = icont i (Just e)
 
 
 -- |Check if an iteratee produces an error.
--- Returns 'Right a' if it completes without errors, otherwise
--- 'Left SomeException' checkErr is useful for iteratees that may not
--- terminate, such as 'head' with an empty stream.
--- In particular, it enables them to be used with 'convStream'.
+-- Returns @Right a@ if it completes without errors, otherwise
+-- @Left SomeException@. 'checkErr' is useful for iteratees that may not
+-- terminate, such as @Data.Iteratee.head@ with an empty stream.
 checkErr ::
  (Monad m, NullPoint s) =>
   Iteratee s m a
@@ -86,7 +88,7 @@ checkErr iter = Iteratee $ \onDone onCont ->
 -- ------------------------------------------------------------------------
 -- Parser combinators
 
--- |The identity iterator.  Doesn't do anything.
+-- |The identity iteratee.  Doesn't do any processing of input.
 identity :: (Monad m, NullPoint s) => Iteratee s m ()
 identity = idone () (Chunk empty)
 
@@ -133,7 +135,7 @@ eneeCheckIfDone f inner = Iteratee $ \od oc ->
   in runIter inner on_done on_cont
 
 
--- |Convert one stream into another, not necessarily in `lockstep'
+-- |Convert one stream into another, not necessarily in lockstep.
 -- The transformer mapStream maps one element of the outer stream
 -- to one element of the nested stream.  The transformer below is more
 -- general: it may take several elements of the outer stream to produce

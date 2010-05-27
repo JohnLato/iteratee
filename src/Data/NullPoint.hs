@@ -1,8 +1,9 @@
--- |NullPoint
+-- |NullPoint:
 -- Pointed types (usually containers) that can be empty.
+-- Corresponds to Data.Monoid.mempty
 
 module Data.NullPoint (
-  -- * Types
+  -- * Classes
   NullPoint (..)
 )
 where
@@ -10,7 +11,8 @@ where
 import qualified Data.ByteString as B
 
 -- ----------------------------------------------
--- |NullPoint class.  Containers that have a null representation.
+-- |NullPoint class.  Containers that have a null representation, corresponding
+-- to Data.Monoid.mempty.
 class NullPoint c where
   empty :: c
 

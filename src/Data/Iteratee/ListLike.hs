@@ -1,6 +1,6 @@
 {-# LANGUAGE FlexibleContexts, BangPatterns #-}
 
--- |Monadic and General Iteratees:
+-- |Monadic Iteratees:
 -- incremental input parsers, processors and transformers
 
 module Data.Iteratee.ListLike (
@@ -64,9 +64,15 @@ isFinished = icont check Nothing
 -- ------------------------------------------------------------------------
 -- Primitive iteratees
 
--- |Read a stream to the end and return all of its elements as a list
+-- |Read a stream to the end and return all of its elements as a list.
+-- This iteratee will return all data from the stream *strictly*.
 stream2list :: (Monad m, Nullable s, LL.ListLike s el) => Iteratee s m [el]
-stream2list = liftM LL.toList stream2stream
+stream2list = liftI (step [])
+  where
+    step acc (Chunk ls)
+      | null ls  = liftI (step acc)
+      | True     = liftI (step (acc ++ LL.toList ls))
+    step acc str = idone acc str
 
 -- |Read a stream to the end and return all of its elements as a stream
 stream2stream :: (Monad m, Nullable s, Monoid s) => Iteratee s m s

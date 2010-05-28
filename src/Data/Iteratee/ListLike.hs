@@ -31,6 +31,7 @@ module Data.Iteratee.ListLike (
   ,foldl
   ,foldl'
   ,foldl1
+  ,foldl1'
   -- ** Special Folds
   ,sum
   ,product
@@ -346,10 +347,22 @@ foldl1 ::
 foldl1 f = liftI step
   where
     step (Chunk xs)
-    -- After the first chunk, just use regular foldl in order to account for
-    -- the accumulator.
+    -- After the first chunk, just use regular foldl.
       | LL.null xs = liftI step
       | True       = foldl f $ FLL.foldl1 f xs
+    step stream    = icont step (Just (setEOF stream))
+
+-- | Strict variant of 'foldl1'.
+foldl1' ::
+ (Monad m, LL.ListLike s el, FLL.FoldableLL s el) =>
+  (el -> el -> el)
+  -> Iteratee s m el
+foldl1' f = liftI step
+  where
+    step (Chunk xs)
+    -- After the first chunk, just use regular foldl'.
+      | LL.null xs = liftI step
+      | True       = foldl' f $ FLL.foldl1 f xs
     step stream    = icont step (Just (setEOF stream))
 
 -- | Sum of a stream.

@@ -1,7 +1,7 @@
 {-# LANGUAGE TypeFamilies, FlexibleContexts, FlexibleInstances, Rank2Types,
     DeriveDataTypeable, ExistentialQuantification #-}
 
--- |Monadic and General Iteratees:
+-- |Monadic Iteratees:
 -- incremental input parsers, processors and transformers
 
 module Data.Iteratee.Base (
@@ -20,9 +20,9 @@ module Data.Iteratee.Base (
   -- ** Creating Iteratees
   ,idone
   ,icont
+  ,liftI
   ,idoneM
   ,icontM
-  ,liftI
   -- ** Stream Functions
   ,setEOF
   -- * Classes
@@ -90,8 +90,8 @@ data StreamStatus =
 -- ----------------------------------------------
 -- create exception type hierarchy
 
--- |Produce the EOF error message.  If the stream was terminated because
--- of an error, keep the original error message.
+-- |Produce the 'EOF' error message.  If the stream was terminated because
+-- of an error, keep the error message.
 setEOF :: StreamG c -> SomeException
 setEOF (EOF (Just e)) = e
 setEOF _              = toException EofException
@@ -159,10 +159,10 @@ instance (MonadCatchIO m, Nullable s, NullPoint s) =>
     block       = mapIteratee block
     unblock     = mapIteratee unblock
 
--- |Send EOF to the Iteratee and disregard the unconsumed part of the stream.
--- If the iteratee is in an exception state, that exception is thrown with
--- Control.Exception.throw.  Iteratees that do not terminate on EOF will
--- throw EofException.
+-- |Send 'EOF' to the @Iteratee@ and disregard the unconsumed part of the
+-- stream.  If the iteratee is in an exception state, that exception is
+-- thrown with 'Control.Exception.throw'.  Iteratees that do not terminate
+-- on @EOF@ will throw 'EofException'.
 run :: Monad m => Iteratee s m a -> m a
 run iter = runIter iter onDone onCont
  where
@@ -174,8 +174,9 @@ run iter = runIter iter onDone onCont
 
 -- |Run an iteratee, returning either the result or the iteratee exception.
 -- Note that only internal iteratee exceptions will be returned; exceptions
--- thrown with Control.Exception.throw or Control.Monad.CatchIO.throw will
+-- thrown with @Control.Exception.throw@ or @Control.Monad.CatchIO.throw@ will
 -- not be returned.
+-- See 'Data.Iteratee.Exception.IFException' for details.
 try :: (Exception e, Monad m) => Iteratee s m a -> m (Either e a)
 try iter = runIter iter onDone onCont
   where

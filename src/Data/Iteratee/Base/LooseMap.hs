@@ -1,4 +1,9 @@
 {-# LANGUAGE MultiParamTypeClasses, FlexibleInstances #-}
+
+-- |Monadic Iteratees: incremental input parsers, processors, and transformers
+--
+-- Maps over restricted-element containers
+
 module Data.Iteratee.Base.LooseMap (
   LooseMap (..)
 )

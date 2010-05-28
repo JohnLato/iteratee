@@ -1,10 +1,11 @@
 {-# LANGUAGE MultiParamTypeClasses, FlexibleInstances, FunctionalDependencies #-}
 
--- |Monadic and General Iteratees:
+-- |Monadic Iteratees:
 -- incremental input parsers, processors and transformers
+--
+-- Support for IO enumerators
 
 module Data.Iteratee.Base.ReadableChunk (
-  -- * Classes
   ReadableChunk (..)
 )
 where
@@ -20,11 +21,15 @@ import Foreign.Storable
 import Foreign.Marshal.Array
 
 -- |Class of streams which can be filled from a 'Ptr'.  Typically these
--- are streams which can be read from a file.
--- The Int parameter is the length of the data in bytes.
--- N.B. The pointer must not be returned or used after readFromPtr completes.
-class (Storable el) => ReadableChunk c el | c -> el where
-  readFromPtr :: MonadIO m => Ptr el -> Int -> m c
+-- are streams which can be read from a file, @Handle@, or similar resource.
+--
+--
+class (Storable el) => ReadableChunk s el | s -> el where
+  readFromPtr ::
+    MonadIO m =>
+      Ptr el
+      -> Int -- ^ The pointer must not be used after @readFromPtr@ completes.
+      -> m s -- ^ The Int parameter is the length of the data in *bytes*.
 
 instance ReadableChunk [Char] Char where
   readFromPtr buf l = liftIO $ peekCAStringLen (castPtr buf, l)

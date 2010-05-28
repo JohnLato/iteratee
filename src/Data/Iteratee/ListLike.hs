@@ -2,6 +2,10 @@
 
 -- |Monadic Iteratees:
 -- incremental input parsers, processors and transformers
+--
+-- This module provides many basic iteratees from which more complicated
+-- iteratees can be built.  In general these iteratees parallel those in
+-- @Data.List@, with some additions.
 
 module Data.Iteratee.ListLike (
   -- * Iteratees
@@ -51,20 +55,20 @@ import Control.Monad.Trans.Class
 
 -- Useful combinators for implementing iteratees and enumerators
 
--- | Check if a stream has finished, whether from EOF or Error.
+-- | Check if a stream has received 'EOF'.
 isFinished :: (Monad m, Nullable s) => Iteratee s m Bool
-isFinished = icont check Nothing
+isFinished = liftI check
   where
   check c@(Chunk xs)
-    | null xs     = isFinished
-    | otherwise   = idone False c
+    | null xs     = liftI check
+    | True        = idone False c
   check s@(EOF _) = idone True s
 
 -- ------------------------------------------------------------------------
 -- Primitive iteratees
 
 -- |Read a stream to the end and return all of its elements as a list.
--- This iteratee will return all data from the stream *strictly*.
+-- This iteratee returns all data from the stream *strictly*.
 stream2list :: (Monad m, Nullable s, LL.ListLike s el) => Iteratee s m [el]
 stream2list = liftI (step [])
   where
@@ -73,25 +77,27 @@ stream2list = liftI (step [])
       | True     = liftI (step (acc ++ LL.toList ls))
     step acc str = idone acc str
 
--- |Read a stream to the end and return all of its elements as a stream
+-- |Read a stream to the end and return all of its elements as a stream.
+-- This iteratee returns all data from the stream *strictly*.
 stream2stream :: (Monad m, Nullable s, Monoid s) => Iteratee s m s
 stream2stream = icont (step mempty) Nothing
   where
     step acc (Chunk ls)
       | null ls   = icont (step acc) Nothing
-      | otherwise = icont (step (acc `mappend` ls)) Nothing
+      | True      = icont (step (acc `mappend` ls)) Nothing
     step acc str  = idone acc str
 
 
 -- ------------------------------------------------------------------------
 -- Parser combinators
 
--- |The analogue of List.break
--- It takes an element predicate and returns the (possibly empty) prefix of
+-- |Takes an element predicate and returns the (possibly empty) prefix of
 -- the stream.  None of the characters in the string satisfy the character
 -- predicate.
--- If the stream is not terminated, the first character on the stream
+-- If the stream is not terminated, the first character of the remaining stream
 -- satisfies the predicate.
+--
+-- The analogue of @List.break@
 
 break :: (Monad m, LL.ListLike s el) => (el -> Bool) -> Iteratee s m s
 break cpred = icont (step mempty) Nothing
@@ -101,18 +107,20 @@ break cpred = icont (step mempty) Nothing
       | True              =  case LL.break cpred str of
         (str', tail')
           | LL.null tail' -> icont (step (bfr `mappend` str)) Nothing
-          | otherwise     -> idone (bfr `mappend` str') (Chunk tail')
+          | True          -> idone (bfr `mappend` str') (Chunk tail')
     step bfr stream       =  idone bfr stream
 
 
 -- |Attempt to read the next element of the stream and return it
 -- Raise a (recoverable) error if the stream is terminated
+--
+-- The analogue of @List.head@
 head :: (Monad m, LL.ListLike s el) => Iteratee s m el
-head = icont step Nothing
+head = liftI step
   where
   step (Chunk vec)
     | LL.null vec  = icont step Nothing
-    | otherwise    = idone (LL.head vec) (Chunk $ LL.tail vec)
+    | True         = idone (LL.head vec) (Chunk $ LL.tail vec)
   step stream      = icont step (Just (setEOF stream))
 
 
@@ -123,13 +131,14 @@ head = icont step Nothing
 -- For example, if the stream contains "abd", then (heads "abc")
 -- will remove the characters "ab" and return 2.
 heads :: (Monad m, Nullable s, LL.ListLike s el, Eq el) => s -> Iteratee s m Int
-heads st | LL.null st = return 0
+heads st | null st = return 0
 heads st = loop 0 st
   where
-  loop cnt xs | LL.null xs = return cnt
-  loop cnt xs              = icont (step cnt xs) Nothing
-  step cnt str (Chunk xs) | LL.null xs  = icont (step cnt str) Nothing
-  step cnt str stream     | LL.null str = idone cnt stream
+  loop cnt xs
+    | null xs = return cnt
+    | True    = liftI (step cnt xs)
+  step cnt str (Chunk xs) | null xs  = liftI (step cnt str)
+  step cnt str stream     | null str = idone cnt stream
   step cnt str s@(Chunk xs) =
     if LL.head str == LL.head xs
        then step (succ cnt) (LL.tail str) (Chunk $ LL.tail xs)
@@ -139,51 +148,52 @@ heads st = loop 0 st
 
 -- |Look ahead at the next element of the stream, without removing
 -- it from the stream.
--- Return (Just c) if successful, return Nothing if the stream is
--- terminated (by EOF or an error)
+-- Return @Just c@ if successful, return @Nothing@ if the stream is
+-- terminated by EOF.
 peek :: (Monad m, LL.ListLike s el) => Iteratee s m (Maybe el)
-peek = icont step Nothing
+peek = liftI step
   where
     step s@(Chunk vec)
-      | LL.null vec = icont step Nothing
-      | otherwise   = idone (Just $ LL.head vec) s
+      | LL.null vec = liftI step
+      | True        = idone (Just $ LL.head vec) s
     step stream     = idone Nothing stream
 
 
--- |Skip n elements of the stream, if there are that many
--- This is the analogue of List.drop
+-- |Drop n elements of the stream, if there are that many.
+--
+-- The analogue of @List.drop@
 drop :: (Monad m, Nullable s, LL.ListLike s el) => Int -> Iteratee s m ()
-drop 0 = return ()
-drop n' = icont (step n') Nothing
+drop 0  = return ()
+drop n' = liftI (step n')
   where
     step n (Chunk str)
-      | LL.length str <= n = icont (step (n - LL.length str)) Nothing
-      | otherwise          = idone () (Chunk (LL.drop n str))
+      | LL.length str <= n = liftI (step (n - LL.length str))
+      | True               = idone () (Chunk (LL.drop n str))
     step _ stream          = idone () stream
 
 -- |Skip all elements while the predicate is true.
--- This is the analogue of List.dropWhile
-dropWhile ::
- (Monad m, LL.ListLike s el) =>
-  (el -> Bool)
-  -> Iteratee s m ()
-dropWhile p = icont step Nothing
+--
+-- The analogue of @List.dropWhile@
+dropWhile :: (Monad m, LL.ListLike s el) => (el -> Bool) -> Iteratee s m ()
+dropWhile p = liftI step
   where
     step (Chunk str)
-      | LL.null left = icont step Nothing
-      | otherwise    = idone () (Chunk left)
+      | LL.null left = liftI step
+      | True         = idone () (Chunk left)
       where
         left = LL.dropWhile p str
     step stream      = idone () stream
 
 
--- |Return the total length of the stream
+-- |Return the total length of the remaining part of the stream.
+-- This forces evaluation of the entire stream.
+--
+-- The analogue of @List.length@
 length :: (Monad m, Num a, LL.ListLike s el) => Iteratee s m a
-length = length' 0
+length = liftI (step 0)
   where
-    length' !n = icont (step n) Nothing
-    step i (Chunk xs) = length' (i + LL.length xs)
-    step i stream     = idone (fromIntegral i) stream
+    step !i (Chunk xs) = liftI (step $ i + LL.length xs)
+    step !i stream     = idone (fromIntegral i) stream
 
 
 -- ---------------------------------------------------
@@ -192,7 +202,9 @@ length = length' 0
 
 -- |Read n elements from a stream and apply the given iteratee to the
 -- stream of the read elements. Unless the stream is terminated early, we
--- read exactly n elements (even if the iteratee has accepted fewer).
+-- read exactly n elements, even if the iteratee has accepted fewer.
+--
+-- The analogue of @List.take@
 take :: (Monad m, Nullable s, LL.ListLike s el) => Int -> Enumeratee s s m a
 take 0 iter  = return iter
 take n' iter = Iteratee $ \od oc -> runIter iter (on_done od oc) (on_cont od oc)
@@ -214,6 +226,9 @@ take n' iter = Iteratee $ \od oc -> runIter iter (on_done od oc) (on_cont od oc)
 -- This is the variation of `take' with the early termination
 -- of processing of the outer stream once the processing of the inner stream
 -- finished early.
+--
+-- N.B. If the inner iteratee finishes early, remaining data within the current
+-- chunk will be dropped.
 takeOnly :: (Monad m, Nullable s, LL.ListLike s el) => Int -> Enumeratee s s m a
 takeOnly 0 iter = return iter
 takeOnly i iter = Iteratee $ \od oc ->
@@ -231,12 +246,12 @@ takeOnly i iter = Iteratee $ \od oc ->
     step _n k stream        = idone (k stream) stream
 
 
--- |Map the stream: yet another iteratee transformer
--- Given the stream of elements of the type el and the function el->el',
--- build a nested stream of elements of the type el' and apply the
+-- |Map the stream: another iteratee transformer
+-- Given the stream of elements of the type @el@ and the function @el->el'@,
+-- build a nested stream of elements of the type @el'@ and apply the
 -- given iteratee to it.
--- Note the contravariance
-
+--
+-- The analog of @List.map@
 mapStream ::
  (Monad m,
   LL.ListLike (s el) el,
@@ -253,6 +268,7 @@ mapStream f = eneeCheckIfDone (liftI . step)
     step k s       = idone (liftI k) s
 
 -- |Map the stream rigidly.
+--
 -- Like 'mapStream', but the element type cannot change.
 -- This function is necessary for @ByteString@ and similar types
 -- that cannot have 'LooseMap' instances, and may be more efficient.
@@ -268,8 +284,10 @@ rigidMapStream f = eneeCheckIfDone (liftI . step)
     step k s       = idone (liftI k) s
 
 
--- |Creates an enumerator with only elements from the stream that
--- satisfy the predicate function.
+-- |Creates an 'enumeratee' with only elements from the stream that
+-- satisfy the predicate function.  The outer stream is completely consumed.
+--
+-- The analogue of @List.filter@
 filter ::
  (Monad m, Nullable s, LL.ListLike s el) =>
   (el -> Bool)
@@ -279,77 +297,85 @@ filter p = convStream f'
     f' = icont step Nothing
     step (Chunk xs)
       | LL.null xs = f'
-      | otherwise  = idone (LL.filter p xs) mempty
+      | True       = idone (LL.filter p xs) mempty
     step _ = f'
 
 -- ------------------------------------------------------------------------
 -- Folds
 
 -- | Left-associative fold.
+--
+-- The analogue of @List.foldl@
 foldl ::
  (Monad m, LL.ListLike s el, FLL.FoldableLL s el) =>
   (a -> el -> a)
   -> a
   -> Iteratee s m a
-foldl f i = icont (step i) Nothing
+foldl f i = liftI (step i)
   where
     step acc (Chunk xs)
-      | LL.null xs = icont (step acc) Nothing
-      | otherwise  = icont (step $ FLL.foldl f acc xs) Nothing
-    step acc stream    = idone acc stream
+      | LL.null xs  = liftI (step acc)
+      | True   = liftI (step $ FLL.foldl f acc xs)
+    step acc stream = idone acc stream
 
 -- | Left-associative fold that is strict in the accumulator.
+-- This function should be used in preference to 'foldl' whenever possible.
+--
+-- The analogue of @List.foldl'@.
 foldl' ::
  (Monad m, LL.ListLike s el, FLL.FoldableLL s el) =>
   (a -> el -> a)
   -> a
   -> Iteratee s m a
-foldl' f i = icont (step i) Nothing
+foldl' f i = liftI (step i)
   where
     step acc (Chunk xs)
-      | LL.null xs  = icont (step acc) Nothing
-      | otherwise   = icont (step $! FLL.foldl' f acc xs) Nothing
+      | LL.null xs = liftI (step acc)
+      | True       = liftI (step $! FLL.foldl' f acc xs)
     step acc stream = idone acc stream
-
 {-# INLINE foldl' #-}
 
 -- | Variant of foldl with no base case.  Requires at least one element
 --   in the stream.
+--
+-- The analogue of @List.foldl1@.
 foldl1 ::
  (Monad m, LL.ListLike s el, FLL.FoldableLL s el) =>
   (el -> el -> el)
   -> Iteratee s m el
-foldl1 f = icont step Nothing
+foldl1 f = liftI step
   where
     step (Chunk xs)
     -- After the first chunk, just use regular foldl in order to account for
     -- the accumulator.
-      | LL.null xs = icont step Nothing
-      | otherwise  = foldl f $ FLL.foldl1 f xs
+      | LL.null xs = liftI step
+      | True       = foldl f $ FLL.foldl1 f xs
     step stream    = icont step (Just (setEOF stream))
 
 -- | Sum of a stream.
 sum :: (Monad m, LL.ListLike s el, Num el) => Iteratee s m el
-sum = icont (step 0) Nothing
+sum = liftI (step 0)
   where
     step acc (Chunk xs)
-      | LL.null xs = icont (step acc) Nothing
-      | otherwise  = icont (step $! acc + LL.sum xs) Nothing
+      | LL.null xs = liftI (step acc)
+      | True       = liftI (step $! acc + LL.sum xs)
     step acc str   = idone acc str
 
--- | Product of a stream
+-- | Product of a stream.
 product :: (Monad m, LL.ListLike s el, Num el) => Iteratee s m el
-product = icont (step 1) Nothing
+product = liftI (step 1)
   where
     step acc (Chunk xs)
-      | LL.null xs = icont (step acc) Nothing
-      | otherwise  = icont (step $! acc * LL.product xs) Nothing
+      | LL.null xs = liftI (step acc)
+      | True       = liftI (step $! acc * LL.product xs)
     step acc str   = idone acc str
 
 -- ------------------------------------------------------------------------
 -- Zips
 
 -- |Enumerate two iteratees over a single stream simultaneously.
+--
+-- Compare to @zip@.
 enumPair ::
  (Monad m, Nullable s, LL.ListLike s el) =>
   Iteratee s m a
@@ -379,18 +405,13 @@ enumPair i1 i2 = Iteratee $ \od oc -> runIter i1 (onDone od oc) (onCont od oc)
 -- Enumerators
 
 -- |The pure n-chunk enumerator
--- It passes a given chunk of elements to the iteratee in n chunks
--- This enumerator does no IO and is useful for testing of base parsing
--- and handling of chunk boundaries
+-- It passes a given stream of elements to the iteratee in @n@-sized chunks.
 enumPureNChunk ::
- (Monad m, LL.ListLike s el) =>
-  s
-  -> Int
-  -> Enumerator s m a
+ (Monad m, LL.ListLike s el) => s -> Int -> Enumerator s m a
 enumPureNChunk str n iter
   | LL.null str = return iter
   | n > 0       = enum' str iter
-  | otherwise   = error $ "enumPureNChunk called with n==" ++ show n
+  | True        = error $ "enumPureNChunk called with n==" ++ show n
   where
     enum' str' iter'
       | LL.null str' = return iter'

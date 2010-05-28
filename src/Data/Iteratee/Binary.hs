@@ -1,6 +1,10 @@
 {-# LANGUAGE FlexibleContexts #-}
 
--- |Iteratees for parsing binary data.
+-- |Monadic Iteratees:
+-- incremental input parsers, processors, and transformers
+--
+-- Iteratees for parsing binary data.
+
 module Data.Iteratee.Binary (
   -- * Types
   Endian (..)
@@ -41,9 +45,6 @@ endianRead2 e = do
     MSB -> return $ (fromIntegral c1 `shiftL` 8) .|. fromIntegral c2
     LSB -> return $ (fromIntegral c2 `shiftL` 8) .|. fromIntegral c1
 
--- |read 3 bytes in an endian manner.  If the first bit is set (negative),
--- set the entire first byte so the Word32 can be properly set negative as
--- well.
 endianRead3
   :: (Nullable s, LL.ListLike s Word8, Monad m) =>
      Endian

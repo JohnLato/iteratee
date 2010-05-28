@@ -21,7 +21,7 @@ module Data.Iteratee.ListLike (
   ,take
   ,takeOnly
   ,mapStream
-  ,mapStreamR
+  ,rigidMapStream
   ,filter
   -- ** Folds
   ,foldl
@@ -46,7 +46,6 @@ import qualified Data.ListLike as LL
 import qualified Data.ListLike.FoldableLL as FLL
 import Data.Iteratee.Iteratee
 import Data.Monoid
-import Control.Monad
 import Control.Monad.Trans.Class
 
 
@@ -254,18 +253,18 @@ mapStream f = eneeCheckIfDone (liftI . step)
     step k s       = idone (liftI k) s
 
 -- |Map the stream rigidly.
--- Like mapStream, but the element type cannot change.
--- This function is much more efficient for ByteStrings and similar
--- that cannot have LooseMap instances.
-mapStreamR ::
+-- Like 'mapStream', but the element type cannot change.
+-- This function is necessary for @ByteString@ and similar types
+-- that cannot have 'LooseMap' instances, and may be more efficient.
+rigidMapStream ::
  (Monad m, LL.ListLike s el, NullPoint s) =>
   (el -> el)
   -> Enumeratee s s m a
-mapStreamR f = eneeCheckIfDone (liftI . step)
+rigidMapStream f = eneeCheckIfDone (liftI . step)
   where
     step k (Chunk xs)
       | LL.null xs = liftI (step k)
-      | True       = mapStreamR f $ k (Chunk $ LL.rigidMap f xs)
+      | True       = rigidMapStream f $ k (Chunk $ LL.rigidMap f xs)
     step k s       = idone (liftI k) s
 
 

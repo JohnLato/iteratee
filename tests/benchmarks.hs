@@ -169,10 +169,10 @@ takeRBenches = [takeR1, takeR2, takeR3, takeR4, takeR5, takeR6]
 -}
 takeRBenches = []
 
-map1 = id1 "map length one go" (I.joinI $ I.mapStreamR id I.length)
-map2 = idN "map length chunked" (I.joinI $ I.mapStreamR id I.length)
-map3 = id1 "map head one go" (I.joinI $ I.mapStreamR id I.head)
-map4 = idN "map head chunked" (I.joinI $ I.mapStreamR id I.head)
+map1 = id1 "map length one go" (I.joinI $ I.rigidMapStream id I.length)
+map2 = idN "map length chunked" (I.joinI $ I.rigidMapStream id I.length)
+map3 = id1 "map head one go" (I.joinI $ I.rigidMapStream id I.head)
+map4 = idN "map head chunked" (I.joinI $ I.rigidMapStream id I.head)
 mapBenches = [map1, map2, map3, map4]
 
 conv1 = idN "convStream id head chunked" (I.joinI . I.convStream idChunk $ I.head)

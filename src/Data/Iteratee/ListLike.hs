@@ -52,6 +52,9 @@ import qualified Data.ListLike.FoldableLL as FLL
 import Data.Iteratee.Iteratee
 import Data.Monoid
 import Control.Monad.Trans.Class
+import Data.Word (Word8)
+import qualified Data.ByteString as B
+import qualified Data.ByteString.Char8 as BC
 
 
 -- Useful combinators for implementing iteratees and enumerators
@@ -64,6 +67,7 @@ isFinished = liftI check
     | null xs     = liftI check
     | True        = idone False c
   check s@(EOF _) = idone True s
+{-# INLINE isFinished #-}
 
 -- ------------------------------------------------------------------------
 -- Primitive iteratees
@@ -77,6 +81,7 @@ stream2list = liftI (step [])
       | null ls  = liftI (step acc)
       | True     = liftI (step (acc ++ LL.toList ls))
     step acc str = idone acc str
+{-# INLINE stream2list #-}
 
 -- |Read a stream to the end and return all of its elements as a stream.
 -- This iteratee returns all data from the stream *strictly*.
@@ -87,6 +92,7 @@ stream2stream = icont (step mempty) Nothing
       | null ls   = icont (step acc) Nothing
       | True      = icont (step (acc `mappend` ls)) Nothing
     step acc str  = idone acc str
+{-# INLINE stream2stream #-}
 
 
 -- ------------------------------------------------------------------------
@@ -110,6 +116,7 @@ break cpred = icont (step mempty) Nothing
           | LL.null tail' -> icont (step (bfr `mappend` str)) Nothing
           | True          -> idone (bfr `mappend` str') (Chunk tail')
     step bfr stream       =  idone bfr stream
+{-# INLINE break #-}
 
 
 -- |Attempt to read the next element of the stream and return it
@@ -123,6 +130,7 @@ head = liftI step
     | LL.null vec  = icont step Nothing
     | True         = idone (LL.head vec) (Chunk $ LL.tail vec)
   step stream      = icont step (Just (setEOF stream))
+{-# INLINE head #-}
 
 
 -- |Given a sequence of characters, attempt to match them against
@@ -145,6 +153,7 @@ heads st = loop 0 st
        then step (succ cnt) (LL.tail str) (Chunk $ LL.tail xs)
        else idone cnt s
   step cnt _ stream         = idone cnt stream
+{-# INLINE heads #-}
 
 
 -- |Look ahead at the next element of the stream, without removing
@@ -158,6 +167,7 @@ peek = liftI step
       | LL.null vec = liftI step
       | True        = idone (Just $ LL.head vec) s
     step stream     = idone Nothing stream
+{-# INLINE peek #-}
 
 
 -- |Drop n elements of the stream, if there are that many.
@@ -171,6 +181,7 @@ drop n' = liftI (step n')
       | LL.length str <= n = liftI (step (n - LL.length str))
       | True               = idone () (Chunk (LL.drop n str))
     step _ stream          = idone () stream
+{-# INLINE drop #-}
 
 -- |Skip all elements while the predicate is true.
 --
@@ -184,6 +195,7 @@ dropWhile p = liftI step
       where
         left = LL.dropWhile p str
     step stream      = idone () stream
+{-# INLINE dropWhile #-}
 
 
 -- |Return the total length of the remaining part of the stream.
@@ -195,6 +207,7 @@ length = liftI (step 0)
   where
     step !i (Chunk xs) = liftI (step $ i + LL.length xs)
     step !i stream     = idone (fromIntegral i) stream
+{-# INLINE length #-}
 
 
 -- ---------------------------------------------------
@@ -220,6 +233,9 @@ take n' iter = Iteratee $ \od oc -> runIter iter (on_done od oc) (on_cont od oc)
       | True               = idone (k (Chunk s1)) (Chunk s2)
       where (s1, s2) = LL.splitAt n str
     step _n k stream       = idone (k stream) stream
+{-# SPECIALIZE take :: Monad m => Int -> Enumeratee [el] [el] m a #-}
+{-# SPECIALIZE take :: Monad m => Int -> Enumeratee B.ByteString B.ByteString m a #-}
+{-# SPECIALIZE take :: Monad m => Int -> Enumeratee BC.ByteString BC.ByteString m a #-}
 
 -- |Read n elements from a stream and apply the given iteratee to the
 -- stream of the read elements. If the given iteratee accepted fewer
@@ -245,6 +261,8 @@ takeOnly i iter = Iteratee $ \od oc ->
       | True                = idone (k (Chunk s1)) (Chunk s2)
       where (s1, s2) = LL.splitAt n str
     step _n k stream        = idone (k stream) stream
+{-# SPECIALIZE takeOnly :: Monad m => Int -> Enumeratee [el] [el] m a #-}
+{-# SPECIALIZE takeOnly :: Monad m => Int -> Enumeratee B.ByteString B.ByteString m a #-}
 
 
 -- |Map the stream: another iteratee transformer
@@ -267,6 +285,7 @@ mapStream f = eneeCheckIfDone (liftI . step)
       | LL.null xs = liftI (step k)
       | True       = mapStream f $ k (Chunk $ lMap f xs)
     step k s       = idone (liftI k) s
+{-# SPECIALIZE mapStream :: Monad m => (el -> el') -> Enumeratee [el] [el'] m a #-}
 
 -- |Map the stream rigidly.
 --
@@ -283,6 +302,8 @@ rigidMapStream f = eneeCheckIfDone (liftI . step)
       | LL.null xs = liftI (step k)
       | True       = rigidMapStream f $ k (Chunk $ LL.rigidMap f xs)
     step k s       = idone (liftI k) s
+{-# SPECIALIZE rigidMapStream :: Monad m => (el -> el) -> Enumeratee [el] [el] m a #-}
+{-# SPECIALIZE rigidMapStream :: Monad m => (Word8 -> Word8) -> Enumeratee B.ByteString B.ByteString m a #-}
 
 
 -- |Creates an 'enumeratee' with only elements from the stream that
@@ -300,6 +321,7 @@ filter p = convStream f'
       | LL.null xs = f'
       | True       = idone (LL.filter p xs) mempty
     step _ = f'
+{-# INLINE filter #-}
 
 -- ------------------------------------------------------------------------
 -- Folds
@@ -318,6 +340,8 @@ foldl f i = liftI (step i)
       | LL.null xs  = liftI (step acc)
       | True   = liftI (step $ FLL.foldl f acc xs)
     step acc stream = idone acc stream
+{-# INLINE foldl #-}
+
 
 -- | Left-associative fold that is strict in the accumulator.
 -- This function should be used in preference to 'foldl' whenever possible.
@@ -351,6 +375,8 @@ foldl1 f = liftI step
       | LL.null xs = liftI step
       | True       = foldl f $ FLL.foldl1 f xs
     step stream    = icont step (Just (setEOF stream))
+{-# INLINE foldl1 #-}
+
 
 -- | Strict variant of 'foldl1'.
 foldl1' ::
@@ -364,6 +390,8 @@ foldl1' f = liftI step
       | LL.null xs = liftI step
       | True       = foldl' f $ FLL.foldl1 f xs
     step stream    = icont step (Just (setEOF stream))
+{-# INLINE foldl1' #-}
+
 
 -- | Sum of a stream.
 sum :: (Monad m, LL.ListLike s el, Num el) => Iteratee s m el
@@ -373,6 +401,8 @@ sum = liftI (step 0)
       | LL.null xs = liftI (step acc)
       | True       = liftI (step $! acc + LL.sum xs)
     step acc str   = idone acc str
+{-# INLINE sum #-}
+
 
 -- | Product of a stream.
 product :: (Monad m, LL.ListLike s el, Num el) => Iteratee s m el
@@ -382,6 +412,8 @@ product = liftI (step 1)
       | LL.null xs = liftI (step acc)
       | True       = liftI (step $! acc * LL.product xs)
     step acc str   = idone acc str
+{-# INLINE product #-}
+
 
 -- ------------------------------------------------------------------------
 -- Zips
@@ -413,6 +445,8 @@ enumPair i1 i2 = Iteratee $ \od oc -> runIter i1 (onDone od oc) (onCont od oc)
                                           then c1 else c2
     longest e@(EOF _)  _         = e
     longest _          e@(EOF _) = e
+{-# INLINE enumPair #-}
+
 
 -- ------------------------------------------------------------------------
 -- Enumerators
@@ -432,3 +466,4 @@ enumPureNChunk str n iter
                            on_cont k Nothing = enum' s2 . k $ Chunk s1
                            on_cont k e = return $ icont k e
                        in runIter iter' idoneM on_cont
+{-# INLINE enumPureNChunk #-}

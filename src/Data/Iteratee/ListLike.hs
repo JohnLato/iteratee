@@ -260,7 +260,7 @@ takeUpTo i iter = Iteratee $ \od oc ->
       | LL.length str <= n  = takeUpTo (n - LL.length str) $ k (Chunk str)
       | True                = idone (k (Chunk s1)) (Chunk s2)
       where (s1, s2) = LL.splitAt n str
-    step _n k stream        = idone (k stream) stream
+    step _ k stream         = idone (k stream) stream
 {-# SPECIALIZE takeUpTo :: Monad m => Int -> Enumeratee [el] [el] m a #-}
 {-# SPECIALIZE takeUpTo :: Monad m => Int -> Enumeratee B.ByteString B.ByteString m a #-}
 

@@ -21,6 +21,7 @@ module Data.Iteratee.Iteratee (
   ,Enumerator
   ,Enumeratee
   -- ** Basic enumerators
+  ,enumChunk
   ,enumEof
   ,enumErr
   ,enumPure1Chunk
@@ -177,9 +178,13 @@ joinIM mIter = Iteratee $ \od oc -> mIter >>= \iter -> runIter iter od oc
 
 type Enumerator s m a = Iteratee s m a -> m (Iteratee s m a)
 
--- We have two choices of composition: compose iteratees or compose
--- enumerators. The latter is useful when one iteratee
--- reads from the concatenation of two data sources.
+-- |Applies the iteratee to the given stream.  This wraps 'enumEof',
+-- 'enumErr', and 'enumPure1Chunk', calling the appropriate enumerator
+-- based upon 'StreamG'.
+enumChunk :: (Monad m) => StreamG s -> Enumerator s m a
+enumChunk (Chunk xs)     = enumPure1Chunk xs
+enumChunk (EOF Nothing)  = enumEof
+enumChunk (EOF (Just e)) = enumErr e
 
 -- |The most primitive enumerator: applies the iteratee to the terminated
 -- stream. The result is the iteratee in the Done state.  It is an error

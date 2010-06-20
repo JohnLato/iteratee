@@ -23,7 +23,7 @@ module Data.Iteratee.ListLike (
   ,length
   -- ** Nested iteratee combinators
   ,take
-  ,takeOnly
+  ,takeUpTo
   ,mapStream
   ,rigidMapStream
   ,filter
@@ -246,9 +246,9 @@ take n' iter = Iteratee $ \od oc -> runIter iter (on_done od oc) (on_cont od oc)
 --
 -- N.B. If the inner iteratee finishes early, remaining data within the current
 -- chunk will be dropped.
-takeOnly :: (Monad m, Nullable s, LL.ListLike s el) => Int -> Enumeratee s s m a
-takeOnly 0 iter = return iter
-takeOnly i iter = Iteratee $ \od oc ->
+takeUpTo :: (Monad m, Nullable s, LL.ListLike s el) => Int -> Enumeratee s s m a
+takeUpTo 0 iter = return iter
+takeUpTo i iter = Iteratee $ \od oc ->
   runIter iter (onDone od oc) (onCont od oc)
   where
     onDone od oc x _        = runIter (return (return x)) od oc
@@ -257,12 +257,12 @@ takeOnly i iter = Iteratee $ \od oc ->
     onCont od oc _ (Just e) = runIter (throwErr e) od oc
     step n k (Chunk str)
       | LL.null str         = liftI (step n k)
-      | LL.length str <= n  = takeOnly (n - LL.length str) $ k (Chunk str)
+      | LL.length str <= n  = takeUpTo (n - LL.length str) $ k (Chunk str)
       | True                = idone (k (Chunk s1)) (Chunk s2)
       where (s1, s2) = LL.splitAt n str
     step _n k stream        = idone (k stream) stream
-{-# SPECIALIZE takeOnly :: Monad m => Int -> Enumeratee [el] [el] m a #-}
-{-# SPECIALIZE takeOnly :: Monad m => Int -> Enumeratee B.ByteString B.ByteString m a #-}
+{-# SPECIALIZE takeUpTo :: Monad m => Int -> Enumeratee [el] [el] m a #-}
+{-# SPECIALIZE takeUpTo :: Monad m => Int -> Enumeratee B.ByteString B.ByteString m a #-}
 
 
 -- |Map the stream: another iteratee transformer

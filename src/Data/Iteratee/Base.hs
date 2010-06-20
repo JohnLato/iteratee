@@ -15,7 +15,7 @@ module Data.Iteratee.Base (
   -- * Functions
   -- ** Control functions
   ,run
-  ,try
+  ,tryRun
   ,mapIteratee
   -- ** Creating Iteratees
   ,idone
@@ -177,8 +177,8 @@ run iter = runIter iter onDone onCont
 -- thrown with @Control.Exception.throw@ or @Control.Monad.CatchIO.throw@ will
 -- not be returned.
 -- See 'Data.Iteratee.Exception.IFException' for details.
-try :: (Exception e, Monad m) => Iteratee s m a -> m (Either e a)
-try iter = runIter iter onDone onCont
+tryRun :: (Exception e, Monad m) => Iteratee s m a -> m (Either e a)
+tryRun iter = runIter iter onDone onCont
   where
     onDone  x _ = return $ Right x
     onCont  k Nothing  = runIter (k (EOF Nothing)) onDone onCont'

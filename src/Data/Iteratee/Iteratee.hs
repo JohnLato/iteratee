@@ -46,7 +46,6 @@ import Data.Iteratee.Base
 import Control.Exception
 import Control.Failure
 import Data.Maybe
-import Data.Monoid
 
 -- exception helpers
 excDivergent :: SomeException
@@ -144,7 +143,7 @@ eneeCheckIfDone f inner = Iteratee $ \od oc ->
 -- The transformation from one stream to the other is specified as
 -- Iteratee s el s'.
 convStream ::
- (Monad m, Monoid s, Nullable s) =>
+ (Monad m, Nullable s) =>
   Iteratee s m s'
   -> Enumeratee s s' m a
 convStream fi = eneeCheckIfDone check

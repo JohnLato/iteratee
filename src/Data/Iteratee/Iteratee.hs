@@ -13,6 +13,7 @@ module Data.Iteratee.Iteratee (
   ,identity
   ,skipToEof
   ,isStreamFinished
+  ,isIterFinished
   -- ** Nested iteratee combinators
   ,convStream
   ,unfoldConvStream
@@ -100,6 +101,11 @@ isStreamFinished = liftI check
     check s@(EOF e) = idone (Just $ fromMaybe (toException EofException) e) s
     check s         = idone Nothing s
 {-# INLINE isStreamFinished #-}
+
+-- |
+isIterFinished :: (Monad m) => Iteratee s m a -> m Bool
+isIterFinished iter = runIter iter (\_ _ -> return True) (\_ _ -> return False)
+{-# INLINE isIterFinished #-}
 
 -- |Skip the rest of the stream
 skipToEof :: (Monad m) => Iteratee s m ()

@@ -6,7 +6,7 @@
 
 module Data.Iteratee.Base (
   -- * Types
-  StreamG (..)
+  Stream (..)
   ,StreamStatus (..)
   -- ** Exception types
   ,module Data.Iteratee.Exception
@@ -58,25 +58,25 @@ import Data.Data
 -- informally speaking, ``suspend itself'' and wait for more data
 -- to arrive.
 
-data StreamG c =
+data Stream c =
   EOF (Maybe SomeException)
   | Chunk c
   deriving (Show, Typeable)
 
-instance (Eq c) => Eq (StreamG c) where
+instance (Eq c) => Eq (Stream c) where
   (Chunk c1) == (Chunk c2)           = c1 == c2
   (EOF Nothing) == (EOF Nothing)     = True
   (EOF (Just e1)) == (EOF (Just e2)) = typeOf e1 == typeOf e2
   _ == _                             = False
 
-instance Monoid c => Monoid (StreamG c) where
+instance Monoid c => Monoid (Stream c) where
   mempty = Chunk mempty
   mappend (EOF mErr) _ = EOF mErr
   mappend _ (EOF mErr) = EOF mErr
   mappend (Chunk s1) (Chunk s2) = Chunk (s1 `mappend` s2)
 
 -- |Map a function over a stream.
-instance Functor StreamG where
+instance Functor Stream where
   fmap f (Chunk xs) = Chunk $ f xs
   fmap _ (EOF mErr) = EOF mErr
 
@@ -92,35 +92,35 @@ data StreamStatus =
 
 -- |Produce the 'EOF' error message.  If the stream was terminated because
 -- of an error, keep the error message.
-setEOF :: StreamG c -> SomeException
+setEOF :: Stream c -> SomeException
 setEOF (EOF (Just e)) = e
 setEOF _              = toException EofException
 
 -- ----------------------------------------------
 -- | Monadic iteratee
 newtype Iteratee s m a = Iteratee{ runIter :: forall r.
-          (a -> StreamG s -> m r) ->
-          ((StreamG s -> Iteratee s m a) -> Maybe SomeException -> m r) ->
+          (a -> Stream s -> m r) ->
+          ((Stream s -> Iteratee s m a) -> Maybe SomeException -> m r) ->
           m r}
 
 -- ----------------------------------------------
 
-idone :: Monad m => a -> StreamG s -> Iteratee s m a
+idone :: Monad m => a -> Stream s -> Iteratee s m a
 idone a s = Iteratee $ \onDone _ -> onDone a s
 
-icont :: (StreamG s -> Iteratee s m a) -> Maybe SomeException -> Iteratee s m a
+icont :: (Stream s -> Iteratee s m a) -> Maybe SomeException -> Iteratee s m a
 icont k e = Iteratee $ \_ onCont -> onCont k e
 
-liftI :: Monad m => (StreamG s -> Iteratee s m a) -> Iteratee s m a
+liftI :: Monad m => (Stream s -> Iteratee s m a) -> Iteratee s m a
 liftI k = Iteratee $ \_ onCont -> onCont k Nothing
 
 -- Monadic versions, frequently used by enumerators
-idoneM :: Monad m => a -> StreamG s -> m (Iteratee s m a)
+idoneM :: Monad m => a -> Stream s -> m (Iteratee s m a)
 idoneM x str = return $ Iteratee $ \onDone _ -> onDone x str
 
 icontM
   :: Monad m =>
-     (StreamG s -> Iteratee s m a)
+     (Stream s -> Iteratee s m a)
      -> Maybe SomeException
      -> m (Iteratee s m a)
 icontM k e = return $ Iteratee $ \_ onCont -> onCont k e

@@ -68,7 +68,7 @@ throwErr e = icont (const (throwErr e)) (Just e)
 throwRecoverableErr ::
  (Monad m) =>
   SomeException
-  -> (StreamG s -> Iteratee s m a)
+  -> (Stream s -> Iteratee s m a)
   -> Iteratee s m a
 throwRecoverableErr e i = icont i (Just e)
 
@@ -129,7 +129,7 @@ type Enumeratee sFrom sTo (m :: * -> *) a =
 
 eneeCheckIfDone ::
  (Monad m, NullPoint elo) =>
-  ((StreamG eli -> Iteratee eli m a) -> Iteratee elo m (Iteratee eli m a))
+  ((Stream eli -> Iteratee eli m a) -> Iteratee elo m (Iteratee eli m a))
   -> Enumeratee elo eli m a
 eneeCheckIfDone f inner = Iteratee $ \od oc -> 
   let on_done x s = od (idone x s) (Chunk empty)
@@ -196,8 +196,8 @@ type Enumerator s m a = Iteratee s m a -> m (Iteratee s m a)
 
 -- |Applies the iteratee to the given stream.  This wraps 'enumEof',
 -- 'enumErr', and 'enumPure1Chunk', calling the appropriate enumerator
--- based upon 'StreamG'.
-enumChunk :: (Monad m) => StreamG s -> Enumerator s m a
+-- based upon 'Stream'.
+enumChunk :: (Monad m) => Stream s -> Enumerator s m a
 enumChunk (Chunk xs)     = enumPure1Chunk xs
 enumChunk (EOF Nothing)  = enumEof
 enumChunk (EOF (Just e)) = enumErr e

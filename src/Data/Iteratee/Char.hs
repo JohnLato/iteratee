@@ -6,7 +6,7 @@ module Data.Iteratee.Char (
   -- * Types
   EofBehavior (..)
   -- ** Type synonyms
-  ,Stream
+  ,StreamS
   ,Iteratee
   ,Line
   -- * Word and Line processors
@@ -30,9 +30,9 @@ import qualified Data.ListLike as LL
 import Control.Monad.IO.Class
 import qualified Data.ByteString.Char8 as BC
 
--- |A particular instance of StreamG: the stream of characters.
+-- |A particular instance of Stream: the stream of characters.
 -- This stream is used by many input parsers.
-type Stream = StreamG String
+type StreamS = Stream String
 
 -- Useful combinators for implementing iteratees and enumerators
 

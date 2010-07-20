@@ -24,14 +24,14 @@ instance Show (a -> b) where
   show _ = "<<function>>"
 
 -- ---------------------------------------------
--- StreamG instances
+-- Stream instances
 
-type ST = StreamG [Int]
+type ST = Stream [Int]
 
 prop_eq str = str == str
   where types = str :: ST
 
-prop_mempty = mempty == (Chunk [] :: StreamG [Int])
+prop_mempty = mempty == (Chunk [] :: Stream [Int])
 
 prop_mappend str1 str2 | isChunk str1 && isChunk str2 =
   str1 `mappend` str2 == Chunk (chunkData str1 ++ chunkData str2)
@@ -236,7 +236,7 @@ tests = [
   testGroup "Elementary" [
     testProperty "list" prop_list
     ,testProperty "chunkList" prop_clist]
-  ,testGroup "StreamG tests" [
+  ,testGroup "Stream tests" [
     testProperty "mempty" prop_mempty
     ,testProperty "mappend" prop_mappend
     ,testProperty "mappend associates" prop_mappend2

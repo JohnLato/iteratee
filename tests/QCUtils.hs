@@ -20,7 +20,7 @@ instance (Show a, LL.ListLike s el) => Show (Iteratee s Identity a) where
 
 -- Arbitrary instances
 
-instance Arbitrary c => Arbitrary (StreamG c) where
+instance Arbitrary c => Arbitrary (Stream c) where
   arbitrary = do
     err <- arbitrary
     xs <- arbitrary

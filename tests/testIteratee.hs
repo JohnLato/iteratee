@@ -211,9 +211,9 @@ prop_take2 xs n = n > 0 ==>
                   == runner1 (enumPure1Chunk (P.take n xs) peek)
   where types = xs :: [Int]
 
-prop_takeOnly xs n = n >= 0 ==>
+prop_takeUpTo xs n = n >= 0 ==>
                   runner2 (enumPure1Chunk xs $ Iter.take n stream2list)
-                  == runner2 (enumPure1Chunk xs $ takeOnly n stream2list)
+                  == runner2 (enumPure1Chunk xs $ takeUpTo n stream2list)
   where types = xs :: [Int]
 
 -- ---------------------------------------------
@@ -275,7 +275,7 @@ tests = [
     ,testProperty "mapStream identity joinI" prop_mapjoin
     ,testProperty "take" prop_take
     ,testProperty "take (finished iteratee)" prop_take2
-    ,testProperty "takeOnly" prop_takeOnly
+    ,testProperty "takeUpTo" prop_takeUpTo
     ,testProperty "convStream EOF" prop_convstream2
     ,testProperty "convStream identity" prop_convstream
     ,testProperty "convStream identity 2" prop_convstream3

@@ -13,7 +13,6 @@ module Data.Iteratee.Iteratee (
   ,identity
   ,skipToEof
   ,isStreamFinished
-  ,isIterFinished
   -- ** Nested iteratee combinators
   ,convStream
   ,unfoldConvStream
@@ -27,6 +26,7 @@ module Data.Iteratee.Iteratee (
   ,enumEof
   ,enumErr
   ,enumPure1Chunk
+  ,enumCheckIfDone
   ,enumFromCallback
   ,enumFromCallbackCatch
   -- ** Enumerator Combinators
@@ -102,10 +102,6 @@ isStreamFinished = liftI check
     check s         = idone Nothing s
 {-# INLINE isStreamFinished #-}
 
--- |
-isIterFinished :: (Monad m) => Iteratee s m a -> m Bool
-isIterFinished iter = runIter iter (\_ _ -> return True) (\_ _ -> return False)
-{-# INLINE isIterFinished #-}
 
 -- |Skip the rest of the stream
 skipToEof :: (Monad m) => Iteratee s m ()
@@ -245,6 +241,17 @@ enumPure1Chunk str iter = runIter iter idoneM onCont
   where
     onCont k Nothing = return $ k $ Chunk str
     onCont k e       = return $ icont k e
+
+-- |Checks if an iteratee has finished.
+-- This enumerator runs the iteratee, performing any monadic actions.
+-- If the result is True, the returned iteratee is done.
+enumCheckIfDone :: (Monad m) => Iteratee s m a -> m (Bool, Iteratee s m a)
+enumCheckIfDone iter = runIter iter onDone onCont
+  where
+    onDone x str = return (True, idone x str)
+    onCont k e   = return (False, icont k e)
+{-# INLINE enumCheckIfDone #-}
+
 
 -- |Create an enumerator from a callback function
 enumFromCallback ::

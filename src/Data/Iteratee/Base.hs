@@ -50,7 +50,7 @@ import Data.Data
 
 
 -- |A stream is a (continuing) sequence of elements bundled in Chunks.
--- The first two variants indicate termination of the stream.
+-- The first variant indicates termination of the stream.
 -- Chunk a gives the currently available part of the stream.
 -- The stream is not terminated yet.
 -- The case (null Chunk) signifies a stream with no currently available

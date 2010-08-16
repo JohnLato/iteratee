@@ -7,10 +7,12 @@ import Test.QuickCheck.Arbitrary
 import Test.QuickCheck.Gen
 
 import Data.Iteratee
+import Data.Iteratee.Iteratee
 import qualified Data.Iteratee as I
 import qualified Data.ListLike as LL
 import Data.Functor.Identity
 
+import Control.Applicative
 import Control.Exception
 import Control.Failure
 
@@ -32,7 +34,7 @@ tE = toException
 instance Arbitrary SomeException where
   arbitrary = do
     str <- arbitrary
-    off <- arbitrary
+    off <- fromInteger <$> (arbitrary :: Gen Integer)
     elements [tE DivergentException, tE (SeekException off),
       tE EofException, iterStrExc str, tE NothingException]
 

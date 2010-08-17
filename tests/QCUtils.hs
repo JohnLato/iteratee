@@ -14,7 +14,6 @@ import Data.Functor.Identity
 
 import Control.Applicative
 import Control.Exception
-import Control.Failure
 
 -- Show instance
 instance (Show a, LL.ListLike s el) => Show (Iteratee s Identity a) where
@@ -36,7 +35,7 @@ instance Arbitrary SomeException where
     str <- arbitrary
     off <- fromInteger <$> (arbitrary :: Gen Integer)
     elements [tE DivergentException, tE (SeekException off),
-      tE EofException, iterStrExc str, tE NothingException]
+      tE EofException, iterStrExc str]
 
 instance (Num a, Ord a, Arbitrary a, Monad m) => Arbitrary (Iteratee [a] m [a]) where
   arbitrary = do

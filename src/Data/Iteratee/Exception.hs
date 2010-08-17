@@ -61,7 +61,6 @@ where
 import Data.Iteratee.IO.Base
 
 import Control.Exception
-import Control.Failure
 import Data.Data
 
 
@@ -149,9 +148,6 @@ class Exception e => IException e where
   toIterException   = IterException
   fromIterException :: IterException -> Maybe e
   fromIterException = fromException . toException
-
-instance IException NullException where
-instance IException NothingException where
 
 -- |Root of iteratee exceptions.
 data IterException = forall e . Exception e => IterException e

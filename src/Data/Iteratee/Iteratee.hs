@@ -1,4 +1,4 @@
-{-# LANGUAGE KindSignatures, FlexibleContexts, ScopedTypeVariables #-}
+{-# LANGUAGE KindSignatures, FlexibleContexts, ScopedTypeVariables, DeriveDataTypeable #-}
 
 -- |Monadic and General Iteratees:
 -- incremental input parsers, processors and transformers
@@ -46,8 +46,8 @@ import Data.Iteratee.IO.Base
 import Data.Iteratee.Base
 
 import Control.Exception
-import Control.Failure
 import Data.Maybe
+import Data.Typeable
 
 -- exception helpers
 excDivergent :: SomeException
@@ -259,7 +259,16 @@ enumFromCallback ::
   m (Either SomeException (Bool, s))
   -> Enumerator s m a
 enumFromCallback = flip enumFromCallbackCatch
-  (\NothingException -> return Nothing)
+  (\NotAnException -> return Nothing)
+
+-- Dummy exception to catch in enumFromCallback
+-- This never gets thrown, but it lets us
+-- share plumbing
+data NotAnException = NotAnException
+ deriving (Show, Typeable)
+
+instance Exception NotAnException where
+instance IException NotAnException where
 
 -- |Create an enumerator from a callback function with an exception handler.
 -- The exception handler is called if an iteratee reports an exception.

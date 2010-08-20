@@ -29,7 +29,7 @@ numLines :: Monad m => I.Iteratee BC.ByteString m Int
 numLines = I.joinI $ enumLinesBS I.length
 
 allIter :: Monad m => I.Iteratee BC.ByteString m ((Int, Int), Int)
-allIter = numLines `I.enumPar` numWords `I.enumPar` numChars
+allIter = numLines `I.enumPair` numWords `I.enumPair` numChars
 
 main = do
   f:_ <- getArgs

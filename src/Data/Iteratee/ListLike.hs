@@ -220,8 +220,9 @@ length = liftI (step 0)
 --
 -- The analogue of @List.take@
 take :: (Monad m, Nullable s, LL.ListLike s el) => Int -> Enumeratee s s m a
-take 0 iter  = return iter
-take n' iter = Iteratee $ \od oc -> runIter iter (on_done od oc) (on_cont od oc)
+take n' iter
+ | n' <= 0 = return iter
+ | True    = Iteratee $ \od oc -> runIter iter (on_done od oc) (on_cont od oc)
   where
     on_done od oc x _ = runIter (drop n' >> return (return x)) od oc
     on_cont od oc k Nothing = if n' == 0 then od (liftI k) (Chunk mempty)
@@ -247,9 +248,10 @@ take n' iter = Iteratee $ \od oc -> runIter iter (on_done od oc) (on_cont od oc)
 -- N.B. If the inner iteratee finishes early, remaining data within the current
 -- chunk will be dropped.
 takeUpTo :: (Monad m, Nullable s, LL.ListLike s el) => Int -> Enumeratee s s m a
-takeUpTo 0 iter = return iter
-takeUpTo i iter = Iteratee $ \od oc ->
-  runIter iter (onDone od oc) (onCont od oc)
+takeUpTo i iter
+ | i <= 0    = return iter
+ | otherwise = Iteratee $ \od oc ->
+    runIter iter (onDone od oc) (onCont od oc)
   where
     onDone od oc x _        = runIter (return (return x)) od oc
     onCont od oc k Nothing  = if i == 0 then od (liftI k) (Chunk mempty)

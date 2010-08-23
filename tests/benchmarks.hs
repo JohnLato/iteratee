@@ -36,11 +36,12 @@ idN name i = BDIterN name 5 id i
 
 makeList name f = BDList name f [1..10000]
 
+makeBench :: BD n eval [Int] Identity -> Benchmark
 makeBench (BDIter1 n eval i) = bench n $
   proc eval runIdentity (enumPure1Chunk [1..10000]) i
 makeBench (BDIterN n csize eval i) = bench n $
   proc eval runIdentity (enumPureNChunk [1..10000] csize) i
-makeBench (BDList n f l) = bench n $ B f l
+makeBench (BDList n f l) = bench n $ whnf f l
 
 packedBS :: BS.ByteString
 packedBS  = (BS.pack [1..10000])
@@ -56,8 +57,8 @@ proc :: (Functor m, Monad m)
   -> (m a -> a)
   -> I.Enumerator s m a
   -> I.Iteratee s m a
-  -> B (I.Iteratee s m a) b
-proc eval runner enum iter = B (eval . runner . (I.run <=< enum)) iter
+  -> Pure
+proc eval runner enum iter = whnf (eval . runner . (I.run <=< enum)) iter
 
 defaultProc = proc id runIdentity (enumPure1Chunk [1..10000])
 defaultNProc = proc id runIdentity (enumPureNChunk [1..10000] 5)

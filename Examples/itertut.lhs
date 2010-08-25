@@ -17,6 +17,10 @@ This tutorial is based on
 http://okmij.org/ftp/Haskell/Iteratee/IterateeIO-talk-notes.pdf
 amongst other sources.  Hopefully you will find my additions positive.
 
+[This tutorial is still incomplete, however I am including it in this release
+as I hope the section on the CPS transform will be useful to users
+switching to the new library.  JL]
+
 Exercises : given a text file of Ints separated by newlines, write a
 function which returns the first Int greater than a given k, or
 Nothing.  Do this once using explicit handle operations (hGetLine) and

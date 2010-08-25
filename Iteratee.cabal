@@ -5,12 +5,12 @@ description:
   The Iteratee monad provides strict, safe, and functional I/O. In addition
   to pure Iteratee processors, file IO and combinator functions are provided.
 category:      System, Data
-author:        Oleg Kiselyov
+author:        Oleg Kiselyov, John W. Lato
 maintainer:    John W. Lato <jwlato@gmail.com>
 license:       BSD3
 license-file:  LICENSE
 homepage:      http://inmachina.net/~jwlato/haskell/iteratee
-tested-with:   GHC == 6.10.4
+tested-with:   GHC == 6.12.1
 stability:     experimental
 
 cabal-version: >= 1.6
@@ -21,10 +21,9 @@ extra-source-files:
   README
   Examples/*.hs
   Examples/*.txt
-  Examples/*.wav
 
 flag splitBase
-  description: Use the new split-up base package.
+  description: Use the split-up base package.
 
 flag buildTests
   description: Build test executables.

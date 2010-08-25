@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns #-}
 
--- A simple wc-like program using Data.Iteratee
+-- A simple wc-like program using Data.Iteratee.
+-- Demonstrates a few different ways of composing iteratees.
 module Main where
 
 import Prelude as P
@@ -14,33 +15,38 @@ import Data.ListLike as LL
 import System
 
 
--- An iteratee to calculate the number of characters in a stream.  Very basic, assumes ASCII.
+-- | An iteratee to calculate the number of characters in a stream.
+--   Very basic, assumes ASCII, not particularly efficient.
 numChars :: (Monad m, ListLike s el) => I.Iteratee s m Int
 numChars = I.length
 
--- An iteratee to calculate the number of words in a stream of Word8's.
--- this operates on a Word8 stream because that's the only way to use
--- ByteString's, however each word in the stream produced by enumWordsBS
--- is a (strict) bytestring that can be used with Data.ByteString.Char8.
--- this is not terribly efficient, it's the analog of
--- length . BC.words
+-- | An iteratee to calculate the number of words in a stream of Word8's.
+-- this operates on a Word8 stream in order to use ByteStrings.
+--
+-- This function converts the stream of Word8s into a stream of words,
+-- then counts the words with Data.Iteratee.length
+-- This is the equivalent of "length . BC.words".
 numWords :: Monad m => I.Iteratee BC.ByteString m Int
 numWords = I.joinI $ enumWordsBS I.length
 
--- Count the number of lines, similar to numWords
+-- | Count the number of lines, in the same manner as numWords.
 numLines :: Monad m => I.Iteratee BC.ByteString m Int
 numLines = I.joinI $ enumLinesBS I.length
 
--- |A much more efficient numLines using the foldl' iteratee.
+-- | A much more efficient numLines using the foldl' iteratee.
+-- Rather than converting a stream, this simply counts newline characters.
 numLines2 :: Monad m => I.Iteratee BC.ByteString m Int
 numLines2 = I.foldl' step 0
  where
   step !acc el = if el == (fromIntegral $ ord '\n') then acc + 1 else acc
 
-allIter :: Monad m => I.Iteratee BC.ByteString m ((Int, Int), Int)
-allIter = numLines `I.enumPair` numWords `I.enumPair` numChars
+-- | Combine multiple iteratees into a single unit using "enumPair".
+-- The iteratees combined with enumPair are run in parallel.
+-- Any number of iteratees can be joined with multiple enumPair's.
+twoIter :: Monad m => I.Iteratee BC.ByteString m (Int, Int)
+twoIter = numLines2 `I.enumPair` numChars
 
 main = do
   f:_ <- getArgs
-  words <- fileDriverVBuf 65536 numLines2 f
+  words <- fileDriverVBuf 65536 twoIter f
   print words

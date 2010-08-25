@@ -21,6 +21,7 @@ extra-source-files:
   README
   Examples/*.hs
   Examples/*.txt
+  tests/*.hs
 
 flag splitBase
   description: Use the split-up base package.

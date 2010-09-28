@@ -37,7 +37,7 @@ library
 
   if flag(splitBase)
     build-depends:
-      base >= 3 && < 5
+      base >= 3 && < 6
   else
     build-depends:
       base < 3

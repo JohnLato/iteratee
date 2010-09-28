@@ -20,6 +20,7 @@ module Data.Iteratee.ListLike (
   ,head
   ,heads
   ,peek
+  ,roll
   ,length
   -- ** Nested iteratee combinators
   ,take
@@ -51,6 +52,7 @@ import qualified Data.ListLike as LL
 import qualified Data.ListLike.FoldableLL as FLL
 import Data.Iteratee.Iteratee
 import Data.Monoid
+import Control.Applicative
 import Control.Monad.Trans.Class
 import Data.Word (Word8)
 import qualified Data.ByteString as B
@@ -168,6 +170,28 @@ peek = liftI step
       | True        = idone (Just $ LL.head vec) s
     step stream     = idone Nothing stream
 {-# INLINE peek #-}
+
+-- | Return a chunk of `t' elements length, while consuming `d' elements
+--   from the stream.  Useful for creating a "rolling average" with convStream.
+roll :: (Monad m, Functor m, Nullable s, LL.ListLike s el, LL.ListLike s' s) =>
+  Int
+  -> Int
+  -> Iteratee s m s'
+roll t d | t > d  = liftI step
+  where
+    step (Chunk vec)
+      | LL.length vec >= d =
+          idone (LL.singleton $ LL.take t vec) (Chunk $ LL.drop d vec)
+      | LL.length vec >= t =
+          idone (LL.singleton $ LL.take t vec) mempty <* drop (d-LL.length vec)
+      | LL.null vec        = liftI step
+      | True               = liftI (step' vec)
+    step stream            = idone LL.empty stream
+    step' v1 (Chunk vec)   = step . Chunk $ v1 `mappend` vec
+    step' v1 stream        = idone (LL.singleton v1) stream
+roll t d = LL.singleton <$> joinI (take t stream2stream) <* drop (d-t)
+  -- d is >= t, so this version works
+{-# INLINE roll #-}
 
 
 -- |Drop n elements of the stream, if there are that many.

@@ -256,10 +256,11 @@ enumCheckIfDone iter = runIter iter onDone onCont
 -- |Create an enumerator from a callback function
 enumFromCallback ::
  (Monad m, NullPoint s) =>
-  m (Either SomeException (Bool, s))
+  (st -> m (Either SomeException ((Bool, st), s)))
+  -> st
   -> Enumerator s m a
-enumFromCallback = flip enumFromCallbackCatch
-  (\NotAnException -> return Nothing)
+enumFromCallback c st =
+  enumFromCallbackCatch c (\NotAnException -> return Nothing) st
 
 -- Dummy exception to catch in enumFromCallback
 -- This never gets thrown, but it lets us
@@ -274,17 +275,19 @@ instance IException NotAnException where
 -- The exception handler is called if an iteratee reports an exception.
 enumFromCallbackCatch ::
  (IException e, Monad m, NullPoint s) =>
-  m (Either SomeException (Bool, s))
+  (st -> m (Either SomeException ((Bool, st), s)))
   -> (e -> m (Maybe EnumException))
+  -> st
   -> Enumerator s m a
 enumFromCallbackCatch c handler = loop
   where
-    loop iter = runIter iter idoneM on_cont
-    on_cont k Nothing = c >>= either (return . k . EOF . Just) (uncurry check)
+    loop st iter = runIter iter idoneM (on_cont st)
+    on_cont st k Nothing = c st >>=
+        either (return . k . EOF . Just) (uncurry check)
       where
-        check b = if b then loop . k . Chunk else return . k . Chunk
-    on_cont k j@(Just e) = case fromException e of
-      Just e' -> handler e' >>= maybe (loop . k $ Chunk empty)
+        check (b,st') = if b then loop st' . k . Chunk else return . k . Chunk
+    on_cont st k j@(Just e) = case fromException e of
+      Just e' -> handler e' >>= maybe (loop st . k $ Chunk empty)
                                  (return . icont k . Just) . fmap toException
       Nothing -> return (icont k j)
 

@@ -41,13 +41,15 @@ makeHandleCallback ::
   Ptr el
   -> Int
   -> Handle
-  -> m (Either SomeException (Bool, s))
-makeHandleCallback p bsize h = do
+  -> st
+  -> m (Either SomeException ((Bool, st), s))
+makeHandleCallback p bsize h st = do
   n' <- liftIO (CIO.try $ hGetBuf h p bsize :: IO (Either SomeException Int))
   case n' of
     Left e -> return $ Left e
-    Right 0 -> return $ Right (False, empty)
-    Right n -> liftM (\s -> Right (True, s)) $ readFromPtr p (fromIntegral n)
+    Right 0 -> return $ Right ((False, st), empty)
+    Right n -> liftM (\s -> Right ((True, st), s)) $
+                 readFromPtr p (fromIntegral n)
 
 
 -- |The (monadic) enumerator of a file Handle.  This version enumerates
@@ -62,7 +64,7 @@ enumHandle ::
 enumHandle bs h i = do
   let bufsize = bs * sizeOf (undefined :: el)
   p <- liftIO $ mallocBytes bufsize
-  enumFromCallback (makeHandleCallback p bufsize h) i
+  enumFromCallback (makeHandleCallback p bufsize h) () i
 
 -- |An enumerator of a file handle that catches exceptions raised by
 -- the Iteratee.
@@ -79,7 +81,7 @@ enumHandleCatch
 enumHandleCatch bs h handler i = do
   let bufsize = bs * sizeOf (undefined :: el)
   p <- liftIO $ mallocBytes bufsize
-  enumFromCallbackCatch (makeHandleCallback p bufsize h) handler i
+  enumFromCallbackCatch (makeHandleCallback p bufsize h) handler () i
 
 
 -- |The enumerator of a Handle: a variation of enumHandle that

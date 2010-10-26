@@ -47,14 +47,16 @@ makefdCallback ::
   Ptr el
   -> ByteCount
   -> Fd
-  -> m (Either SomeException (Bool, s))
-makefdCallback p bufsize fd = do
+  -> st
+  -> m (Either SomeException ((Bool, st), s))
+makefdCallback p bufsize fd st = do
   liftIO $ GHC.Conc.threadWaitRead fd
   n <- liftIO $ myfdRead fd (castPtr p) bufsize
   case n of
     Left _   -> return $ Left undefined
-    Right 0  -> return $ Right (False, empty)
-    Right n' -> liftM (\s -> Right (True, s)) $ readFromPtr p (fromIntegral n')
+    Right 0  -> return $ Right ((False, st), empty)
+    Right n' -> liftM (\s -> Right ((True, st), s)) $
+                  readFromPtr p (fromIntegral n')
 
 -- |The enumerator of a POSIX File Descriptor.  This version enumerates
 -- over the entire contents of a file, in order, unless stopped by
@@ -67,7 +69,7 @@ enumFd
 enumFd bs fd iter = do
   let bufsize = bs * (sizeOf (undefined :: el))
   p <- liftIO $ mallocBytes bufsize
-  enumFromCallback (makefdCallback p (fromIntegral bufsize) fd) iter
+  enumFromCallback (makefdCallback p (fromIntegral bufsize) fd) () iter
 
 -- |A variant of enumFd that catches exceptions raised by the @Iteratee@.
 enumFdCatch
@@ -80,7 +82,7 @@ enumFdCatch bs fd handler iter = do
   let bufsize = bs * (sizeOf (undefined :: el))
   p <- liftIO $ mallocBytes bufsize
   enumFromCallbackCatch (makefdCallback p (fromIntegral bufsize) fd)
-    handler iter
+    handler () iter
 
 
 -- |The enumerator of a POSIX File Descriptor: a variation of @enumFd@ that

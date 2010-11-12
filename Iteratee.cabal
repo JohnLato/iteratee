@@ -99,7 +99,6 @@ executable testIteratee
       test-framework             >= 0.3 && < 0.4,
       test-framework-quickcheck2 >= 0.2 && < 0.3
   else
-    executable: False
     buildable:  False
 
   if flag(splitBase)

@@ -66,7 +66,7 @@ isFinished :: (Monad m, Nullable s) => Iteratee s m Bool
 isFinished = liftI check
   where
   check c@(Chunk xs)
-    | null xs     = liftI check
+    | nullC xs     = liftI check
     | True        = idone False c
   check s@(EOF _) = idone True s
 {-# INLINE isFinished #-}
@@ -80,7 +80,7 @@ stream2list :: (Monad m, Nullable s, LL.ListLike s el) => Iteratee s m [el]
 stream2list = liftI (step [])
   where
     step acc (Chunk ls)
-      | null ls  = liftI (step acc)
+      | nullC ls  = liftI (step acc)
       | True     = liftI (step (acc ++ LL.toList ls))
     step acc str = idone acc str
 {-# INLINE stream2list #-}
@@ -91,7 +91,7 @@ stream2stream :: (Monad m, Nullable s, Monoid s) => Iteratee s m s
 stream2stream = icont (step mempty) Nothing
   where
     step acc (Chunk ls)
-      | null ls   = icont (step acc) Nothing
+      | nullC ls   = icont (step acc) Nothing
       | True      = icont (step (acc `mappend` ls)) Nothing
     step acc str  = idone acc str
 {-# INLINE stream2stream #-}
@@ -142,14 +142,14 @@ head = liftI step
 -- For example, if the stream contains "abd", then (heads "abc")
 -- will remove the characters "ab" and return 2.
 heads :: (Monad m, Nullable s, LL.ListLike s el, Eq el) => s -> Iteratee s m Int
-heads st | null st = return 0
+heads st | nullC st = return 0
 heads st = loop 0 st
   where
   loop cnt xs
-    | null xs = return cnt
+    | nullC xs = return cnt
     | True    = liftI (step cnt xs)
-  step cnt str (Chunk xs) | null xs  = liftI (step cnt str)
-  step cnt str stream     | null str = idone cnt stream
+  step cnt str (Chunk xs) | nullC xs  = liftI (step cnt str)
+  step cnt str stream     | nullC str = idone cnt stream
   step cnt str s@(Chunk xs) =
     if LL.head str == LL.head xs
        then step (succ cnt) (LL.tail str) (Chunk $ LL.tail xs)
@@ -460,12 +460,12 @@ enumPair i1 i2 = Iteratee $ \od oc -> runIter i1 (onDone od oc) (onCont od oc)
       where
     onCont' od oc x1 k mErr = runIter (icont (step2 x1 k) mErr) od oc
     step k c@(Chunk str)
-      | null str            = liftI (step k)
+      | nullC str            = liftI (step k)
       | True                = lift (enumPure1Chunk str i2) >>= enumPair (k c)
     step k s@(EOF Nothing)  = lift (enumEof i2) >>= enumPair (k s)
     step k s@(EOF (Just e)) = lift (enumErr e i2) >>= enumPair (k s)
     step2 x1 k (Chunk str)
-      | null str            = liftI (step2 x1 k)
+      | nullC str            = liftI (step2 x1 k)
     step2 x1 k str          = enumPair (return x1) (k str)
     longest c1@(Chunk xs) c2@(Chunk ys) = if LL.length xs > LL.length ys
                                           then c1 else c2

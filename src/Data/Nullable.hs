@@ -14,11 +14,11 @@ import qualified Data.ByteString as B
 -- ----------------------------------------------
 -- |Nullable container class
 class NullPoint c => Nullable c where
-  null :: c -> Bool
+  nullC :: c -> Bool
 
 instance Nullable [a] where
-  null [] = True
-  null _  = False
+  nullC [] = True
+  nullC _  = False
 
 instance Nullable B.ByteString where
-  null = B.null
+  nullC = B.null

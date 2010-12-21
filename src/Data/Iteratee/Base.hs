@@ -141,7 +141,7 @@ instance (Monad m, Nullable s) => Monad (Iteratee s m) where
   {-# INLINE (>>=) #-}
   m >>= f = Iteratee $ \onDone onCont ->
      let m_done a (Chunk s)
-           | null s      = runIter (f a) onDone onCont
+           | nullC s      = runIter (f a) onDone onCont
          m_done a stream = runIter (f a) (const . flip onDone stream) f_cont
            where f_cont k Nothing = runIter (k stream) onDone onCont
                  f_cont k e       = onCont k e

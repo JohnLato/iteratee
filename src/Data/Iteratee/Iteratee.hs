@@ -95,11 +95,13 @@ identity :: (Monad m, NullPoint s) => Iteratee s m ()
 identity = idone () (Chunk empty)
 
 -- |Get the stream status of an iteratee.
-isStreamFinished :: Monad m => Iteratee s m (Maybe SomeException)
+isStreamFinished :: (Monad m, Nullable s) => Iteratee s m (Maybe SomeException)
 isStreamFinished = liftI check
   where
+    check s@(Chunk xs)
+      | nullC xs  = isStreamFinished
+      | otherwise = idone Nothing s
     check s@(EOF e) = idone (Just $ fromMaybe (toException EofException) e) s
-    check s         = idone Nothing s
 {-# INLINE isStreamFinished #-}
 
 

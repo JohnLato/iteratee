@@ -73,6 +73,7 @@ library
     Data.Iteratee.Exception
     Data.Iteratee.IO
     Data.Iteratee.IO.Handle
+    Data.Iteratee.IO.Interact
     Data.Iteratee.Iteratee
     Data.Iteratee.ListLike
 

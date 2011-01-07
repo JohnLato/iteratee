@@ -44,12 +44,14 @@ module Data.Iteratee.ListLike (
   ,enumPureNChunk
   -- ** Enumerator Combinators
   ,enumPair
+  -- ** Monadic functions
+  ,mapM_
   -- * Classes
   ,module Data.Iteratee.Iteratee
 )
 where
 
-import Prelude hiding (null, head, last, drop, dropWhile, take, break, foldl, foldl1, length, filter, sum, product)
+import Prelude hiding (mapM_, null, head, last, drop, dropWhile, take, break, foldl, foldl1, length, filter, sum, product)
 
 import qualified Data.ListLike as LL
 import qualified Data.ListLike.FoldableLL as FLL
@@ -562,3 +564,19 @@ enumPureNChunk str n iter
                            on_cont k e = return $ icont k e
                        in runIter iter' idoneM on_cont
 {-# INLINE enumPureNChunk #-}
+
+
+-- ------------------------------------------------------------------------
+-- Monadic functions
+
+-- | Map a monadic function over the elements of the stream and ignore the
+-- result.
+mapM_ :: (Monad m, LL.ListLike s el, Nullable s)
+      => (el -> m b)
+      -> Iteratee s m ()
+mapM_ f = liftI step
+  where
+    step (Chunk xs) | LL.null xs = mapM_ f
+    step (Chunk xs) = lift (LL.mapM_ f xs) >> mapM_ f
+    step s@(EOF _)  = idone () s
+{-# INLINE mapM_ #-}

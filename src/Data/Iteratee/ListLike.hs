@@ -18,6 +18,7 @@ module Data.Iteratee.ListLike (
   ,dropWhile
   ,drop
   ,head
+  ,last
   ,heads
   ,peek
   ,roll
@@ -46,7 +47,7 @@ module Data.Iteratee.ListLike (
 )
 where
 
-import Prelude hiding (null, head, drop, dropWhile, take, break, foldl, foldl1, length, filter, sum, product)
+import Prelude hiding (null, head, last, drop, dropWhile, take, break, foldl, foldl1, length, filter, sum, product)
 
 import qualified Data.ListLike as LL
 import qualified Data.ListLike.FoldableLL as FLL
@@ -133,6 +134,19 @@ head = liftI step
     | True         = idone (LL.head vec) (Chunk $ LL.tail vec)
   step stream      = icont step (Just (setEOF stream))
 {-# INLINE head #-}
+
+-- |Attempt to read the last element of the stream and return it
+-- Raise a (recoverable) error if the stream is terminated
+--
+-- The analogue of @List.last@
+last :: (Monad m, LL.ListLike s el, Nullable s) => Iteratee s m el
+last = liftI (step Nothing)
+  where
+  step l (Chunk xs)
+    | nullC xs     = liftI (step l)
+    | otherwise    = liftI $ step (Just $ LL.last xs)
+  step l s@(EOF _) = maybe (icont (step l) . Just . setEOF $ s) return l
+{-# INLINE last #-}
 
 
 -- |Given a sequence of characters, attempt to match them against

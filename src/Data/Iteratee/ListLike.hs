@@ -46,6 +46,7 @@ module Data.Iteratee.ListLike (
   ,enumPair
   -- ** Monadic functions
   ,mapM_
+  ,foldM
   -- * Classes
   ,module Data.Iteratee.Iteratee
 )
@@ -580,3 +581,17 @@ mapM_ f = liftI step
     step (Chunk xs) = lift (LL.mapM_ f xs) >> mapM_ f
     step s@(EOF _)  = idone () s
 {-# INLINE mapM_ #-}
+
+-- |The analogue of @Control.Monad.foldM@
+foldM :: (Monad m, LL.ListLike s b, Nullable s)
+      => (a -> b -> m a)
+      -> a
+      -> Iteratee s m a
+foldM f e = liftI step
+  where
+    step (Chunk xs) | LL.null xs = liftI step
+    step (Chunk xs) = do
+        x <- lift $ f e (LL.head xs)
+        joinIM $ enumPure1Chunk (LL.tail xs) (foldM f x)
+    step (EOF _) = return e
+{-# INLINE foldM #-}

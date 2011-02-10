@@ -61,10 +61,11 @@ enumHandle ::
   Int -- ^Buffer size (number of elements per read)
   -> Handle
   -> Enumerator s m a
-enumHandle bs h i = do
+enumHandle bs h i =
   let bufsize = bs * sizeOf (undefined :: el)
-  p <- liftIO $ mallocBytes bufsize
-  enumFromCallback (makeHandleCallback p bufsize h) () i
+  in CIO.bracket (liftIO $ mallocBytes bufsize)
+                 (liftIO . free)
+                 (\p -> enumFromCallback (makeHandleCallback p bufsize h) () i)
 
 -- |An enumerator of a file handle that catches exceptions raised by
 -- the Iteratee.
@@ -78,10 +79,11 @@ enumHandleCatch
   -> Handle
   -> (e -> m (Maybe EnumException))
   -> Enumerator s m a
-enumHandleCatch bs h handler i = do
+enumHandleCatch bs h handler i =
   let bufsize = bs * sizeOf (undefined :: el)
-  p <- liftIO $ mallocBytes bufsize
-  enumFromCallbackCatch (makeHandleCallback p bufsize h) handler () i
+  in CIO.bracket (liftIO $ mallocBytes bufsize)
+                 (liftIO . free)
+                 (\p -> enumFromCallbackCatch (makeHandleCallback p bufsize h) handler () i)
 
 
 -- |The enumerator of a Handle: a variation of enumHandle that

@@ -62,33 +62,34 @@ makefdCallback p bufsize fd st = do
 -- over the entire contents of a file, in order, unless stopped by
 -- the iteratee.  In particular, seeking is not supported.
 enumFd
-  :: forall s el m a.(NullPoint s, ReadableChunk s el, MonadIO m) =>
+  :: forall s el m a.(NullPoint s, ReadableChunk s el, MonadCatchIO m) =>
      Int
      -> Fd
      -> Enumerator s m a
-enumFd bs fd iter = do
+enumFd bs fd iter =
   let bufsize = bs * (sizeOf (undefined :: el))
-  p <- liftIO $ mallocBytes bufsize
-  enumFromCallback (makefdCallback p (fromIntegral bufsize) fd) () iter
+  in CIO.bracket (liftIO $ mallocBytes bufsize)
+                 (liftIO . free)
+                 (\p -> enumFromCallback (makefdCallback p (fromIntegral bufsize) fd) () iter)
 
 -- |A variant of enumFd that catches exceptions raised by the @Iteratee@.
 enumFdCatch
- :: forall e s el m a.(IException e, NullPoint s, ReadableChunk s el, MonadIO m)
+ :: forall e s el m a.(IException e, NullPoint s, ReadableChunk s el, MonadCatchIO m)
     => Int
     -> Fd
     -> (e -> m (Maybe EnumException))
     -> Enumerator s m a
-enumFdCatch bs fd handler iter = do
+enumFdCatch bs fd handler iter =
   let bufsize = bs * (sizeOf (undefined :: el))
-  p <- liftIO $ mallocBytes bufsize
-  enumFromCallbackCatch (makefdCallback p (fromIntegral bufsize) fd)
-    handler () iter
+  in CIO.bracket (liftIO $ mallocBytes bufsize)
+                 (liftIO . free)
+                 (\p -> enumFromCallbackCatch (makefdCallback p (fromIntegral bufsize) fd) handler () iter)
 
 
 -- |The enumerator of a POSIX File Descriptor: a variation of @enumFd@ that
 -- supports RandomIO (seek requests).
 enumFdRandom
- :: forall s el m a.(NullPoint s, ReadableChunk s el, MonadIO m) =>
+ :: forall s el m a.(NullPoint s, ReadableChunk s el, MonadCatchIO m) =>
     Int
     -> Fd
     -> Enumerator s m a

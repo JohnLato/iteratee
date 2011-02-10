@@ -139,13 +139,22 @@ instance (Monad m, Nullable s) => Monad (Iteratee s m) where
   {-# INLINE return #-}
   return x = Iteratee $ \onDone _ -> onDone x (Chunk empty)
   {-# INLINE (>>=) #-}
-  m >>= f = Iteratee $ \onDone onCont ->
-     let m_done a (Chunk s)
-           | nullC s      = runIter (f a) onDone onCont
-         m_done a stream = runIter (f a) (const . flip onDone stream) f_cont
-           where f_cont k Nothing = runIter (k stream) onDone onCont
-                 f_cont k e       = onCont k e
-     in runIter m m_done (onCont . ((>>= f) .))
+  (>>=) = bindIteratee
+
+{-# INLINE bindIteratee #-}
+bindIteratee :: (Monad m, Nullable s)
+    => Iteratee s m a
+    -> (a -> Iteratee s m b)
+    -> Iteratee s m b
+bindIteratee = self
+    where
+        self m f = Iteratee $ \onDone onCont ->
+             let m_done a (Chunk s)
+                   | nullC s      = runIter (f a) onDone onCont
+                 m_done a stream = runIter (f a) (const . flip onDone stream) f_cont
+                   where f_cont k Nothing = runIter (k stream) onDone onCont
+                         f_cont k e       = onCont k e
+             in runIter m m_done (onCont . (flip self f .))
 
 instance NullPoint s => MonadTrans (Iteratee s) where
   lift m = Iteratee $ \onDone _ -> m >>= flip onDone (Chunk empty)

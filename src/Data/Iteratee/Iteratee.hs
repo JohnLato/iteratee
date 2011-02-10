@@ -164,10 +164,12 @@ unfoldConvStream ::
   (acc -> Iteratee s m (acc, s'))
   -> acc
   -> Enumeratee s s' m a
-unfoldConvStream f acc = eneeCheckIfDone check
+unfoldConvStream f acc0 = eneeCheckIfDone (check acc0)
   where
-    check k = isStreamFinished >>= maybe (step k) (idone (liftI k) . EOF . Just)
-    step k = f acc >>= \(acc', s') -> unfoldConvStream f acc' . k . Chunk $ s'
+    check acc k = isStreamFinished >>=
+                    maybe (step acc k) (idone (liftI k) . EOF . Just)
+    step acc k = f acc >>= \(acc', s') ->
+                    eneeCheckIfDone (check acc') . k . Chunk $ s'
 
 
 joinI ::

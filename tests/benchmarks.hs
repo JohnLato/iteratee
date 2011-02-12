@@ -77,8 +77,7 @@ headsbench = makeGroup "heads" headsBenches
 dropbench = makeGroup "drop" $ drop0 : dropBenches
 lengthbench = makeGroup "length" listBenches
 takebench = makeGroup "take" $ take0 : takeBenches
---takeRbench = makeGroup "takeR" $ takeR0 : takeRBenches
-takeRbench = makeGroup "takeR" []
+takeUpTobench = makeGroup "takeUpTo" takeUpToBenches
 mapbench = makeGroup "map" $ mapBenches
 convbench = makeGroup "convStream" convBenches
 miscbench = makeGroup "other" miscBenches
@@ -90,15 +89,15 @@ headsbenchbs = makeGroupBS "heads" headsBenches
 dropbenchbs = makeGroupBS "drop" dropBenches
 lengthbenchbs = makeGroupBS "length" listBenches
 takebenchbs = makeGroupBS "take" takeBenches
-takeRbenchbs = makeGroupBS "takeR" takeRBenches
+takeUpTobenchbs = makeGroupBS "takeUpTo" takeUpToBenches
 mapbenchbs = makeGroupBS "map" mapBenches
 convbenchbs = makeGroupBS "convStream" convBenches
 miscbenchbs = makeGroupBS "other" miscBenches
 
 
-allListBenches = bgroup "list" [listbench, streambench, breakbench, headsbench, dropbench, lengthbench, takebench, takeRbench, mapbench, convbench, miscbench]
+allListBenches = bgroup "list" [listbench, streambench, breakbench, headsbench, dropbench, lengthbench, takebench, takeUpTobench, mapbench, convbench, miscbench]
 
-allByteStringBenches = bgroup "bytestring" [listbenchbs, streambenchbs, breakbenchbs, headsbenchbs, dropbenchbs, lengthbenchbs, takebenchbs, takeRbenchbs, mapbenchbs, convbenchbs, miscbenchbs]
+allByteStringBenches = bgroup "bytestring" [listbenchbs, streambenchbs, breakbenchbs, headsbenchbs, dropbenchbs, lengthbenchbs, takebenchbs, takeUpTobenchbs, mapbenchbs, convbenchbs, miscbenchbs]
 
 list0 = makeList "list one go" deepseq
 list1 = BDIter1 "stream2list one go" (flip deepseq ()) stream2list
@@ -158,17 +157,13 @@ take5 = id1 "take length long one go" (I.joinI $ I.take 1000 I.length)
 take6 = idN "take length long chunked" (I.joinI $ I.take 1000 I.length)
 takeBenches = [take1, take2, take3, take4, take5, take6]
 
-{-
-takeR0 = makeList "take length of list long" (Prelude.length . Prelude.take 1000)
-takeR1 = id1 "takeR head short one go" (I.joinI $ I.take 20 I.head)
-takeR2 = id1 "takeR head long one go" (I.joinI $ I.takeR 1000 I.head)
-takeR3 = idN "takeR head short chunked" (I.joinI $ I.takeR 20 I.head)
-takeR4 = idN "takeR head long chunked" (I.joinI $ I.takeR 1000 I.head)
-takeR5 = id1 "takeR length long one go" (I.joinI $ I.takeR 1000 I.length)
-takeR6 = idN "takeR length long chunked" (I.joinI $ I.takeR 1000 I.length)
-takeRBenches = [takeR1, takeR2, takeR3, takeR4, takeR5, takeR6]
--}
-takeRBenches = []
+takeUpTo1 = id1 "takeUpTo head short one go" (I.joinI $ I.take 20 I.head)
+takeUpTo2 = id1 "takeUpTo head long one go" (I.joinI $ I.takeUpTo 1000 I.head)
+takeUpTo3 = idN "takeUpTo head short chunked" (I.joinI $ I.takeUpTo 20 I.head)
+takeUpTo4 = idN "takeUpTo head long chunked" (I.joinI $ I.takeUpTo 1000 I.head)
+takeUpTo5 = id1 "takeUpTo length long one go" (I.joinI $ I.takeUpTo 1000 I.length)
+takeUpTo6 = idN "takeUpTo length long chunked" (I.joinI $ I.takeUpTo 1000 I.length)
+takeUpToBenches = [takeUpTo1, takeUpTo2, takeUpTo3, takeUpTo4, takeUpTo5, takeUpTo6]
 
 map1 = id1 "map length one go" (I.joinI $ I.rigidMapStream id I.length)
 map2 = idN "map length chunked" (I.joinI $ I.rigidMapStream id I.length)

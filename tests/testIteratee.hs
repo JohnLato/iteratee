@@ -14,6 +14,7 @@ import Data.Iteratee hiding (head, break)
 import qualified Data.Iteratee.Char as IC
 import qualified Data.Iteratee as Iter
 import Data.Functor.Identity
+import Data.List (unfoldr)
 import Data.Monoid
 import qualified Data.ListLike as LL
 
@@ -216,6 +217,15 @@ prop_takeUpTo xs n = n >= 0 ==>
                   == runner2 (enumPure1Chunk xs $ takeUpTo n stream2list)
   where types = xs :: [Int]
 
+prop_group xs n = n > 0 ==>
+                  runner2 (enumPure1Chunk xs $ Iter.group n stream2list)
+                  == runner1 (enumPure1Chunk groups stream2list)
+  where types = xs :: [Int]
+        groups :: [[Int]]
+        groups = unfoldr groupOne xs
+          where groupOne [] = Nothing
+                groupOne elts@(_:_) = Just . splitAt n $ elts
+                           
 -- ---------------------------------------------
 -- Data.Iteratee.Char
 
@@ -276,6 +286,7 @@ tests = [
     ,testProperty "take" prop_take
     ,testProperty "take (finished iteratee)" prop_take2
     ,testProperty "takeUpTo" prop_takeUpTo
+    ,testProperty "group" prop_group
     ,testProperty "convStream EOF" prop_convstream2
     ,testProperty "convStream identity" prop_convstream
     ,testProperty "convStream identity 2" prop_convstream3

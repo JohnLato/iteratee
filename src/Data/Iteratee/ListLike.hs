@@ -29,6 +29,7 @@ module Data.Iteratee.ListLike (
   ,mapStream
   ,rigidMapStream
   ,filter
+  ,group
   -- ** Folds
   ,foldl
   ,foldl'
@@ -362,6 +363,29 @@ filter p = convStream f'
       | True       = idone (LL.filter p xs) mempty
     step _ = f'
 {-# INLINE filter #-}
+
+-- |Creates an 'enumeratee' in which \sz\-sized chunks are split off
+-- from the stream.  The outer stream is completely consumed and the
+-- final chunk may be smaller than \sz\.
+group :: (LL.ListLike s el, Monad m, Nullable s) => 
+             Int -> Enumeratee s [s] m a
+group sz iinit = liftI $ go iinit LL.empty
+  where go icurr pfx (Chunk s) = case gsplit (pfx `LL.append` s) of 
+          (full, partial) | LL.null full -> liftI $ go icurr partial
+                          | otherwise    -> do inext <- lift $ enumPure1Chunk full icurr
+                                               liftI $ go inext partial
+        go icurr pfx (EOF mex) 
+          | LL.null pfx = lift . enumChunk (EOF mex) $ icurr
+          | otherwise = do inext <- lift $ enumPure1Chunk (LL.singleton pfx) icurr        
+                           lift . enumChunk (EOF mex) $ inext
+        gsplit ls = case LL.splitAt sz ls of
+          (g, rest) | LL.null rest -> if LL.length g == sz
+                                         then (LL.singleton g, LL.empty)
+                                         else (LL.empty, g)
+                    | otherwise -> let (grest, leftover) = gsplit rest
+                                       g' = g `LL.cons` grest
+                                   in g' `seq` (g', leftover)
+{-# INLINE group #-}
 
 -- ------------------------------------------------------------------------
 -- Folds

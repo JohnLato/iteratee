@@ -30,6 +30,7 @@ module Data.Iteratee.ListLike (
   ,rigidMapStream
   ,filter
   ,group
+  ,groupBy
   -- ** Folds
   ,foldl
   ,foldl'
@@ -364,9 +365,9 @@ filter p = convStream f'
     step _ = f'
 {-# INLINE filter #-}
 
--- |Creates an 'enumeratee' in which \sz\-sized chunks are split off
--- from the stream.  The outer stream is completely consumed and the
--- final chunk may be smaller than \sz\.
+-- |Creates an 'enumeratee' in which elements from the stream are
+-- grouped into \sz\-sized blocks.  The outer stream is completely
+-- consumed and the final block may be smaller than \sz\.
 group :: (LL.ListLike s el, Monad m, Nullable s) => 
              Int -> Enumeratee s [s] m a
 group sz iinit = liftI $ go iinit LL.empty
@@ -386,6 +387,36 @@ group sz iinit = liftI $ go iinit LL.empty
                                        g' = g `LL.cons` grest
                                    in g' `seq` (g', leftover)
 {-# INLINE group #-}
+
+-- |Creates an 'enumeratee' in which elements are grouped into
+-- contiguous blocks that are equal according to a predicate.
+-- 
+-- The analogue of @List.groupBy#
+          
+groupBy :: (LL.ListLike s el, Monad m, Nullable s) =>
+               (el -> el -> Bool) -> Enumeratee s [s] m a
+groupBy same iinit = liftI $ go iinit LL.empty
+    where go icurr pfx (Chunk s) = case gsplit (pfx `LL.append` s) of
+                                          (full, partial)
+                                              | LL.null full -> liftI $ go icurr partial
+                                              | otherwise -> do inext <- lift . enumPure1Chunk full $ icurr
+                                                                liftI $ go inext partial
+          go icurr pfx (EOF mex) 
+            | LL.null pfx = lift . enumChunk (EOF mex) $ icurr
+            | otherwise = do inext <- lift . enumPure1Chunk (LL.singleton pfx) $ icurr
+                             lift . enumChunk (EOF mex) $ inext
+          gsplit ll | LL.null ll = (LL.empty, LL.empty)
+                    | otherwise = let groups = llGroupBy same ll
+                                      full = LL.init groups
+                                      partial = LL.last groups
+                                  in full `seq` partial `seq` (full, partial)
+          llGroupBy eq l -- Copied from Data.ListLike, avoid spurious (Eq el) constraint
+              | LL.null l = LL.empty
+              | otherwise = LL.cons (LL.cons x ys) (llGroupBy eq zs)
+              where (ys, zs) = LL.span (eq x) xs
+                    x = LL.head l
+                    xs = LL.tail l
+{-# INLINE groupBy #-}
 
 -- ------------------------------------------------------------------------
 -- Folds

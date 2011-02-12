@@ -14,7 +14,7 @@ import Data.Iteratee hiding (head, break)
 import qualified Data.Iteratee.Char as IC
 import qualified Data.Iteratee as Iter
 import Data.Functor.Identity
-import Data.List (unfoldr)
+import qualified Data.List as List (groupBy, unfoldr)
 import Data.Monoid
 import qualified Data.ListLike as LL
 
@@ -222,10 +222,16 @@ prop_group xs n = n > 0 ==>
                   == runner1 (enumPure1Chunk groups stream2list)
   where types = xs :: [Int]
         groups :: [[Int]]
-        groups = unfoldr groupOne xs
+        groups = List.unfoldr groupOne xs
           where groupOne [] = Nothing
                 groupOne elts@(_:_) = Just . splitAt n $ elts
                            
+prop_groupBy xs m = m > 0 ==>
+                  runner2 (enumPure1Chunk xs $ Iter.groupBy pred stream2list)
+                  == runner1 (enumPure1Chunk (List.groupBy pred xs) stream2list)
+  where types = xs :: [Int]
+        pred z1 z2 = (z1 `mod` m == z2 `mod` m)
+
 -- ---------------------------------------------
 -- Data.Iteratee.Char
 
@@ -287,6 +293,7 @@ tests = [
     ,testProperty "take (finished iteratee)" prop_take2
     ,testProperty "takeUpTo" prop_takeUpTo
     ,testProperty "group" prop_group
+    ,testProperty "groupBy" prop_groupBy
     ,testProperty "convStream EOF" prop_convstream2
     ,testProperty "convStream identity" prop_convstream
     ,testProperty "convStream identity 2" prop_convstream3

@@ -9,6 +9,7 @@ where
 
 import Data.NullPoint
 import qualified Data.ByteString as B
+import qualified Data.ByteString.Lazy as L
 
 
 -- ----------------------------------------------
@@ -22,3 +23,6 @@ instance Nullable [a] where
 
 instance Nullable B.ByteString where
   nullC = B.null
+
+instance Nullable L.ByteString where
+  nullC = L.null

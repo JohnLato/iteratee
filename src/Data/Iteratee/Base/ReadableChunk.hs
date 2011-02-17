@@ -13,6 +13,7 @@ where
 import Prelude hiding (head, tail, dropWhile, length, splitAt )
 
 import qualified Data.ByteString as B
+import qualified Data.ByteString.Lazy as L
 import Data.Word
 import Control.Monad.IO.Class
 import Foreign.C
@@ -45,3 +46,7 @@ instance ReadableChunk [Word] Word where
 
 instance ReadableChunk B.ByteString Word8 where
   readFromPtr buf l = liftIO $ B.packCStringLen (castPtr buf, l)
+
+instance ReadableChunk L.ByteString Word8 where
+  readFromPtr buf l = liftIO $
+    return . L.fromChunks . (:[]) =<< readFromPtr buf l

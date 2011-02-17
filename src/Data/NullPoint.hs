@@ -9,6 +9,7 @@ module Data.NullPoint (
 where
 
 import qualified Data.ByteString as B
+import qualified Data.ByteString.Lazy as L
 
 -- ----------------------------------------------
 -- |NullPoint class.  Containers that have a null representation, corresponding
@@ -22,3 +23,5 @@ instance NullPoint [a] where
 instance NullPoint B.ByteString where
   empty = B.empty
 
+instance NullPoint L.ByteString where
+  empty = L.empty

@@ -601,8 +601,8 @@ mapM_ :: (Monad m, LL.ListLike s el, Nullable s)
       -> Iteratee s m ()
 mapM_ f = liftI step
   where
-    step (Chunk xs) | LL.null xs = mapM_ f
-    step (Chunk xs) = lift (LL.mapM_ f xs) >> mapM_ f
+    step (Chunk xs) | LL.null xs = liftI step
+    step (Chunk xs) = lift (LL.mapM_ f xs) >> liftI step
     step s@(EOF _)  = idone () s
 {-# INLINE mapM_ #-}
 

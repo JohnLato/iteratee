@@ -9,7 +9,7 @@ author:        Oleg Kiselyov, John W. Lato
 maintainer:    John W. Lato <jwlato@gmail.com>
 license:       BSD3
 license-file:  LICENSE
-homepage:      http://jwlato.webfactional.com/haskell/iteratee
+homepage:      http://www.tiresiaspress.us/haskell/iteratee
 tested-with:   GHC == 7.0.1, GHC == 6.12.3
 stability:     experimental
 
@@ -111,4 +111,4 @@ executable testIteratee
 
 source-repository head
   type:     darcs
-  location: http://jwlato.webfactional.com/haskell/iteratee
+  location: http://www.tiresiaspress.us/haskell/iteratee

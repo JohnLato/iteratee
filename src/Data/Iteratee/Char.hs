@@ -1,10 +1,11 @@
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ScopedTypeVariables, FlexibleContexts #-}
 
 -- | Utilities for Char-based iteratee processing.
 
 module Data.Iteratee.Char (
   -- * Word and Line processors
   printLines
+  ,printLinesUnterminated
   ,enumLines
   ,enumLinesBS
   ,enumWords
@@ -26,14 +27,42 @@ import qualified Data.ByteString.Char8 as BC
 
 -- |Print lines as they are received. This is the first `impure' iteratee
 -- with non-trivial actions during chunk processing
+--
+--  Only lines ending with a newline are printed,
+--  data terminated with EOF is not printed.
 printLines :: Iteratee String IO ()
 printLines = lines'
-  where
+ where
   lines' = I.break (`elem` "\r\n") >>= \l -> terminators >>= check l
   check _  0 = return ()
   check "" _ = return ()
   check l  _ = liftIO (putStrLn l) >> lines'
-  terminators = heads "\r\n" >>= \l -> if l == 0 then heads "\n" else return l
+
+-- |Print lines as they are received.
+--
+--  All lines are printed, including a line with a terminating EOF.
+--  If the final line is terminated by EOF without a newline,
+--  no newline is printed.
+--  this function should be used in preference to printLines when possible,
+--  as it is more efficient with long lines.
+printLinesUnterminated :: forall s el.
+                       (Eq el, Nullable s, LL.StringLike s, LL.ListLike s el)
+                       => Iteratee s IO ()
+printLinesUnterminated = lines'
+ where
+  lines' = do
+    joinI $ I.breakE (`LL.elem` t1) (I.mapChunksM_ (putStr . LL.toString))
+    terminators >>= check
+  check 0 = return ()
+  check _ = liftIO (putStrLn "") >> lines'
+  t1 :: s
+  t1 = LL.fromString "\r\n"
+
+terminators :: (Eq el, Nullable s, LL.StringLike s, LL.ListLike s el)
+            => Iteratee s IO Int
+terminators = do
+  l <- heads (LL.fromString "\r\n")
+  if l == 0 then heads (LL.fromString "\n") else return l
 
 
 -- |Convert the stream of characters to the stream of lines, and

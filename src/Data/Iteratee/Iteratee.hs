@@ -13,6 +13,8 @@ module Data.Iteratee.Iteratee (
   ,identity
   ,skipToEof
   ,isStreamFinished
+  -- ** Chunkwise Iteratees
+  ,mapChunksM_
   -- ** Nested iteratee combinators
   ,convStream
   ,unfoldConvStream
@@ -46,6 +48,7 @@ import Data.Iteratee.IO.Base
 import Data.Iteratee.Base
 
 import Control.Exception
+import Control.Monad.Trans.Class
 import Data.Maybe
 import Data.Typeable
 
@@ -116,6 +119,20 @@ skipToEof = icont check Nothing
 -- |Seek to a position in the stream
 seek :: (Monad m, NullPoint s) => FileOffset -> Iteratee s m ()
 seek o = throwRecoverableErr (toException $ SeekException o) (const identity)
+
+-- | Map a monadic function over the chunks of the stream and ignore the
+-- result.  Useful for creating efficient monadic iteratee consumers, e.g.
+--
+--   logger = mapChunksM_ (liftIO . putStrLn)
+--
+-- these can be efficiently run in parallel with other iteratees via
+-- enumPair.
+mapChunksM_ :: (Monad m, Nullable s) => (s -> m b) -> Iteratee s m ()
+mapChunksM_ f = liftI step
+  where
+    step (Chunk xs) = lift (f xs) >> liftI step
+    step s@(EOF _)  = idone () s
+{-# INLINE mapChunksM_ #-}
 
 
 -- ---------------------------------------------------

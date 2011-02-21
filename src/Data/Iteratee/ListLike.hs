@@ -166,7 +166,7 @@ heads st = loop 0 st
   where
   loop cnt xs
     | nullC xs = return cnt
-    | True    = liftI (step cnt xs)
+    | True     = liftI (step cnt xs)
   step cnt str (Chunk xs) | nullC xs  = liftI (step cnt str)
   step cnt str stream     | nullC str = idone cnt stream
   step cnt str s@(Chunk xs) =
@@ -248,8 +248,8 @@ dropWhile p = liftI step
 length :: (Monad m, Num a, LL.ListLike s el) => Iteratee s m a
 length = liftI (step 0)
   where
-    step !i (Chunk xs) = liftI (step $ i + LL.length xs)
-    step !i stream     = idone (fromIntegral i) stream
+    step !i (Chunk xs) = liftI (step $! i + fromIntegral (LL.length xs))
+    step !i stream     = idone i stream
 {-# INLINE length #-}
 
 

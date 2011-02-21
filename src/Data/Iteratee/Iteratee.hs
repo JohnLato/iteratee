@@ -146,7 +146,7 @@ eneeCheckIfDone f inner = Iteratee $ \od oc ->
 -- general: it may take several elements of the outer stream to produce
 -- one element of the inner stream, or the other way around.
 -- The transformation from one stream to the other is specified as
--- Iteratee s el s'.
+-- Iteratee s m s'.
 convStream ::
  (Monad m, Nullable s) =>
   Iteratee s m s'
@@ -154,7 +154,7 @@ convStream ::
 convStream fi = eneeCheckIfDone check
   where
     check k = isStreamFinished >>= maybe (step k) (idone (liftI k) . EOF . Just)
-    step k = fi >>= convStream fi . k . Chunk
+    step k = fi >>= eneeCheckIfDone check . k . Chunk
 
 -- |The most general stream converter.  Given a function to produce iteratee
 -- transformers and an initial state, convert the stream using iteratees

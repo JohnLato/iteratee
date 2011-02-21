@@ -24,6 +24,7 @@ module Data.Iteratee.ListLike (
   ,roll
   ,length
   -- ** Nested iteratee combinators
+  ,breakE
   ,take
   ,takeUpTo
   ,mapStream
@@ -111,6 +112,10 @@ stream2stream = icont (step mempty) Nothing
 -- predicate.
 -- If the stream is not terminated, the first character of the remaining stream
 -- satisfies the predicate.
+--
+-- N.B. @breakE@ should be used in preference to @break@.
+-- @break@ will retain all data until the predicate is met, which may
+-- result in a space leak.
 --
 -- The analogue of @List.break@
 
@@ -256,6 +261,25 @@ length = liftI (step 0)
 -- ---------------------------------------------------
 -- The converters show a different way of composing two iteratees:
 -- `vertical' rather than `horizontal'
+
+-- |Takes an element predicate and an iteratee, running the iteratee
+-- on all elements of the stream until the predicate is met.
+--
+-- the following rule relates @break@ to @breakE@
+-- @break@ pred >> iter === @joinI@ (@breakE@ pred iter)
+--
+-- @breakE@ should be used in preference to @break@ whenever possible.
+breakE :: (Monad m, LL.ListLike s el, NullPoint s) => (el -> Bool) -> Enumeratee s s m a
+breakE cpred = eneeCheckIfDone (liftI . step)
+ where
+  step k (Chunk s)
+      | LL.null s  = liftI (step k)
+      | otherwise  = case LL.break cpred s of
+        (str', tail')
+          | LL.null tail' -> eneeCheckIfDone (liftI . step) . k $ Chunk str'
+          | otherwise     -> idone (k $ Chunk str') (Chunk tail')
+  step k stream           =  idone (k stream) stream
+{-# INLINE breakE #-}
 
 -- |Read n elements from a stream and apply the given iteratee to the
 -- stream of the read elements. Unless the stream is terminated early, we

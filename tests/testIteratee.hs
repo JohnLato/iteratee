@@ -91,6 +91,13 @@ prop_break f xs = runner1 (enumPure1Chunk xs (Iter.break f)) == fst (break f xs)
 prop_break2 f xs = runner1 (enumPure1Chunk xs (Iter.break f >> stream2list)) == snd (break f xs)
   where types = xs :: [Int]
 
+prop_breakE f xs = runner1 (enumPure1Chunk xs (joinI $ Iter.breakE f stream2stream)) == fst (break f xs)
+  where types = xs :: [Int]
+
+prop_breakE2 f xs = runner1 (enumPure1Chunk xs (joinI (Iter.breakE f stream2stream) >> stream2list)) == snd (break f xs)
+  where types = xs :: [Int]
+
+
 prop_head xs = P.length xs > 0 ==> runner1 (enumPure1Chunk xs Iter.head) == head xs
   where types = xs :: [Int]
 
@@ -260,7 +267,7 @@ tests = [
   ]
   ,testGroup "Simple Iteratees" [
     testProperty "break" prop_break
-    ,testProperty "break remaineder" prop_break2
+    ,testProperty "break remainder" prop_break2
     ,testProperty "head" prop_head
     ,testProperty "head remainder" prop_head2
     ,testProperty "heads" prop_heads
@@ -289,6 +296,8 @@ tests = [
     testProperty "mapStream identity" prop_mapStream
     ,testProperty "mapStream identity 2" prop_mapStream2
     ,testProperty "mapStream identity joinI" prop_mapjoin
+    ,testProperty "breakE" prop_breakE
+    ,testProperty "breakE remainder" prop_breakE2
     ,testProperty "take" prop_take
     ,testProperty "take (finished iteratee)" prop_take2
     ,testProperty "takeUpTo" prop_takeUpTo

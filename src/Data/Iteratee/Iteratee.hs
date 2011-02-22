@@ -130,6 +130,9 @@ seek o = throwRecoverableErr (toException $ SeekException o) (const identity)
 mapChunksM_ :: (Monad m, Nullable s) => (s -> m b) -> Iteratee s m ()
 mapChunksM_ f = liftI step
   where
+    step (Chunk xs)
+      | nullC xs = liftI step
+      | True     = lift (f xs) >> liftI step
     step (Chunk xs) = lift (f xs) >> liftI step
     step s@(EOF _)  = idone () s
 {-# INLINE mapChunksM_ #-}

@@ -266,7 +266,7 @@ length = liftI (step 0)
 -- on all elements of the stream until the predicate is met.
 --
 -- the following rule relates @break@ to @breakE@
--- @break@ pred >> iter === @joinI@ (@breakE@ pred iter)
+-- @break@ pred === @joinI@ (@breakE@ pred stream2stream)
 --
 -- @breakE@ should be used in preference to @break@ whenever possible.
 breakE :: (Monad m, LL.ListLike s el, NullPoint s) => (el -> Bool) -> Enumeratee s s m a

@@ -155,7 +155,9 @@ last = liftI (step Nothing)
   step l (Chunk xs)
     | nullC xs     = liftI (step l)
     | otherwise    = liftI $ step (Just $ LL.last xs)
-  step l s@(EOF _) = maybe (icont (step l) . Just . setEOF $ s) return l
+  step l s@(EOF _) = case l of
+    Nothing -> icont (step l) . Just . setEOF $ s
+    Just x  -> idone x s
 {-# INLINE last #-}
 
 

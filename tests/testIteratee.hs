@@ -132,6 +132,14 @@ prop_last2 xs = P.length xs > 0 ==>
  runner1 (enumPure1Chunk xs (Iter.last >> Iter.peek)) == Nothing
   where types = xs :: [Int]
 
+prop_dropWhile f xs =
+ runner1 (enumPure1Chunk xs (Iter.dropWhile f >> stream2list))
+ == P.dropWhile f xs
+  where types = (xs :: [Int], f :: Int -> Bool)
+
+prop_length xs = runner1 (enumPure1Chunk xs Iter.length) == P.length xs
+  where types = xs :: [Int]
+
 -- ---------------------------------------------
 -- Simple enumerator tests
 
@@ -191,6 +199,9 @@ prop_mapjoin xs i =
   == runner1 (enumPure1Chunk xs i)
   where types = (i :: I, xs :: [Int])
 
+prop_rigidMapStream xs n f = n > 0 ==>
+ runner2 (enumPureNChunk xs n $ rigidMapStream f stream2list) == map f xs
+  where types = (xs :: [Int])
 
 convId :: (LL.ListLike s el, Monad m) => Iteratee s m s
 convId = liftI (\str -> case str of
@@ -230,6 +241,14 @@ prop_take2 xs n = n > 0 ==>
 prop_takeUpTo xs n = n >= 0 ==>
                   runner2 (enumPure1Chunk xs $ Iter.take n stream2list)
                   == runner2 (enumPure1Chunk xs $ takeUpTo n stream2list)
+  where types = xs :: [Int]
+
+prop_takeUpTo2 xs n = n >= 0 ==>
+ runner2 (enumPure1Chunk xs (takeUpTo n identity)) == ()
+  where types = xs :: [Int]
+
+prop_filter xs n f = n > 0 ==>
+ runner2 (enumPureNChunk xs n (Iter.filter f stream2list)) == P.filter f xs
   where types = xs :: [Int]
 
 prop_group xs n = n > 0 ==>
@@ -284,6 +303,8 @@ tests = [
     ,testProperty "peek2" prop_peek2
     ,testProperty "last" prop_last1
     ,testProperty "last ends properly" prop_last2
+    ,testProperty "length" prop_length
+    ,testProperty "dropWhile" prop_dropWhile
     ,testProperty "skipToEof" prop_skip
     ,testProperty "iteratee Functor 1" prop_iterFmap
     ,testProperty "iteratee Functor 2" prop_iterFmap2
@@ -306,11 +327,14 @@ tests = [
     testProperty "mapStream identity" prop_mapStream
     ,testProperty "mapStream identity 2" prop_mapStream2
     ,testProperty "mapStream identity joinI" prop_mapjoin
+    ,testProperty "rigidMapStream" prop_rigidMapStream
     ,testProperty "breakE" prop_breakE
     ,testProperty "breakE remainder" prop_breakE2
     ,testProperty "take" prop_take
     ,testProperty "take (finished iteratee)" prop_take2
     ,testProperty "takeUpTo" prop_takeUpTo
+    ,testProperty "takeUpTo (finished iteratee)" prop_takeUpTo2
+    ,testProperty "filter" prop_filter
     ,testProperty "group" prop_group
     ,testProperty "groupBy" prop_groupBy
     ,testProperty "convStream EOF" prop_convstream2

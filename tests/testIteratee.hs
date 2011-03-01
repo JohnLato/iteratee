@@ -124,6 +124,14 @@ prop_peek2 xs = runner1 (enumPure1Chunk xs (peek >> stream2list)) == xs
 prop_skip xs = runner1 (enumPure1Chunk xs (skipToEof >> stream2list)) == []
   where types = xs :: [Int]
 
+prop_last1 xs = P.length xs > 0 ==>
+ runner1 (enumPure1Chunk xs (Iter.last)) == P.last xs
+  where types = xs :: [Int]
+
+prop_last2 xs = P.length xs > 0 ==>
+ runner1 (enumPure1Chunk xs (Iter.last >> Iter.peek)) == Nothing
+  where types = xs :: [Int]
+
 -- ---------------------------------------------
 -- Simple enumerator tests
 
@@ -274,6 +282,8 @@ tests = [
     ,testProperty "null heads" prop_heads2
     ,testProperty "peek" prop_peek
     ,testProperty "peek2" prop_peek2
+    ,testProperty "last" prop_last1
+    ,testProperty "last ends properly" prop_last2
     ,testProperty "skipToEof" prop_skip
     ,testProperty "iteratee Functor 1" prop_iterFmap
     ,testProperty "iteratee Functor 2" prop_iterFmap2

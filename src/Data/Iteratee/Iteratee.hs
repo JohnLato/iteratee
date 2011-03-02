@@ -133,7 +133,6 @@ mapChunksM_ f = liftI step
     step (Chunk xs)
       | nullC xs = liftI step
       | True     = lift (f xs) >> liftI step
-    step (Chunk xs) = lift (f xs) >> liftI step
     step s@(EOF _)  = idone () s
 {-# INLINE mapChunksM_ #-}
 

@@ -10,13 +10,16 @@ import Test.Framework.Providers.QuickCheck2 (testProperty)
 
 import Test.QuickCheck
 
-import Data.Iteratee hiding (head, break)
+import           Data.Iteratee hiding (head, break)
 import qualified Data.Iteratee.Char as IC
 import qualified Data.Iteratee as Iter
-import Data.Functor.Identity
+import           Data.Functor.Identity
 import qualified Data.List as List (groupBy, unfoldr)
-import Data.Monoid
+import           Data.Monoid
 import qualified Data.ListLike as LL
+
+import           Control.Monad as CM
+import           Control.Monad.Writer
 
 import Text.Printf (printf)
 import System.Environment (getArgs)
@@ -53,8 +56,8 @@ isEOF (Chunk _) = False
 -- ---------------------------------------------
 -- Iteratee instances
 
-runner0 = runIdentity . Iter.run
 runner1 = runIdentity . Iter.run . runIdentity
+enumSpecial xs n = enumPure1Chunk LL.empty >=> enumPureNChunk xs n
 
 prop_iterFmap xs f a = runner1 (enumPure1Chunk xs (fmap f $ return a))
                      == runner1 (enumPure1Chunk xs (return $ f a))
@@ -64,15 +67,15 @@ prop_iterFmap2 xs f i = runner1 (enumPure1Chunk xs (fmap f i))
                       == f (runner1 (enumPure1Chunk xs i))
   where types = (xs :: [Int], i :: I, f :: [Int] -> [Int])
 
-prop_iterMonad1 xs a f = runner1 (enumPureNChunk xs 1 (return a >>= f))
+prop_iterMonad1 xs a f = runner1 (enumSpecial xs 1 (return a >>= f))
                        == runner1 (enumPure1Chunk xs (f a))
   where types = (xs :: [Int], a :: Int, f :: Int -> I)
 
-prop_iterMonad2 m xs = runner1 (enumPureNChunk xs 1 (m >>= return))
+prop_iterMonad2 m xs = runner1 (enumSpecial xs 1 (m >>= return))
                      == runner1 (enumPure1Chunk xs m)
   where types = (xs :: [Int], m :: I)
 
-prop_iterMonad3 m f g xs = runner1 (enumPureNChunk xs 1 ((m >>= f) >>= g))
+prop_iterMonad3 m f g xs = runner1 (enumSpecial xs 1 ((m >>= f) >>= g))
                          == runner1 (enumPure1Chunk xs (m >>= (\x -> f x >>= g)))
   where types = (xs :: [Int], m :: I, f :: [Int] -> I, g :: [Int] -> I)
 
@@ -82,7 +85,7 @@ prop_iterMonad3 m f g xs = runner1 (enumPureNChunk xs 1 ((m >>= f) >>= g))
 prop_list xs = runner1 (enumPure1Chunk xs stream2list) == xs
   where types = xs :: [Int]
 
-prop_clist xs n = n > 0 ==> runner1 (enumPureNChunk xs n stream2list) == xs
+prop_clist xs n = n > 0 ==> runner1 (enumSpecial xs n stream2list) == xs
   where types = xs :: [Int]
 
 prop_break f xs = runner1 (enumPure1Chunk xs (Iter.break f)) == fst (break f xs)
@@ -104,7 +107,8 @@ prop_head xs = P.length xs > 0 ==> runner1 (enumPure1Chunk xs Iter.head) == head
 prop_head2 xs = P.length xs > 0 ==> runner1 (enumPure1Chunk xs (Iter.head >> stream2list)) == tail xs
   where types = xs :: [Int]
 
-prop_heads xs = runner1 (enumPure1Chunk xs $ heads xs) == P.length xs
+prop_heads xs n = n > 0 ==>
+ runner1 (enumSpecial xs n $ heads xs) == P.length xs
   where types = xs :: [Int]
 
 prop_heads2 xs = runner1 (enumPure1Chunk xs $ heads [] >>= \c ->
@@ -132,6 +136,10 @@ prop_last2 xs = P.length xs > 0 ==>
  runner1 (enumPure1Chunk xs (Iter.last >> Iter.peek)) == Nothing
   where types = xs :: [Int]
 
+prop_drop xs n k = (n > 0 && k >= 0) ==>
+ runner1 (enumSpecial xs n (Iter.drop k >> stream2list)) == P.drop k xs
+  where types = xs :: [Int]
+
 prop_dropWhile f xs =
  runner1 (enumPure1Chunk xs (Iter.dropWhile f >> stream2list))
  == P.dropWhile f xs
@@ -146,7 +154,7 @@ prop_length xs = runner1 (enumPure1Chunk xs Iter.length) == P.length xs
 type I = Iteratee [Int] Identity [Int]
 
 prop_enumChunks n xs i = n > 0  ==>
-  runner1 (enumPure1Chunk xs i) == runner1 (enumPureNChunk xs n i)
+  runner1 (enumPure1Chunk xs i) == runner1 (enumSpecial xs n i)
   where types = (n :: Int, xs :: [Int], i :: I)
 
 prop_app1 xs ys i = runner1 (enumPure1Chunk ys (joinIM $ enumPure1Chunk xs i))
@@ -190,7 +198,7 @@ prop_mapStream xs i = runner2 (enumPure1Chunk xs $ mapStream id i)
   where types = (i :: I, xs :: [Int])
 
 prop_mapStream2 xs n i = n > 0 ==>
-                         runner2 (enumPureNChunk xs n $ mapStream id i)
+                         runner2 (enumSpecial xs n $ mapStream id i)
                          == runner1 (enumPure1Chunk xs i)
   where types = (i :: I, xs :: [Int])
 
@@ -200,7 +208,30 @@ prop_mapjoin xs i =
   where types = (i :: I, xs :: [Int])
 
 prop_rigidMapStream xs n f = n > 0 ==>
- runner2 (enumPureNChunk xs n $ rigidMapStream f stream2list) == map f xs
+ runner2 (enumSpecial xs n $ rigidMapStream f stream2list) == map f xs
+  where types = (xs :: [Int])
+
+prop_foldl xs n f x0 = n > 0 ==>
+ runner1 (enumSpecial xs n (Iter.foldl f x0)) == P.foldl f x0 xs
+  where types = (xs :: [Int], x0 :: Int)
+
+prop_foldl' xs n f x0 = n > 0 ==>
+ runner1 (enumSpecial xs n (Iter.foldl' f x0)) == LL.foldl' f x0 xs
+  where types = (xs :: [Int], x0 :: Int)
+
+prop_foldl1 xs n f = (n > 0 && not (null xs)) ==>
+ runner1 (enumSpecial xs n (Iter.foldl1 f)) == P.foldl1 f xs
+  where types = (xs :: [Int])
+
+prop_foldl1' xs n f = (n > 0 && not (null xs)) ==>
+ runner1 (enumSpecial xs n (Iter.foldl1' f)) == P.foldl1 f xs
+  where types = (xs :: [Int])
+
+prop_sum xs n = n > 0 ==> runner1 (enumSpecial xs n Iter.sum) == P.sum xs
+  where types = (xs :: [Int])
+
+prop_product xs n = n > 0 ==>
+ runner1 (enumSpecial xs n Iter.product) == P.product xs
   where types = (xs :: [Int])
 
 convId :: (LL.ListLike s el, Monad m) => Iteratee s m s
@@ -248,7 +279,7 @@ prop_takeUpTo2 xs n = n >= 0 ==>
   where types = xs :: [Int]
 
 prop_filter xs n f = n > 0 ==>
- runner2 (enumPureNChunk xs n (Iter.filter f stream2list)) == P.filter f xs
+ runner2 (enumSpecial xs n (Iter.filter f stream2list)) == P.filter f xs
   where types = xs :: [Int]
 
 prop_group xs n = n > 0 ==>
@@ -265,6 +296,18 @@ prop_groupBy xs m = m > 0 ==>
                   == runner1 (enumPure1Chunk (List.groupBy pred xs) stream2list)
   where types = xs :: [Int]
         pred z1 z2 = (z1 `mod` m == z2 `mod` m)
+
+prop_mapM_ xs n = n > 0 ==>
+ runWriter ((enumSpecial xs n (Iter.mapM_ f)) >>= run)
+ == runWriter (CM.mapM_ f xs)
+  where f = const $ tell (Sum 1)
+        types = xs :: [Int]
+
+prop_foldM xs x0 n = n > 0 ==>
+ runWriter ((enumSpecial xs n (Iter.foldM f x0)) >>= run)
+ == runWriter (CM.foldM f x0 xs)
+  where f acc el = tell (Sum 1) >> return (acc - el)
+        types = xs :: [Int]
 
 -- ---------------------------------------------
 -- Data.Iteratee.Char
@@ -304,6 +347,7 @@ tests = [
     ,testProperty "last" prop_last1
     ,testProperty "last ends properly" prop_last2
     ,testProperty "length" prop_length
+    ,testProperty "drop" prop_drop
     ,testProperty "dropWhile" prop_dropWhile
     ,testProperty "skipToEof" prop_skip
     ,testProperty "iteratee Functor 1" prop_iterFmap
@@ -341,9 +385,21 @@ tests = [
     ,testProperty "convStream identity" prop_convstream
     ,testProperty "convStream identity 2" prop_convstream3
     ]
+  ,testGroup "Folds" [
+    testProperty "foldl" prop_foldl
+   ,testProperty "foldl'" prop_foldl'
+   ,testProperty "foldl1" prop_foldl1
+   ,testProperty "foldl1'" prop_foldl1'
+   ,testProperty "sum" prop_sum
+   ,testProperty "product" prop_product
+   ]
   ,testGroup "Data.Iteratee.Char" [
     --testProperty "line" prop_line
     ]
+  ,testGroup "Monadic functions" [
+    testProperty "mapM_" prop_mapM_
+   ,testProperty "foldM" prop_foldM
+   ]
   ]
 
 ------------------------------------------------------------------------

@@ -60,11 +60,11 @@ import qualified Data.ListLike.FoldableLL as FLL
 import Data.Iteratee.Iteratee
 import Data.Monoid
 import Control.Applicative
+import Control.Monad (liftM2)
 import Control.Monad.Trans.Class
 import Data.Word (Word8)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as BC
-
 
 -- Useful combinators for implementing iteratees and enumerators
 
@@ -545,30 +545,36 @@ product = liftI (step 1)
 -- |Enumerate two iteratees over a single stream simultaneously.
 --
 -- Compare to @zip@.
-enumPair ::
- (Monad m, Nullable s, LL.ListLike s el) =>
-  Iteratee s m a
+enumPair
+  :: (Monad m, Nullable s, LL.ListLike s el)
+  => Iteratee s m a
   -> Iteratee s m b
-  -> Iteratee s m (a,b)
-enumPair i1 i2 = Iteratee $ \od oc -> runIter i1 (onDone od oc) (onCont od oc)
+  -> Iteratee s m (a, b)
+enumPair x y = liftI step
   where
-    onDone od oc x s        = runIter i2 (oD12 od oc x s) (onCont' od oc x)
-    oD12 od oc x1 s1 x2 s2  = runIter (idone (x1,x2) (longest s1 s2)) od oc
-    onCont od oc k mErr     = runIter (icont (step k) mErr) od oc
-      where
-    onCont' od oc x1 k mErr = runIter (icont (step2 x1 k) mErr) od oc
-    step k c@(Chunk str)
-      | nullC str            = liftI (step k)
-      | True                = lift (enumPure1Chunk str i2) >>= enumPair (k c)
-    step k s@(EOF Nothing)  = lift (enumEof i2) >>= enumPair (k s)
-    step k s@(EOF (Just e)) = lift (enumErr e i2) >>= enumPair (k s)
-    step2 x1 k (Chunk str)
-      | nullC str            = liftI (step2 x1 k)
-    step2 x1 k str          = enumPair (return x1) (k str)
-    longest c1@(Chunk xs) c2@(Chunk ys) = if LL.length xs > LL.length ys
-                                          then c1 else c2
-    longest e@(EOF _)  _         = e
-    longest _          e@(EOF _) = e
+    step (Chunk xs) | nullC xs = liftI step
+    step (Chunk xs) = do
+      (a', x') <- lift $ (\i -> runIter i od oc) =<< enumPure1Chunk xs x
+      (b', y') <- lift $ (\i -> runIter i od oc) =<< enumPure1Chunk xs y
+      case checkDone a' b' of
+        Just (a, b, s) -> idone (a, b) s
+        Nothing        -> enumPair x' y'
+    step (EOF err) = joinIM $ case err of
+      Nothing -> (liftM2.liftM2) (,) (enumEof   x) (enumEof   y)
+      Just e  -> (liftM2.liftM2) (,) (enumErr e x) (enumErr e y)
+
+    od a s = return (Just (a, s), idone a s)
+    oc k e = return (Nothing    , icont k e)
+
+    checkDone r1 r2 =
+      r1 >>= \(a, s1) -> r2 >>= \(b, s2) ->
+      return (a, b, shorter s1 s2)
+
+    shorter c1@(Chunk xs) c2@(Chunk ys)
+      | LL.length xs < LL.length ys = c1
+      | otherwise                   = c2
+    shorter e@(EOF _)  _         = e
+    shorter _          e@(EOF _) = e
 {-# INLINE enumPair #-}
 
 

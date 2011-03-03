@@ -45,6 +45,9 @@ module Data.Iteratee.ListLike (
   ,enumPureNChunk
   -- ** Enumerator Combinators
   ,enumPair
+  ,enumThree
+  ,enumFour
+  ,enumFive
   -- ** Monadic functions
   ,mapM_
   ,foldM
@@ -577,6 +580,31 @@ enumPair x y = liftI step
     shorter _          e@(EOF _) = e
 {-# INLINE enumPair #-}
 
+enumThree
+  :: (Monad m, Nullable s, LL.ListLike s el)
+  => Iteratee s m a -> Iteratee s m b
+  -> Iteratee s m c -> Iteratee s m (a, b, c)
+enumThree a b c = enumPair a (enumPair b c) >>=
+  \(r1, (r2, r3)) -> return (r1, r2, r3)
+{-# INLINE enumThree #-}
+
+enumFour
+  :: (Monad m, Nullable s, LL.ListLike s el)
+  => Iteratee s m a -> Iteratee s m b
+  -> Iteratee s m c -> Iteratee s m d
+  -> Iteratee s m (a, b, c, d)
+enumFour a b c d = enumPair a (enumThree b c d) >>=
+  \(r1, (r2, r3, r4)) -> return (r1, r2, r3, r4)
+{-# INLINE enumFour #-}
+
+enumFive
+  :: (Monad m, Nullable s, LL.ListLike s el)
+  => Iteratee s m a -> Iteratee s m b
+  -> Iteratee s m c -> Iteratee s m d
+  -> Iteratee s m e -> Iteratee s m (a, b, c, d, e)
+enumFive a b c d e = enumPair a (enumFour b c d e) >>=
+  \(r1, (r2, r3, r4, r5)) -> return (r1, r2, r3, r4, r5)
+{-# INLINE enumFive #-}
 
 -- ------------------------------------------------------------------------
 -- Enumerators

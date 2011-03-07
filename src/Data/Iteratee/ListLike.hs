@@ -203,8 +203,9 @@ peek = liftI step
 
 -- | Return a chunk of `t' elements length, while consuming `d' elements
 --   from the stream.  Useful for creating a "rolling average" with convStream.
-roll :: (Monad m, Functor m, Nullable s, LL.ListLike s el, LL.ListLike s' s) =>
-  Int
+roll
+  :: (Monad m, Functor m, Nullable s, LL.ListLike s el, LL.ListLike s' s)
+  => Int
   -> Int
   -> Iteratee s m s'
 roll t d | t > d  = liftI step
@@ -275,7 +276,10 @@ length = liftI (step 0)
 -- @break@ pred === @joinI@ (@breakE@ pred stream2stream)
 --
 -- @breakE@ should be used in preference to @break@ whenever possible.
-breakE :: (Monad m, LL.ListLike s el, NullPoint s) => (el -> Bool) -> Enumeratee s s m a
+breakE
+  :: (Monad m, LL.ListLike s el, NullPoint s)
+  => (el -> Bool)
+  -> Enumeratee s s m a
 breakE cpred = eneeCheckIfDone (liftI . step)
  where
   step k (Chunk s)
@@ -346,14 +350,14 @@ takeUpTo i iter
 -- given iteratee to it.
 --
 -- The analog of @List.map@
-mapStream ::
- (Monad m,
-  LL.ListLike (s el) el,
-  LL.ListLike (s el') el',
-  NullPoint (s el),
-  LooseMap s el el') =>
- (el -> el')
- -> Enumeratee (s el) (s el') m a
+mapStream
+  :: (Monad m
+     ,LL.ListLike (s el) el
+     ,LL.ListLike (s el') el'
+     ,NullPoint (s el)
+     ,LooseMap s el el')
+  => (el -> el')
+  -> Enumeratee (s el) (s el') m a
 mapStream f = eneeCheckIfDone (liftI . step)
   where
     step k (Chunk xs)
@@ -367,9 +371,9 @@ mapStream f = eneeCheckIfDone (liftI . step)
 -- Like 'mapStream', but the element type cannot change.
 -- This function is necessary for @ByteString@ and similar types
 -- that cannot have 'LooseMap' instances, and may be more efficient.
-rigidMapStream ::
- (Monad m, LL.ListLike s el, NullPoint s) =>
-  (el -> el)
+rigidMapStream
+  :: (Monad m, LL.ListLike s el, NullPoint s)
+  => (el -> el)
   -> Enumeratee s s m a
 rigidMapStream f = eneeCheckIfDone (liftI . step)
   where
@@ -385,9 +389,9 @@ rigidMapStream f = eneeCheckIfDone (liftI . step)
 -- satisfy the predicate function.  The outer stream is completely consumed.
 --
 -- The analogue of @List.filter@
-filter ::
- (Monad m, Nullable s, LL.ListLike s el) =>
-  (el -> Bool)
+filter
+  :: (Monad m, Nullable s, LL.ListLike s el)
+  => (el -> Bool)
   -> Enumeratee s s m a
 filter p = convStream f'
   where
@@ -401,8 +405,10 @@ filter p = convStream f'
 -- |Creates an 'enumeratee' in which elements from the stream are
 -- grouped into \sz\-sized blocks.  The outer stream is completely
 -- consumed and the final block may be smaller than \sz\.
-group :: (LL.ListLike s el, Monad m, Nullable s) => 
-             Int -> Enumeratee s [s] m a
+group
+  :: (LL.ListLike s el, Monad m, Nullable s)
+  => Int
+  -> Enumeratee s [s] m a
 group sz iinit = liftI $ go iinit LL.empty
   where go icurr pfx (Chunk s) = case gsplit (pfx `LL.append` s) of 
           (full, partial) | LL.null full -> liftI $ go icurr partial
@@ -426,8 +432,10 @@ group sz iinit = liftI $ go iinit LL.empty
 -- 
 -- The analogue of @List.groupBy#
           
-groupBy :: (LL.ListLike s el, Monad m, Nullable s) =>
-               (el -> el -> Bool) -> Enumeratee s [s] m a
+groupBy
+  :: (LL.ListLike s el, Monad m, Nullable s)
+  => (el -> el -> Bool)
+  -> Enumeratee s [s] m a
 groupBy same iinit = liftI $ go iinit LL.empty
     where go icurr pfx (Chunk s) = case gsplit (pfx `LL.append` s) of
                                           (full, partial)
@@ -457,9 +465,9 @@ groupBy same iinit = liftI $ go iinit LL.empty
 -- | Left-associative fold.
 --
 -- The analogue of @List.foldl@
-foldl ::
- (Monad m, LL.ListLike s el, FLL.FoldableLL s el) =>
-  (a -> el -> a)
+foldl
+  :: (Monad m, LL.ListLike s el, FLL.FoldableLL s el)
+  => (a -> el -> a)
   -> a
   -> Iteratee s m a
 foldl f i = liftI (step i)
@@ -475,9 +483,9 @@ foldl f i = liftI (step i)
 -- This function should be used in preference to 'foldl' whenever possible.
 --
 -- The analogue of @List.foldl'@.
-foldl' ::
- (Monad m, LL.ListLike s el, FLL.FoldableLL s el) =>
-  (a -> el -> a)
+foldl'
+  :: (Monad m, LL.ListLike s el, FLL.FoldableLL s el)
+  => (a -> el -> a)
   -> a
   -> Iteratee s m a
 foldl' f i = liftI (step i)
@@ -492,9 +500,9 @@ foldl' f i = liftI (step i)
 --   in the stream.
 --
 -- The analogue of @List.foldl1@.
-foldl1 ::
- (Monad m, LL.ListLike s el, FLL.FoldableLL s el) =>
-  (el -> el -> el)
+foldl1
+  :: (Monad m, LL.ListLike s el, FLL.FoldableLL s el)
+  => (el -> el -> el)
   -> Iteratee s m el
 foldl1 f = liftI step
   where
@@ -507,9 +515,9 @@ foldl1 f = liftI step
 
 
 -- | Strict variant of 'foldl1'.
-foldl1' ::
- (Monad m, LL.ListLike s el, FLL.FoldableLL s el) =>
-  (el -> el -> el)
+foldl1'
+  :: (Monad m, LL.ListLike s el, FLL.FoldableLL s el)
+  => (el -> el -> el)
   -> Iteratee s m el
 foldl1' f = liftI step
   where
@@ -625,8 +633,7 @@ zip5 a b c d e = zip a (zip4 b c d e) >>=
 
 -- |The pure n-chunk enumerator
 -- It passes a given stream of elements to the iteratee in @n@-sized chunks.
-enumPureNChunk ::
- (Monad m, LL.ListLike s el) => s -> Int -> Enumerator s m a
+enumPureNChunk :: (Monad m, LL.ListLike s el) => s -> Int -> Enumerator s m a
 enumPureNChunk str n iter
   | LL.null str = return iter
   | n > 0       = enum' str iter
@@ -646,9 +653,10 @@ enumPureNChunk str n iter
 
 -- | Map a monadic function over the elements of the stream and ignore the
 -- result.
-mapM_ :: (Monad m, LL.ListLike s el, Nullable s)
-      => (el -> m b)
-      -> Iteratee s m ()
+mapM_
+  :: (Monad m, LL.ListLike s el, Nullable s)
+  => (el -> m b)
+  -> Iteratee s m ()
 mapM_ f = liftI step
   where
     step (Chunk xs) | LL.null xs = liftI step
@@ -657,10 +665,11 @@ mapM_ f = liftI step
 {-# INLINE mapM_ #-}
 
 -- |The analogue of @Control.Monad.foldM@
-foldM :: (Monad m, LL.ListLike s b, Nullable s)
-      => (a -> b -> m a)
-      -> a
-      -> Iteratee s m a
+foldM
+  :: (Monad m, LL.ListLike s b, Nullable s)
+  => (a -> b -> m a)
+  -> a
+  -> Iteratee s m a
 foldM f e = liftI step
   where
     step (Chunk xs) | LL.null xs = liftI step

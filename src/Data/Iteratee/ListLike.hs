@@ -45,9 +45,10 @@ module Data.Iteratee.ListLike (
   ,enumPureNChunk
   -- ** Enumerator Combinators
   ,enumPair
-  ,enumThree
-  ,enumFour
-  ,enumFive
+  ,zip
+  ,zip3
+  ,zip4
+  ,zip5
   -- ** Monadic functions
   ,mapM_
   ,foldM
@@ -56,7 +57,7 @@ module Data.Iteratee.ListLike (
 )
 where
 
-import Prelude hiding (mapM_, null, head, last, drop, dropWhile, take, break, foldl, foldl1, length, filter, sum, product)
+import Prelude hiding (mapM_, null, head, last, drop, dropWhile, take, break, foldl, foldl1, length, filter, sum, product, zip, zip3)
 
 import qualified Data.ListLike as LL
 import qualified Data.ListLike.FoldableLL as FLL
@@ -546,14 +547,27 @@ product = liftI (step 1)
 -- Zips
 
 -- |Enumerate two iteratees over a single stream simultaneously.
+--  Deprecated, use `Data.Iteratee.ListLike.zip` instead.
 --
 -- Compare to @zip@.
+{-# DEPRECATED enumPair "use Data.Iteratee.ListLike.zip" #-}
 enumPair
   :: (Monad m, Nullable s, LL.ListLike s el)
   => Iteratee s m a
   -> Iteratee s m b
   -> Iteratee s m (a, b)
-enumPair x y = liftI step
+enumPair = zip
+
+
+-- |Enumerate two iteratees over a single stream simultaneously.
+--
+-- Compare to @zip@.
+zip
+  :: (Monad m, Nullable s, LL.ListLike s el)
+  => Iteratee s m a
+  -> Iteratee s m b
+  -> Iteratee s m (a, b)
+zip x y = liftI step
   where
     step (Chunk xs) | nullC xs = liftI step
     step (Chunk xs) = do
@@ -561,7 +575,7 @@ enumPair x y = liftI step
       (b', y') <- lift $ (\i -> runIter i od oc) =<< enumPure1Chunk xs y
       case checkDone a' b' of
         Just (a, b, s) -> idone (a, b) s
-        Nothing        -> enumPair x' y'
+        Nothing        -> zip x' y'
     step (EOF err) = joinIM $ case err of
       Nothing -> (liftM2.liftM2) (,) (enumEof   x) (enumEof   y)
       Just e  -> (liftM2.liftM2) (,) (enumErr e x) (enumErr e y)
@@ -578,33 +592,33 @@ enumPair x y = liftI step
       | otherwise                   = c2
     shorter e@(EOF _)  _         = e
     shorter _          e@(EOF _) = e
-{-# INLINE enumPair #-}
+{-# INLINE zip #-}
 
-enumThree
+zip3
   :: (Monad m, Nullable s, LL.ListLike s el)
   => Iteratee s m a -> Iteratee s m b
   -> Iteratee s m c -> Iteratee s m (a, b, c)
-enumThree a b c = enumPair a (enumPair b c) >>=
+zip3 a b c = zip a (zip b c) >>=
   \(r1, (r2, r3)) -> return (r1, r2, r3)
-{-# INLINE enumThree #-}
+{-# INLINE zip3 #-}
 
-enumFour
+zip4
   :: (Monad m, Nullable s, LL.ListLike s el)
   => Iteratee s m a -> Iteratee s m b
   -> Iteratee s m c -> Iteratee s m d
   -> Iteratee s m (a, b, c, d)
-enumFour a b c d = enumPair a (enumThree b c d) >>=
+zip4 a b c d = zip a (zip3 b c d) >>=
   \(r1, (r2, r3, r4)) -> return (r1, r2, r3, r4)
-{-# INLINE enumFour #-}
+{-# INLINE zip4 #-}
 
-enumFive
+zip5
   :: (Monad m, Nullable s, LL.ListLike s el)
   => Iteratee s m a -> Iteratee s m b
   -> Iteratee s m c -> Iteratee s m d
   -> Iteratee s m e -> Iteratee s m (a, b, c, d, e)
-enumFive a b c d e = enumPair a (enumFour b c d e) >>=
+zip5 a b c d e = zip a (zip4 b c d e) >>=
   \(r1, (r2, r3, r4, r5)) -> return (r1, r2, r3, r4, r5)
-{-# INLINE enumFive #-}
+{-# INLINE zip5 #-}
 
 -- ------------------------------------------------------------------------
 -- Enumerators

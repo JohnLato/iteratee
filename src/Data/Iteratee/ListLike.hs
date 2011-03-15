@@ -49,6 +49,7 @@ module Data.Iteratee.ListLike (
   ,zip3
   ,zip4
   ,zip5
+  ,sequence_
   -- ** Monadic functions
   ,mapM_
   ,foldM
@@ -57,14 +58,17 @@ module Data.Iteratee.ListLike (
 )
 where
 
-import Prelude hiding (mapM_, null, head, last, drop, dropWhile, take, break, foldl, foldl1, length, filter, sum, product, zip, zip3)
+import Prelude hiding (mapM_, null, head, last, drop, dropWhile, take, break, foldl, foldl1, length, filter, sum, product, zip, zip3, sequence_)
+
+import qualified Prelude as Prelude
 
 import qualified Data.ListLike as LL
 import qualified Data.ListLike.FoldableLL as FLL
 import Data.Iteratee.Iteratee
 import Data.Monoid
+import Data.Maybe (catMaybes)
 import Control.Applicative
-import Control.Monad (liftM2)
+import Control.Monad (liftM, liftM2, mplus, (<=<))
 import Control.Monad.Trans.Class
 import Data.Word (Word8)
 import qualified Data.ByteString as B
@@ -627,6 +631,61 @@ zip5
 zip5 a b c d e = zip a (zip4 b c d e) >>=
   \(r1, (r2, r3, r4, r5)) -> return (r1, r2, r3, r4, r5)
 {-# INLINE zip5 #-}
+
+-- |Enumerate a list of iteratees over a single stream simultaneously
+-- and discard the results. This is a different behavior than Prelude's
+-- sequence_ which runs iteratees in the list one after the other.
+--
+-- Compare to @sequence_@.
+sequence_
+  :: (Monad m, LL.ListLike s el, Nullable s)
+  => [Iteratee s m a]
+  -> Iteratee s m ()
+sequence_ = self
+  where
+    self is = liftI step
+      where
+        step (Chunk xs) | LL.null xs = liftI step
+        step s@(Chunk _) = do
+          -- give a chunk to each iteratee
+          is'  <- lift $ mapM (enumChunk s) is
+          -- filter done iteratees
+          is'' <- lift $ catMaybes `liftM` mapM checkIfDone is'
+          if Prelude.null is''
+            then idone () <=< remainingStream $ is'
+            else self is''
+        step s@(EOF _) = do
+          s' <- remainingStream <=< lift $ mapM (enumChunk s) $ is
+          case s' of
+            EOF (Just e) -> throwErr e
+            _            -> idone () s'
+
+        checkIfDone i = runIter i
+            (\_ _ -> return Nothing)
+            (\k e -> return $ Just $ icont k e)
+
+    -- returns the unconsumed part of the stream; "sequence_ is" consumes as
+    -- much of the stream as the iteratee in is that consumes the most; e.g.
+    -- sequence_ [I.head, I.last] consumes whole stream
+    remainingStream
+      :: (Monad m, Nullable s, LL.ListLike s el)
+      => [Iteratee s m a] -> Iteratee s m (Stream s)
+    remainingStream is = lift $
+      return . Prelude.foldl1 shorter <=< mapM (\i -> runIter i od oc) $ is
+      where
+        od _ s = return s
+        oc _ e = return $ case e of
+          Nothing -> mempty
+          _       -> EOF e
+
+    -- return the shorter one of two streams; errors are propagated with the
+    -- priority given to the "left"
+    shorter c1@(Chunk xs) c2@(Chunk ys)
+      | LL.length xs < LL.length ys = c1
+      | otherwise                   = c2
+    shorter (EOF e1 ) (EOF e2 ) = EOF (e1 `mplus` e2)
+    shorter e@(EOF _) _         = e
+    shorter _         e@(EOF _) = e
 
 -- ------------------------------------------------------------------------
 -- Enumerators

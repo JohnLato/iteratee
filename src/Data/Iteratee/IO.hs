@@ -7,6 +7,8 @@ module Data.Iteratee.IO(
   -- ** Handle-based enumerators
   enumHandle,
   enumHandleRandom,
+  enumFile,
+  enumFileRandom,
 #if defined(USE_POSIX)
   -- ** FileDescriptor based enumerators
   enumFd,

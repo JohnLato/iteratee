@@ -10,6 +10,8 @@ module Data.Iteratee.IO.Handle(
   enumHandle
   ,enumHandleCatch
   ,enumHandleRandom
+  ,enumFile
+  ,enumFileRandom
   -- * Iteratee drivers
   ,fileDriverHandle
   ,fileDriverRandomHandle
@@ -105,16 +107,29 @@ enumHandleRandom bs h i = enumHandleCatch bs h handler i
 -- ----------------------------------------------
 -- File Driver wrapper functions.
 
-fileDriver :: (NullPoint s, MonadCatchIO m, ReadableChunk s el) =>
+enumFile' :: (NullPoint s, MonadCatchIO m, ReadableChunk s el) =>
   (Int -> Handle -> Enumerator s m a)
   -> Int -- ^Buffer size
-  -> Iteratee s m a
   -> FilePath
-  -> m a
-fileDriver enumf bufsize iter filepath = CIO.bracket
+  -> Enumerator s m a
+enumFile' enumf bufsize filepath iter = CIO.bracket
   (liftIO $ openBinaryFile filepath ReadMode)
   (liftIO . hClose)
-  (run <=< flip (enumf bufsize) iter)
+  (flip (enumf bufsize) iter)
+
+enumFile ::
+  (NullPoint s, MonadCatchIO m, ReadableChunk s el)
+  => Int                 -- ^Buffer size
+  -> FilePath
+  -> Enumerator s m a
+enumFile = enumFile' enumHandle
+
+enumFileRandom ::
+  (NullPoint s, MonadCatchIO m, ReadableChunk s el)
+  => Int                 -- ^Buffer size
+  -> FilePath
+  -> Enumerator s m a
+enumFileRandom = enumFile' enumHandleRandom
 
 -- |Process a file using the given @Iteratee@.  This function wraps
 -- @enumHandle@ as a convenience.
@@ -124,7 +139,8 @@ fileDriverHandle
      -> Iteratee s m a
      -> FilePath
      -> m a
-fileDriverHandle = fileDriver enumHandle
+fileDriverHandle bufsize iter filepath =
+  enumFile bufsize filepath iter >>= run
 
 -- |A version of @fileDriverHandle@ that supports seeking.
 fileDriverRandomHandle
@@ -133,5 +149,6 @@ fileDriverRandomHandle
      -> Iteratee s m a
      -> FilePath
      -> m a
-fileDriverRandomHandle = fileDriver enumHandleRandom
+fileDriverRandomHandle bufsize iter filepath =
+  enumFileRandom bufsize filepath iter >>= run
 

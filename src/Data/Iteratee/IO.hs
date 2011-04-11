@@ -3,6 +3,8 @@
 -- |Random and Binary IO with generic Iteratees.
 
 module Data.Iteratee.IO(
+  -- * Data
+  defaultBufSize,
   -- * File enumerators
   -- ** Handle-based enumerators
   enumHandle,
@@ -37,6 +39,7 @@ import Data.Iteratee.IO.Fd
 
 import Control.Monad.CatchIO
 
+-- | The default buffer size.
 defaultBufSize :: Int
 defaultBufSize = 1024
 

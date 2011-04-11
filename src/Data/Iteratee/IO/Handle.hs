@@ -135,7 +135,7 @@ enumFileRandom = enumFile' enumHandleRandom
 -- @enumHandle@ as a convenience.
 fileDriverHandle
   :: (NullPoint s, MonadCatchIO m, ReadableChunk s el) =>
-     Int -- ^Buffer size (number of elements)
+     Int                      -- ^Buffer size (number of elements)
      -> Iteratee s m a
      -> FilePath
      -> m a
@@ -145,7 +145,7 @@ fileDriverHandle bufsize iter filepath =
 -- |A version of @fileDriverHandle@ that supports seeking.
 fileDriverRandomHandle
   :: (NullPoint s, MonadCatchIO m, ReadableChunk s el) =>
-     Int
+     Int                      -- ^ Buffer size (number of elements)
      -> Iteratee s m a
      -> FilePath
      -> m a

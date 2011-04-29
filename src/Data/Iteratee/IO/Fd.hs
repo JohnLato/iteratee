@@ -37,7 +37,6 @@ import Foreign.Marshal.Alloc
 import System.IO (SeekMode(..))
 
 import System.Posix hiding (FileOffset)
-import GHC.Conc
 
 -- ------------------------------------------------------------------------
 -- Binary Random IO enumerators
@@ -50,7 +49,6 @@ makefdCallback ::
   -> st
   -> m (Either SomeException ((Bool, st), s))
 makefdCallback p bufsize fd st = do
-  liftIO $ GHC.Conc.threadWaitRead fd
   n <- liftIO $ myfdRead fd (castPtr p) bufsize
   case n of
     Left _   -> return $ Left undefined

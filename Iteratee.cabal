@@ -96,6 +96,7 @@ executable testIteratee
 
   if flag(buildTests)
     build-depends:
+      mtl                        >= 2   && < 3,
       QuickCheck                 >= 2   && < 3,
       test-framework             >= 0.3 && < 0.4,
       test-framework-quickcheck2 >= 0.2 && < 0.3

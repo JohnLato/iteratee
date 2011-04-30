@@ -45,6 +45,7 @@ module Data.Iteratee.ListLike (
   ,enumPureNChunk
   -- ** Enumerator Combinators
   ,enumPair
+  ,enumWith
   ,zip
   ,zip3
   ,zip4
@@ -631,6 +632,42 @@ zip5
 zip5 a b c d e = zip a (zip4 b c d e) >>=
   \(r1, (r2, r3, r4, r5)) -> return (r1, r2, r3, r4, r5)
 {-# INLINE zip5 #-}
+
+-- | Enumerate over two iteratees in parallel as long as the first iteratee
+-- is still consuming input.  The second iteratee will be terminated with EOF
+-- when the first iteratee has completed.  An example use is to determine
+-- how many elements an iteratee has consumed:
+--
+-- > snd <$> enumWith (dropWhile (<5)) length
+--
+-- Compare to @zip@
+enumWith
+  :: (Monad m, Nullable s, LL.ListLike s el)
+  => Iteratee s m a
+  -> Iteratee s m b
+  -> Iteratee s m (a, b)
+enumWith i1 i2 = go i1 i2
+  where
+    od a s = return (Just (a, s), idone a s)
+    oc k e = return (Nothing    , icont k e)
+
+    getUsed xs (Chunk ys) = LL.take (LL.length xs - LL.length ys) xs
+    getUsed xs (EOF _)    = xs
+
+    go x y = liftI step
+      where
+        step (Chunk xs) | nullC xs = liftI step
+        step (Chunk xs) = do
+          (a', x') <- lift $ (\i -> runIter i od oc) =<< enumPure1Chunk xs x
+          case a' of
+            Just (a, s) -> do
+              b <- lift $ run =<< enumPure1Chunk (getUsed xs s) y
+              idone (a, b) s
+            Nothing        -> lift (enumPure1Chunk xs y) >>= go x'
+        step (EOF err) = joinIM $ case err of
+          Nothing -> (liftM2.liftM2) (,) (enumEof   x) (enumEof   y)
+          Just e  -> (liftM2.liftM2) (,) (enumErr e x) (enumErr e y)
+{-# INLINE enumWith #-}
 
 -- |Enumerate a list of iteratees over a single stream simultaneously
 -- and discard the results. This is a different behavior than Prelude's

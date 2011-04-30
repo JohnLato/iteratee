@@ -186,6 +186,19 @@ prop_nullH xs = P.length xs > 0 ==>
                 runner1 (enumPure1Chunk xs =<< enumPure1Chunk [] Iter.head)
                 == runner1 (enumPure1Chunk xs Iter.head)
   where types = xs :: [Int]
+
+-- ---------------------------------------------
+-- Enumerator Combinators
+
+prop_enumWith xs f n = n > 0 ==> runner1 (enumSpecial xs n $ fmap fst $ enumWith (Iter.dropWhile f) (stream2list))
+   == runner1 (enumSpecial xs n $ Iter.dropWhile f)
+ where types = (xs :: [Int])
+
+prop_enumWith2 xs f n = n > 0 ==> runner1 (enumSpecial xs n $ enumWith (Iter.dropWhile f) (stream2list) >> stream2list)
+   == runner1 (enumSpecial xs n $ Iter.dropWhile f >> stream2list)
+ where types = (xs :: [Int])
+
+
 -- ---------------------------------------------
 -- Nested Iteratees
 
@@ -384,6 +397,10 @@ tests = [
     ,testProperty "convStream EOF" prop_convstream2
     ,testProperty "convStream identity" prop_convstream
     ,testProperty "convStream identity 2" prop_convstream3
+    ]
+  ,testGroup "Enumerator Combinators" [
+    testProperty "enumWith" prop_enumWith
+    ,testProperty "enumWith remaining" prop_enumWith2
     ]
   ,testGroup "Folds" [
     testProperty "foldl" prop_foldl

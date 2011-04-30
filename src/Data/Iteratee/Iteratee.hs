@@ -1,4 +1,8 @@
-{-# LANGUAGE KindSignatures, FlexibleContexts, ScopedTypeVariables, DeriveDataTypeable #-}
+{-# LANGUAGE KindSignatures
+            ,RankNTypes
+            ,FlexibleContexts
+            ,ScopedTypeVariables
+            ,DeriveDataTypeable #-}
 
 -- |Monadic and General Iteratees:
 -- incremental input parsers, processors and transformers
@@ -34,6 +38,9 @@ module Data.Iteratee.Iteratee (
   -- ** Enumerator Combinators
   ,(>>>)
   ,eneeCheckIfDone
+  -- ** Enumeratee Combinators
+  ,(><>)
+  ,(<><)
   -- * Misc.
   ,seek
   ,FileOffset
@@ -255,6 +262,32 @@ enumErr e iter = runIter iter onDone onCont
 
 (>>>) :: (Monad m) => Enumerator s m a -> Enumerator s m a -> Enumerator s m a
 (e1 >>> e2) i =  e1 i >>= e2
+  -- I think (>>>) is identical to (>=>)...
+
+
+-- | Enumeratee composition
+-- Run the second enumeratee within the first.  In this example, stream2list
+-- is run within the 'take 10', which is itself run within 'take 15', resulting
+-- in 15 elements being consumed
+--
+-- > run =<< enumPure1Chunk [1..1000 :: Int]
+-- >   (joinI $ (I.take 15 ><> I.take 10) I.stream2list)
+-- > [1,2,3,4,5,6,7,8,9,10]
+-- 
+(><>) ::
+ (Nullable s1, Monad m)
+  => (forall x . Enumeratee s1 s2 m x)
+  -> Enumeratee s2 s3 m a
+  -> Enumeratee s1 s3 m a
+f ><> g = joinI . f . g
+
+-- | enumeratee composition with the arguments flipped, see '><>'
+(<><) ::
+ (Nullable s1, Monad m)
+  => Enumeratee s2 s3 m a
+  -> (forall x. Enumeratee s1 s2 m x)
+  -> Enumeratee s1 s3 m a
+f <>< g = joinI . g . f
 
 -- |The pure 1-chunk enumerator
 -- It passes a given list of elements to the iteratee in one chunk

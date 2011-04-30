@@ -25,6 +25,7 @@ import Data.Iteratee.Iteratee
 import Data.Iteratee.Binary()
 import Data.Iteratee.IO.Base
 
+import Control.Concurrent (yield)
 import Control.Exception
 import Control.Monad
 import Control.Monad.CatchIO as CIO
@@ -51,8 +52,8 @@ makefdCallback ::
 makefdCallback p bufsize fd st = do
   n <- liftIO $ myfdRead fd (castPtr p) bufsize
   case n of
-    Left _   -> return $ Left undefined
-    Right 0  -> return $ Right ((False, st), empty)
+    Left  _  -> return $ Left (error "myfdRead failed")
+    Right 0  -> liftIO yield >> return (Right ((False, st), empty))
     Right n' -> liftM (\s -> Right ((True, st), s)) $
                   readFromPtr p (fromIntegral n')
 

@@ -34,6 +34,7 @@ module Data.Iteratee.Iteratee (
   ,enumEof
   ,enumErr
   ,enumPure1Chunk
+  ,enumList
   ,enumCheckIfDone
   ,enumFromCallback
   ,enumFromCallbackCatch
@@ -320,7 +321,8 @@ f ><> g = joinI . f . g
   -> Enumeratee s1 s3 m a
 f <>< g = joinI . g . f
 
--- |The pure 1-chunk enumerator
+-- | The pure 1-chunk enumerator
+-- 
 -- It passes a given list of elements to the iteratee in one chunk
 -- This enumerator does no IO and is useful for testing of base parsing
 enumPure1Chunk :: (Monad m) => s -> Enumerator s m a
@@ -329,7 +331,13 @@ enumPure1Chunk str iter = runIter iter idoneM onCont
     onCont k Nothing = return $ k $ Chunk str
     onCont k e       = return $ icont k e
 
--- |Checks if an iteratee has finished.
+-- | Enumerate chunks from a list
+-- 
+enumList :: (Monad m) => [s] -> Enumerator s m a
+enumList chunks = foldr (>>>) return (map enumPure1Chunk chunks)
+
+-- | Checks if an iteratee has finished.
+-- 
 -- This enumerator runs the iteratee, performing any monadic actions.
 -- If the result is True, the returned iteratee is done.
 enumCheckIfDone :: (Monad m) => Iteratee s m a -> m (Bool, Iteratee s m a)

@@ -2,7 +2,7 @@
 
 -- |Monadic Iteratees:
 -- incremental input parsers, processors and transformers
---
+-- 
 -- This module provides many basic iteratees from which more complicated
 -- iteratees can be built.  In general these iteratees parallel those in
 -- @Data.List@, with some additions.
@@ -121,11 +121,11 @@ stream2stream = icont (step mempty) Nothing
 -- predicate.
 -- If the stream is not terminated, the first character of the remaining stream
 -- satisfies the predicate.
---
+-- 
 -- N.B. @breakE@ should be used in preference to @break@.
 -- @break@ will retain all data until the predicate is met, which may
 -- result in a space leak.
---
+-- 
 -- The analogue of @List.break@
 
 break :: (Monad m, LL.ListLike s el) => (el -> Bool) -> Iteratee s m s
@@ -143,7 +143,7 @@ break cpred = icont (step mempty) Nothing
 
 -- |Attempt to read the next element of the stream and return it
 -- Raise a (recoverable) error if the stream is terminated
---
+-- 
 -- The analogue of @List.head@
 head :: (Monad m, LL.ListLike s el) => Iteratee s m el
 head = liftI step
@@ -156,7 +156,7 @@ head = liftI step
 
 -- |Attempt to read the last element of the stream and return it
 -- Raise a (recoverable) error if the stream is terminated
---
+-- 
 -- The analogue of @List.last@
 last :: (Monad m, LL.ListLike s el, Nullable s) => Iteratee s m el
 last = liftI (step Nothing)
@@ -231,7 +231,7 @@ roll t d = LL.singleton <$> joinI (take t stream2stream) <* drop (d-t)
 
 
 -- |Drop n elements of the stream, if there are that many.
---
+-- 
 -- The analogue of @List.drop@
 drop :: (Monad m, Nullable s, LL.ListLike s el) => Int -> Iteratee s m ()
 drop 0  = return ()
@@ -244,7 +244,7 @@ drop n' = liftI (step n')
 {-# INLINE drop #-}
 
 -- |Skip all elements while the predicate is true.
---
+-- 
 -- The analogue of @List.dropWhile@
 dropWhile :: (Monad m, LL.ListLike s el) => (el -> Bool) -> Iteratee s m ()
 dropWhile p = liftI step
@@ -260,7 +260,7 @@ dropWhile p = liftI step
 
 -- |Return the total length of the remaining part of the stream.
 -- This forces evaluation of the entire stream.
---
+-- 
 -- The analogue of @List.length@
 length :: (Monad m, Num a, LL.ListLike s el) => Iteratee s m a
 length = liftI (step 0)
@@ -276,10 +276,10 @@ length = liftI (step 0)
 
 -- |Takes an element predicate and an iteratee, running the iteratee
 -- on all elements of the stream until the predicate is met.
---
+-- 
 -- the following rule relates @break@ to @breakE@
 -- @break@ pred === @joinI@ (@breakE@ pred stream2stream)
---
+-- 
 -- @breakE@ should be used in preference to @break@ whenever possible.
 breakE
   :: (Monad m, LL.ListLike s el, NullPoint s)
@@ -299,7 +299,7 @@ breakE cpred = eneeCheckIfDone (liftI . step)
 -- |Read n elements from a stream and apply the given iteratee to the
 -- stream of the read elements. Unless the stream is terminated early, we
 -- read exactly n elements, even if the iteratee has accepted fewer.
---
+-- 
 -- The analogue of @List.take@
 take :: (Monad m, Nullable s, LL.ListLike s el) => Int -> Enumeratee s s m a
 take n' iter
@@ -326,7 +326,7 @@ take n' iter
 -- This is the variation of `take' with the early termination
 -- of processing of the outer stream once the processing of the inner stream
 -- finished early.
---
+-- 
 -- N.B. If the inner iteratee finishes early, remaining data within the current
 -- chunk will be dropped.
 takeUpTo :: (Monad m, Nullable s, LL.ListLike s el) => Int -> Enumeratee s s m a
@@ -353,7 +353,7 @@ takeUpTo i iter
 -- Given the stream of elements of the type @el@ and the function @el->el'@,
 -- build a nested stream of elements of the type @el'@ and apply the
 -- given iteratee to it.
---
+-- 
 -- The analog of @List.map@
 mapStream
   :: (Monad m
@@ -372,7 +372,7 @@ mapStream f = eneeCheckIfDone (liftI . step)
 {-# SPECIALIZE mapStream :: Monad m => (el -> el') -> Enumeratee [el] [el'] m a #-}
 
 -- |Map the stream rigidly.
---
+-- 
 -- Like 'mapStream', but the element type cannot change.
 -- This function is necessary for @ByteString@ and similar types
 -- that cannot have 'LooseMap' instances, and may be more efficient.
@@ -392,7 +392,7 @@ rigidMapStream f = eneeCheckIfDone (liftI . step)
 
 -- |Creates an 'enumeratee' with only elements from the stream that
 -- satisfy the predicate function.  The outer stream is completely consumed.
---
+-- 
 -- The analogue of @List.filter@
 filter
   :: (Monad m, Nullable s, LL.ListLike s el)
@@ -432,11 +432,10 @@ group sz iinit = liftI $ go iinit LL.empty
                                    in g' `seq` (g', leftover)
 {-# INLINE group #-}
 
--- |Creates an 'enumeratee' in which elements are grouped into
+-- | Creates an 'enumeratee' in which elements are grouped into
 -- contiguous blocks that are equal according to a predicate.
 -- 
--- The analogue of @List.groupBy#
-          
+-- The analogue of 'List.groupBy'
 groupBy
   :: (LL.ListLike s el, Monad m, Nullable s)
   => (el -> el -> Bool)
@@ -468,7 +467,7 @@ groupBy same iinit = liftI $ go iinit LL.empty
 -- Folds
 
 -- | Left-associative fold.
---
+-- 
 -- The analogue of @List.foldl@
 foldl
   :: (Monad m, LL.ListLike s el, FLL.FoldableLL s el)
@@ -486,7 +485,7 @@ foldl f i = liftI (step i)
 
 -- | Left-associative fold that is strict in the accumulator.
 -- This function should be used in preference to 'foldl' whenever possible.
---
+-- 
 -- The analogue of @List.foldl'@.
 foldl'
   :: (Monad m, LL.ListLike s el, FLL.FoldableLL s el)
@@ -503,7 +502,7 @@ foldl' f i = liftI (step i)
 
 -- | Variant of foldl with no base case.  Requires at least one element
 --   in the stream.
---
+-- 
 -- The analogue of @List.foldl1@.
 foldl1
   :: (Monad m, LL.ListLike s el, FLL.FoldableLL s el)
@@ -561,7 +560,7 @@ product = liftI (step 1)
 
 -- |Enumerate two iteratees over a single stream simultaneously.
 --  Deprecated, use `Data.Iteratee.ListLike.zip` instead.
---
+-- 
 -- Compare to @zip@.
 {-# DEPRECATED enumPair "use Data.Iteratee.ListLike.zip" #-}
 enumPair
@@ -573,7 +572,7 @@ enumPair = zip
 
 
 -- |Enumerate two iteratees over a single stream simultaneously.
---
+-- 
 -- Compare to @zip@.
 zip
   :: (Monad m, Nullable s, LL.ListLike s el)
@@ -637,9 +636,9 @@ zip5 a b c d e = zip a (zip4 b c d e) >>=
 -- is still consuming input.  The second iteratee will be terminated with EOF
 -- when the first iteratee has completed.  An example use is to determine
 -- how many elements an iteratee has consumed:
---
+-- 
 -- > snd <$> enumWith (dropWhile (<5)) length
---
+-- 
 -- Compare to @zip@
 enumWith
   :: (Monad m, Nullable s, LL.ListLike s el)
@@ -672,7 +671,7 @@ enumWith i1 i2 = go i1 i2
 -- |Enumerate a list of iteratees over a single stream simultaneously
 -- and discard the results. This is a different behavior than Prelude's
 -- sequence_ which runs iteratees in the list one after the other.
---
+-- 
 -- Compare to @sequence_@.
 sequence_
   :: (Monad m, LL.ListLike s el, Nullable s)

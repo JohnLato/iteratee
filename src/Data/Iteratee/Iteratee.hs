@@ -133,9 +133,9 @@ seek o = throwRecoverableErr (toException $ SeekException o) (const identity)
 
 -- | Map a monadic function over the chunks of the stream and ignore the
 -- result.  Useful for creating efficient monadic iteratee consumers, e.g.
---
+-- 
 --   logger = mapChunksM_ (liftIO . putStrLn)
---
+-- 
 -- these can be efficiently run in parallel with other iteratees via
 -- @Data.Iteratee.ListLike.zip@.
 mapChunksM_ :: (Monad m, Nullable s) => (s -> m b) -> Iteratee s m ()
@@ -301,10 +301,9 @@ enumErr e iter = runIter iter onDone onCont
 -- Run the second enumeratee within the first.  In this example, stream2list
 -- is run within the 'take 10', which is itself run within 'take 15', resulting
 -- in 15 elements being consumed
---
--- > run =<< enumPure1Chunk [1..1000 :: Int]
--- >   (joinI $ (I.take 15 ><> I.take 10) I.stream2list)
--- > [1,2,3,4,5,6,7,8,9,10]
+-- 
+-- >>> run =<< enumPure1Chunk [1..1000 :: Int] (joinI $ (I.take 15 ><> I.take 10) I.stream2list)
+-- [1,2,3,4,5,6,7,8,9,10]
 -- 
 (><>) ::
  (Nullable s1, Monad m)

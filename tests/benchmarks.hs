@@ -10,10 +10,11 @@ import Data.Iteratee.ListLike (enumPureNChunk, stream2list, stream2stream)
 import Data.Word
 import Data.Monoid
 import qualified Data.ByteString as BS
+import Control.Applicative
+import Control.DeepSeq
 import Control.Monad.Identity
 import Control.Monad
 import qualified Data.ListLike as LL
-import Control.DeepSeq
 
 import Criterion.Main
 
@@ -31,20 +32,23 @@ data BD a b s (m :: * -> *) = BDIter1 String (a -> b) (Iteratee s m a)
   | BDIterN String Int (a -> b) (Iteratee s m a)
   | BDList String (s -> b) s
 
-id1 name i = BDIter1 name id i
-idN name i = BDIterN name 5 id i
+id1  name i = BDIter1 name id i
+idN  name i = BDIterN name 5 id i
+idNl name i = BDIterN name 1000 id i
 
-makeList name f = BDList name f [1..10000]
+defTotalSize = 10000
+
+makeList name f = BDList name f [1..defTotalSize]
 
 makeBench :: BD n eval [Int] Identity -> Benchmark
 makeBench (BDIter1 n eval i) = bench n $
-  proc eval runIdentity (enumPure1Chunk [1..10000]) i
+  proc eval runIdentity (enumPure1Chunk [1..defTotalSize]) i
 makeBench (BDIterN n csize eval i) = bench n $
-  proc eval runIdentity (enumPureNChunk [1..10000] csize) i
+  proc eval runIdentity (enumPureNChunk [1..defTotalSize] csize) i
 makeBench (BDList n f l) = bench n $ whnf f l
 
 packedBS :: BS.ByteString
-packedBS  = (BS.pack [1..10000])
+packedBS  = (BS.pack [1..defTotalSize])
 
 makeBenchBS (BDIter1 n eval i) = bench n $
   proc eval runIdentity (enumPure1Chunk packedBS) i
@@ -59,9 +63,6 @@ proc :: (Functor m, Monad m)
   -> I.Iteratee s m a
   -> Pure
 proc eval runner enum iter = whnf (eval . runner . (I.run <=< enum)) iter
-
-defaultProc = proc id runIdentity (enumPure1Chunk [1..10000])
-defaultNProc = proc id runIdentity (enumPureNChunk [1..10000] 5)
 
 -- -------------------------------------------------------------
 -- benchmark groups
@@ -79,6 +80,7 @@ lengthbench = makeGroup "length" listBenches
 takebench = makeGroup "take" $ take0 : takeBenches
 takeUpTobench = makeGroup "takeUpTo" takeUpToBenches
 mapbench = makeGroup "map" $ mapBenches
+foldbench = makeGroup "fold" $ foldBenches
 convbench = makeGroup "convStream" convBenches
 miscbench = makeGroup "other" miscBenches
 
@@ -91,13 +93,14 @@ lengthbenchbs = makeGroupBS "length" listBenches
 takebenchbs = makeGroupBS "take" takeBenches
 takeUpTobenchbs = makeGroupBS "takeUpTo" takeUpToBenches
 mapbenchbs = makeGroupBS "map" mapBenches
+foldbenchbs = makeGroupBS "fold" $ foldBenches
 convbenchbs = makeGroupBS "convStream" convBenches
 miscbenchbs = makeGroupBS "other" miscBenches
 
 
-allListBenches = bgroup "list" [listbench, streambench, breakbench, headsbench, dropbench, lengthbench, takebench, takeUpTobench, mapbench, convbench, miscbench]
+allListBenches = bgroup "list" [listbench, streambench, breakbench, headsbench, dropbench, lengthbench, takebench, takeUpTobench, mapbench, foldbench, convbench, miscbench]
 
-allByteStringBenches = bgroup "bytestring" [listbenchbs, streambenchbs, breakbenchbs, headsbenchbs, dropbenchbs, lengthbenchbs, takebenchbs, takeUpTobenchbs, mapbenchbs, convbenchbs, miscbenchbs]
+allByteStringBenches = bgroup "bytestring" [listbenchbs, streambenchbs, breakbenchbs, headsbenchbs, dropbenchbs, lengthbenchbs, takebenchbs, takeUpTobenchbs, mapbenchbs, foldbenchbs, convbenchbs, miscbenchbs]
 
 list0 = makeList "list one go" deepseq
 list1 = BDIter1 "stream2list one go" (flip deepseq ()) stream2list
@@ -171,6 +174,11 @@ map3 = id1 "map head one go" (I.joinI $ I.rigidMapStream id I.head)
 map4 = idN "map head chunked" (I.joinI $ I.rigidMapStream id I.head)
 mapBenches = [map1, map2, map3, map4]
 
+foldB1 = idNl "foldl' sum" (I.foldl' (+) 0)
+foldB2 = idNl "mapReduce foldl' 2 sum" (getSum <$> I.mapReduce 2 (Sum . LL.foldl' (+) 0))
+foldB3 = idNl "mapReduce foldl' 4 sum" (getSum <$> I.mapReduce 4 (Sum . LL.foldl' (+) 0))
+foldBenches = [foldB1, foldB2, foldB3]
+
 conv1 = idN "convStream id head chunked" (I.joinI . I.convStream idChunk $ I.head)
 conv2 = idN "convStream id length chunked" (I.joinI . I.convStream idChunk $ I.length)
 idChunk = I.liftI step
@@ -181,3 +189,6 @@ idChunk = I.liftI step
 convBenches = [conv1, conv2]
 
 instance NFData BS.ByteString where
+
+instance NFData a => NFData (Sum a) where
+  rnf (Sum a) = rnf a

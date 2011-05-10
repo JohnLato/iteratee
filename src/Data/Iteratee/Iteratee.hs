@@ -2,6 +2,7 @@
             ,RankNTypes
             ,FlexibleContexts
             ,ScopedTypeVariables
+            ,BangPatterns
             ,DeriveDataTypeable #-}
 
 -- |Monadic and General Iteratees:
@@ -19,6 +20,7 @@ module Data.Iteratee.Iteratee (
   ,isStreamFinished
   -- ** Chunkwise Iteratees
   ,mapChunksM_
+  ,mapReduce
   -- ** Nested iteratee combinators
   ,convStream
   ,unfoldConvStream
@@ -56,7 +58,9 @@ import Data.Iteratee.Base
 
 import Control.Exception
 import Control.Monad.Trans.Class
+import Control.Parallel
 import Data.Maybe
+import Data.Monoid
 import Data.Typeable
 
 -- exception helpers
@@ -133,7 +137,7 @@ seek o = throwRecoverableErr (toException $ SeekException o) (const identity)
 --   logger = mapChunksM_ (liftIO . putStrLn)
 --
 -- these can be efficiently run in parallel with other iteratees via
--- enumPair.
+-- @Data.Iteratee.ListLike.zip@.
 mapChunksM_ :: (Monad m, Nullable s) => (s -> m b) -> Iteratee s m ()
 mapChunksM_ f = liftI step
   where
@@ -143,6 +147,34 @@ mapChunksM_ f = liftI step
     step s@(EOF _)  = idone () s
 {-# INLINE mapChunksM_ #-}
 
+-- | Perform a parallel map/reduce.  The `bufsize` parameter controls
+-- the maximum number of chunks to read at one time.  A larger bufsize
+-- allows for greater parallelism, but will require more memory.
+-- 
+-- Implementation of `sum`
+-- 
+-- > sum :: (Monad m, LL.ListLike s, Nullable s) => Iteratee s m Int64
+-- > sum = getSum <$> mapReduce 4 (Sum . LL.sum)
+mapReduce ::
+  (Monad m, Nullable s, Monoid b)
+  => Int               -- ^ maximum number of chunks to read
+  -> (s -> b)          -- ^ map function
+  -> Iteratee s m b
+mapReduce bufsize f = liftI (step (0, []))
+ where
+  step a@(!buf,acc) (Chunk xs)
+    | nullC xs = liftI (step a)
+    | buf >= bufsize =
+        let acc'  = mconcat acc
+            b'    = f xs
+        in b' `par` acc' `pseq` liftI (step (0,[b' `mappend` acc']))
+    | otherwise     =
+        let b' = f xs
+        in b' `par` liftI (step (succ buf,b':acc))
+  step (_,acc) s@(EOF Nothing) =
+    idone (mconcat acc) s
+  step acc       (EOF (Just err))  =
+    throwRecoverableErr err (step acc)
 
 -- ---------------------------------------------------
 -- The converters show a different way of composing two iteratees:

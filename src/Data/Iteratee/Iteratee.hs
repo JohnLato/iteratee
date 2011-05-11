@@ -188,6 +188,23 @@ type Enumeratee sFrom sTo (m :: * -> *) a =
 -- The following pattern appears often in Enumeratee code
 {-# INLINE eneeCheckIfDone #-}
 
+-- | Utility function for creating enumeratees.  Typical usage is demonstrated
+-- by the @breakE@ definition.
+-- 
+-- > breakE
+-- >   :: (Monad m, LL.ListLike s el, NullPoint s)
+-- >   => (el -> Bool)
+-- >   -> Enumeratee s s m a
+-- > breakE cpred = eneeCheckIfDone (liftI . step)
+-- >  where
+-- >   step k (Chunk s)
+-- >       | LL.null s  = liftI (step k)
+-- >       | otherwise  = case LL.break cpred s of
+-- >         (str', tail')
+-- >           | LL.null tail' -> eneeCheckIfDone (liftI . step) . k $ Chunk str'
+-- >           | otherwise     -> idone (k $ Chunk str') (Chunk tail')
+-- >   step k stream           =  idone (k stream) stream
+-- 
 eneeCheckIfDone ::
  (Monad m, NullPoint elo) =>
   ((Stream eli -> Iteratee eli m a) -> Iteratee elo m (Iteratee eli m a))

@@ -23,6 +23,7 @@ module Data.Iteratee.Iteratee (
   ,mapReduce
   ,getChunks
   -- ** Nested iteratee combinators
+  ,mapChunks
   ,convStream
   ,unfoldConvStream
   ,joinI
@@ -223,6 +224,19 @@ eneeCheckIfDone f inner = Iteratee $ \od oc ->
       on_cont k Nothing  = runIter (f k) od oc
       on_cont _ (Just e) = runIter (throwErr e) od oc
   in runIter inner on_done on_cont
+
+-- | Convert one stream into another with the supplied mapping function.
+-- This function operates on whole chunks at a time, contrasting to
+-- @mapStream@ which operates on single elements.
+-- 
+-- > unpacker :: Enumeratee B.ByteString [Word8] m a
+-- > unpacker = mapChunks B.unpack
+-- 
+mapChunks :: (Monad m, NullPoint s) => (s -> s') -> Enumeratee s s' m a
+mapChunks f = eneeCheckIfDone (liftI . step)
+ where
+  step k (Chunk xs)     = eneeCheckIfDone (liftI . step) . k . Chunk $ f xs
+  step k str@(EOF mErr) = idone (k $ EOF mErr) str
 
 
 -- |Convert one stream into another, not necessarily in lockstep.

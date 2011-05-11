@@ -21,6 +21,7 @@ module Data.Iteratee.Iteratee (
   -- ** Chunkwise Iteratees
   ,mapChunksM_
   ,mapReduce
+  ,getChunks
   -- ** Nested iteratee combinators
   ,convStream
   ,unfoldConvStream
@@ -135,7 +136,7 @@ seek o = throwRecoverableErr (toException $ SeekException o) (const identity)
 -- | Map a monadic function over the chunks of the stream and ignore the
 -- result.  Useful for creating efficient monadic iteratee consumers, e.g.
 -- 
---   logger = mapChunksM_ (liftIO . putStrLn)
+-- >  logger = mapChunksM_ (liftIO . putStrLn)
 -- 
 -- these can be efficiently run in parallel with other iteratees via
 -- @Data.Iteratee.ListLike.zip@.
@@ -176,6 +177,14 @@ mapReduce bufsize f = liftI (step (0, []))
     idone (mconcat acc) s
   step acc       (EOF (Just err))  =
     throwRecoverableErr err (step acc)
+
+getChunks :: (Monad m, Nullable s) => Iteratee s m [s]
+getChunks = liftI (step [])
+ where
+  step acc (Chunk xs)
+    | nullC xs = liftI (step acc)
+    | True     = liftI (step (xs:acc))
+  step acc stream     = idone (reverse acc) stream
 
 -- ---------------------------------------------------
 -- The converters show a different way of composing two iteratees:

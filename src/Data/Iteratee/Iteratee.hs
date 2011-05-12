@@ -21,6 +21,7 @@ module Data.Iteratee.Iteratee (
   -- ** Chunkwise Iteratees
   ,mapChunksM_
   ,mapReduce
+  ,getChunk
   ,getChunks
   -- ** Nested iteratee combinators
   ,mapChunks
@@ -179,6 +180,17 @@ mapReduce bufsize f = liftI (step (0, []))
   step acc       (EOF (Just err))  =
     throwRecoverableErr err (step acc)
 
+-- | Get the current chunk from the stream.
+getChunk :: (Monad m, Nullable s, NullPoint s) => Iteratee s m s
+getChunk = liftI step
+ where
+  step (Chunk xs)
+    | nullC xs  = liftI step
+    | otherwise = idone xs $ Chunk empty
+  step (EOF Nothing)  = throwErr $ toException EofException
+  step (EOF (Just e)) = throwErr e
+
+-- | Get a list of all chunks from the stream.
 getChunks :: (Monad m, Nullable s) => Iteratee s m [s]
 getChunks = liftI (step [])
  where

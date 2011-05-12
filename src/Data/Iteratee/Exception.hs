@@ -55,6 +55,8 @@ module Data.Iteratee.Exception (
   ,enStrExc
   ,iterStrExc
   ,wrapIterExc
+  ,iterExceptionToException
+  ,iterExceptionFromException
 )
 where
 

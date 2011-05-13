@@ -386,7 +386,14 @@ enumPure1Chunk str iter = runIter iter idoneM onCont
 -- | Enumerate chunks from a list
 -- 
 enumList :: (Monad m) => [s] -> Enumerator s m a
-enumList chunks = foldr (>>>) return (map enumPure1Chunk chunks)
+enumList chunks = go chunks
+ where
+  go [] i = return i
+  go xs' i = runIter i idoneM (onCont xs')
+   where
+    onCont (x:xs) k Nothing = go xs . k $ Chunk x
+    onCont _ _ (Just e) = return $ throwErr e
+    onCont _ k Nothing  = return $ icont k Nothing
 
 -- | Checks if an iteratee has finished.
 -- 

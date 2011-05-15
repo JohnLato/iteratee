@@ -189,6 +189,7 @@ getChunk = liftI step
     | otherwise = idone xs $ Chunk empty
   step (EOF Nothing)  = throwErr $ toException EofException
   step (EOF (Just e)) = throwErr e
+{-# INLINE getChunk #-}
 
 -- | Get a list of all chunks from the stream.
 getChunks :: (Monad m, Nullable s) => Iteratee s m [s]
@@ -198,6 +199,7 @@ getChunks = liftI (step [])
     | nullC xs = liftI (step acc)
     | True     = liftI (step (xs:acc))
   step acc stream     = idone (reverse acc) stream
+{-# INLINE getChunks #-}
 
 -- ---------------------------------------------------
 -- The converters show a different way of composing two iteratees:
@@ -249,6 +251,7 @@ mapChunks f = eneeCheckIfDone (liftI . step)
  where
   step k (Chunk xs)     = eneeCheckIfDone (liftI . step) . k . Chunk $ f xs
   step k str@(EOF mErr) = idone (k $ EOF mErr) str
+{-# INLINE mapChunks #-}
 
 
 -- |Convert one stream into another, not necessarily in lockstep.
@@ -394,6 +397,7 @@ enumList chunks = go chunks
     onCont (x:xs) k Nothing = go xs . k $ Chunk x
     onCont _ _ (Just e) = return $ throwErr e
     onCont _ k Nothing  = return $ icont k Nothing
+{-# INLINABLE enumList #-}
 
 -- | Checks if an iteratee has finished.
 -- 

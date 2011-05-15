@@ -81,7 +81,7 @@ library
   other-modules:
     Data.Iteratee.IO.Base
 
-  ghc-options:   -Wall
+  ghc-options:   -Wall -O2
   if impl(ghc >= 6.8)
     ghc-options: -fwarn-tabs
 

@@ -11,6 +11,8 @@ module Data.Iteratee.IO.Fd(
   enumFd
   ,enumFdCatch
   ,enumFdRandom
+  ,enumFile
+  ,enumFileRandom
   -- * Iteratee drivers
   ,fileDriverFd
   ,fileDriverRandomFd
@@ -129,5 +131,30 @@ fileDriverRandomFd
      -> FilePath
      -> m a
 fileDriverRandomFd = fileDriver enumFdRandom
+
+enumFile' :: (NullPoint s, MonadCatchIO m, ReadableChunk s el) =>
+  (Int -> Fd -> Enumerator s m a)
+  -> Int -- ^Buffer size
+  -> FilePath
+  -> Enumerator s m a
+enumFile' enumf bufsize filepath iter = CIO.bracket
+  (liftIO $ openFd filepath ReadOnly Nothing defaultFileFlags)
+  (liftIO . closeFd)
+  (flip (enumf bufsize) iter)
+
+enumFile ::
+  (NullPoint s, MonadCatchIO m, ReadableChunk s el)
+  => Int                 -- ^Buffer size
+  -> FilePath
+  -> Enumerator s m a
+enumFile = enumFile' enumFd
+
+enumFileRandom ::
+  (NullPoint s, MonadCatchIO m, ReadableChunk s el)
+  => Int                 -- ^Buffer size
+  -> FilePath
+  -> Enumerator s m a
+enumFileRandom = enumFile' enumFdRandom
+
 
 #endif

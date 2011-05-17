@@ -234,10 +234,10 @@ eneeCheckIfDone ::
   ((Stream eli -> Iteratee eli m a) -> Iteratee elo m (Iteratee eli m a))
   -> Enumeratee elo eli m a
 eneeCheckIfDone f inner = Iteratee $ \od oc -> 
-  let on_done x s = od (idone x s) (Chunk empty)
-      on_cont k Nothing  = runIter (f k) od oc
-      on_cont _ (Just e) = runIter (throwErr e) od oc
-  in runIter inner on_done on_cont
+  let onDone x s = od (idone x s) (Chunk empty)
+      onCont k Nothing  = runIter (f k) od oc
+      onCont _ (Just e) = runIter (throwErr e) od oc
+  in runIter inner onDone onCont
 
 -- | Convert one stream into another with the supplied mapping function.
 -- This function operates on whole chunks at a time, contrasting to
@@ -299,11 +299,12 @@ joinI ::
   -> Iteratee s m a
 joinI = (>>=
   \inner -> Iteratee $ \od oc ->
-  let on_done  x _        = od x (Chunk empty)
-      on_cont  k Nothing  = runIter (k (EOF Nothing)) on_done on_cont'
-      on_cont  _ (Just e) = runIter (throwErr e) od oc
-      on_cont' _ e        = runIter (throwErr (fromMaybe excDivergent e)) od oc
-  in runIter inner on_done on_cont)
+  let onDone  x _        = od x (Chunk empty)
+      onCont  k Nothing  = runIter (k (EOF Nothing)) onDone onCont'
+      onCont  _ (Just e) = runIter (throwErr e) od oc
+      onCont' _ e        = runIter (throwErr (fromMaybe excDivergent e)) od oc
+  in runIter inner onDone onCont)
+{-# INLINE joinI #-}
 
 -- | Lift an iteratee inside a monad to an iteratee.
 joinIM :: (Monad m) => m (Iteratee s m a) -> Iteratee s m a
@@ -447,12 +448,12 @@ enumFromCallbackCatch ::
   -> Enumerator s m a
 enumFromCallbackCatch c handler = loop
   where
-    loop st iter = runIter iter idoneM (on_cont st)
-    on_cont st k Nothing = c st >>=
+    loop st iter = runIter iter idoneM (onCont st)
+    onCont st k Nothing = c st >>=
         either (return . k . EOF . Just) (uncurry check)
       where
         check (b,st') = if b then loop st' . k . Chunk else return . k . Chunk
-    on_cont st k j@(Just e) = case fromException e of
+    onCont st k j@(Just e) = case fromException e of
       Just e' -> handler e' >>= maybe (loop st . k $ Chunk empty)
                                  (return . icont k . Just) . fmap toException
       Nothing -> return (icont k j)

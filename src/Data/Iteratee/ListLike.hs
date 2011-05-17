@@ -347,6 +347,7 @@ takeUpTo i iter
     step _ k stream         = idone (k stream) stream
 {-# SPECIALIZE takeUpTo :: Monad m => Int -> Enumeratee [el] [el] m a #-}
 {-# SPECIALIZE takeUpTo :: Monad m => Int -> Enumeratee B.ByteString B.ByteString m a #-}
+{-# INLINABLE takeUpTo #-}
 
 
 -- |Map the stream: another iteratee transformer

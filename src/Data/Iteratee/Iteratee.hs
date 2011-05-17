@@ -286,6 +286,13 @@ unfoldConvStream f acc0 = eneeCheckIfDone (check acc0)
                     eneeCheckIfDone (check acc') . k . Chunk $ s'
 
 
+-- | Collapse a nested iteratee.  The inner iteratee is terminated by @EOF@.
+--   Errors are propagated through the result.
+-- 
+--  The stream resumes from the point of the outer iteratee; any remaining
+--  input in the inner iteratee will be lost.
+--  Differs from 'Control.Monad.join' in that the inner iteratee is terminated,
+--  and may have a different stream type than the result.
 joinI ::
  (Monad m, Nullable s) =>
   Iteratee s m (Iteratee s' m a)
@@ -298,6 +305,7 @@ joinI = (>>=
       on_cont' _ e        = runIter (throwErr (fromMaybe excDivergent e)) od oc
   in runIter inner on_done on_cont)
 
+-- | Lift an iteratee inside a monad to an iteratee.
 joinIM :: (Monad m) => m (Iteratee s m a) -> Iteratee s m a
 joinIM mIter = Iteratee $ \od oc -> mIter >>= \iter -> runIter iter od oc
 

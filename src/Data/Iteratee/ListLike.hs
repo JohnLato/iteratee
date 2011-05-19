@@ -489,25 +489,26 @@ groupBy same iinit = liftI $ go iinit LL.empty
 -- > -- 'ileaveStream logger' and work outwards.
 -- > run =<< enumFile 10 "file1" (joinI $ enumLinesBS $
 -- >           ( enumFile 10 "file2" . joinI . enumLinesBS $ joinI
--- >                 (ileaveStream logger)) >>= run)
--- > 
--- > ileaveStream = convStream ileaveLines
+-- >                 (ileaveLines logger)) >>= run)
 -- > 
 -- > ileaveLines :: (Functor m, Monad m)
--- >   => Iteratee [ByteString] (Iteratee [ByteString] m) [ByteString]
+-- >   => Enumeratee [ByteString] [ByteString] (Iteratee [ByteString] m)
+-- >        [ByteString]
 -- > ileaveLines = merge (\l1 l2 ->
--- >    [B.pack "f1:\n\t"
--- >             ,l1
--- >             ,B.pack "f2:\n\t"
--- >             ,l2 ]
+-- >    [B.pack "f1:\n\t" ,l1 ,B.pack "f2:\n\t" ,l2 ]
 -- > 
 -- > 
 -- 
 merge ::
-  (Monad m, LL.ListLike s el, Nullable s, Functor m)
-  => (el -> el -> b)
-  -> Iteratee s (Iteratee s m) b
-merge f = f <$> lift head <*> head
+  (LL.ListLike s1 el1
+   ,LL.ListLike s2 el2
+   ,Nullable s1
+   ,Nullable s2
+   ,Monad m
+   ,Functor m)
+  => (el1 -> el2 -> b)
+  -> Enumeratee s2 b (Iteratee s1 m) a
+merge f = convStream $ f <$> lift head <*> head
 
 -- ------------------------------------------------------------------------
 -- Folds

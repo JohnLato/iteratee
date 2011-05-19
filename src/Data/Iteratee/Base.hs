@@ -216,11 +216,7 @@ mapIteratee f = lift . f . run
 -- > loggerG = ilift liftIO logger
 -- 
 -- A more complex example would involve lifting an iteratee to work with
--- interleaved streams:
--- 
--- > run =<< (enumFile 10 "file1" $ enumFile 10 "file2"
--- >       (joinI . merge $ ilift lift loggerG) >>= run)
--- 
+-- interleaved streams.  See the example at 'Data.Iteratee.ListLike.merge'.
 ilift ::
   (Monad m, Monad n)
   => (forall r. m r -> n r)

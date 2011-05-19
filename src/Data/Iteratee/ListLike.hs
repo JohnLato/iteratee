@@ -33,6 +33,7 @@ module Data.Iteratee.ListLike (
   ,filter
   ,group
   ,groupBy
+  ,merge
   -- ** Folds
   ,foldl
   ,foldl'
@@ -474,6 +475,39 @@ groupBy same iinit = liftI $ go iinit LL.empty
                     x = LL.head l
                     xs = LL.tail l
 {-# INLINE groupBy #-}
+
+-- | Merge offers another way to nest iteratees: as a monad stack.
+-- This allows for the possibility of interleaving data from multiple
+-- streams.
+-- 
+-- > -- print each element from a stream of lines.
+-- > logger :: (MonadIO m) => Iteratee [ByteString] m ()
+-- > logger = mapM_ (liftIO . putStrLn . B.unpack)
+-- >
+-- > -- combine alternating lines from two sources
+-- > -- To see how this was derived, follow the types from
+-- > -- 'ileaveStream logger' and work outwards.
+-- > run =<< enumFile 10 "file1" (joinI $ enumLinesBS $
+-- >           ( enumFile 10 "file2" . joinI . enumLinesBS $ joinI
+-- >                 (ileaveStream logger)) >>= run)
+-- > 
+-- > ileaveStream = convStream ileaveLines
+-- > 
+-- > ileaveLines :: (Functor m, Monad m)
+-- >   => Iteratee [ByteString] (Iteratee [ByteString] m) [ByteString]
+-- > ileaveLines = merge (\l1 l2 ->
+-- >    [B.pack "f1:\n\t"
+-- >             ,l1
+-- >             ,B.pack "f2:\n\t"
+-- >             ,l2 ]
+-- > 
+-- > 
+-- 
+merge ::
+  (Monad m, LL.ListLike s el, Nullable s, Functor m)
+  => (el -> el -> b)
+  -> Iteratee s (Iteratee s m) b
+merge f = f <$> lift head <*> head
 
 -- ------------------------------------------------------------------------
 -- Folds

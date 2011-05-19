@@ -44,6 +44,7 @@ module Data.Iteratee.Iteratee (
   -- ** Enumerator Combinators
   ,(>>>)
   ,eneeCheckIfDone
+  ,mergeEnums
   -- ** Enumeratee Combinators
   ,(><>)
   ,(<><)
@@ -384,6 +385,18 @@ f ><> g = joinI . f . g
   -> (forall x. Enumeratee s1 s2 m x)
   -> Enumeratee s1 s3 m a
 f <>< g = joinI . g . f
+
+-- | Combine enumeration over two streams.  The merging enumeratee would
+-- typically be the result of 'Data.Iteratee.ListLike.merge' or
+-- 'Data.Iteratee.ListLike.mergeByChunks' (see @merge@ for example).
+mergeEnums :: 
+  (Nullable s2, Nullable s1, Monad m)
+  => Enumerator s1 m a                   -- ^ inner enumerator
+  -> Enumerator s2 (Iteratee s1 m) a     -- ^ outer enumerator
+  -> Enumeratee s2 s1 (Iteratee s1 m) a  -- ^ merging enumeratee
+  -> Enumerator s1 m a
+mergeEnums e1 e2 etee i = e1 $ e2 (joinI . etee $ ilift lift i) >>= run
+{-# INLINE mergeEnums #-}
 
 -- | The pure 1-chunk enumerator
 -- 

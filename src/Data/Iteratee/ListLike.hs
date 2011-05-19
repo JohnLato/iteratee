@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleContexts, BangPatterns #-}
+{-# LANGUAGE FlexibleContexts, BangPatterns, TupleSections #-}
 
 -- |Monadic Iteratees:
 -- incremental input parsers, processors and transformers
@@ -34,6 +34,7 @@ module Data.Iteratee.ListLike (
   ,group
   ,groupBy
   ,merge
+  ,mergeByChunks
   -- ** Folds
   ,foldl
   ,foldl'
@@ -70,7 +71,7 @@ import qualified Data.ListLike.FoldableLL as FLL
 import Data.Iteratee.Iteratee
 import Data.Monoid
 import Data.Maybe (catMaybes)
-import Control.Applicative
+import Control.Applicative ((<$>), (<*>), (<*))
 import Control.Monad (liftM, liftM2, mplus, (<=<))
 import Control.Monad.Trans.Class
 import Data.Word (Word8)
@@ -281,6 +282,19 @@ chunkLength = liftI step
   step s@(Chunk xs) = idone (Just $ LL.length xs) s
   step stream       = idone Nothing stream
 {-# INLINE chunkLength #-}
+
+-- | Take @n@ elements from the current chunk, or the whole chunk if
+-- @n@ is greater.
+takeFromChunk ::
+  (Monad m, Nullable s, LL.ListLike s el)
+  => Int
+  -> Iteratee s m s
+takeFromChunk n | n <= 0 = return empty
+takeFromChunk n = liftI step
+ where
+  step (Chunk xs) = let (h,t) = LL.splitAt n xs in idone h $ Chunk t
+  step stream     = idone empty stream
+{-# INLINE takeFromChunk #-}
 
 -- ---------------------------------------------------
 -- The converters show a different way of composing two iteratees:
@@ -509,6 +523,41 @@ merge ::
   => (el1 -> el2 -> b)
   -> Enumeratee s2 b (Iteratee s1 m) a
 merge f = convStream $ f <$> lift head <*> head
+{-# INLINE merge #-}
+
+-- | A version of merge which operates on chunks instead of elements.
+-- 
+-- mergeByChunks offers more control than 'merge'.  'merge' terminates
+-- when the first stream terminates, however mergeByChunks will continue
+-- until both streams are exhausted.
+-- 
+-- 'mergeByChunks' guarantees that both chunks passed to the merge function
+-- will have the same length, although that length may vary between calls.
+mergeByChunks ::
+  (Nullable c2, Nullable c1
+  ,NullPoint c2, NullPoint c1
+  ,LL.ListLike c1 el1, LL.ListLike c2 el2
+  ,Functor m, Monad m)
+  => (c1 -> c2 -> c3)  -- ^ merge function
+  -> (c1 -> c3)
+  -> (c2 -> c3)
+  -> Enumeratee c2 c3 (Iteratee c1 m) a
+mergeByChunks f f1 f2 = unfoldConvStream iter (0 :: Int)
+ where
+  iter 1 = (1,) . f1 <$> lift getChunk
+  iter 2 = (2,) . f2 <$> getChunk
+  iter _ = do
+    ml1 <- lift chunkLength
+    ml2 <- chunkLength
+    case (ml1, ml2) of
+      (Just l1, Just l2) -> do
+        let tval = min l1 l2
+        c1 <- lift $ takeFromChunk tval
+        c2 <- takeFromChunk tval
+        return $ (0, f c1 c2)
+      (Just _, Nothing) -> iter 1
+      (Nothing, _)      -> iter 2
+{-# INLINE mergeByChunks #-}
 
 -- ------------------------------------------------------------------------
 -- Folds

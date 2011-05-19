@@ -23,6 +23,7 @@ module Data.Iteratee.ListLike (
   ,peek
   ,roll
   ,length
+  ,chunkLength
   -- ** Nested iteratee combinators
   ,breakE
   ,take
@@ -258,7 +259,8 @@ dropWhile p = liftI step
 {-# INLINE dropWhile #-}
 
 
--- |Return the total length of the remaining part of the stream.
+-- | Return the total length of the remaining part of the stream.
+-- 
 -- This forces evaluation of the entire stream.
 -- 
 -- The analogue of @List.length@
@@ -269,6 +271,15 @@ length = liftI (step 0)
     step !i stream     = idone i stream
 {-# INLINE length #-}
 
+-- | Get the length of the current chunk, or Nothing if EOF.
+-- 
+-- This function consumes no input.
+chunkLength :: (Monad m, LL.ListLike s el) => Iteratee s m (Maybe Int)
+chunkLength = liftI step
+ where
+  step s@(Chunk xs) = idone (Just $ LL.length xs) s
+  step stream       = idone Nothing stream
+{-# INLINE chunkLength #-}
 
 -- ---------------------------------------------------
 -- The converters show a different way of composing two iteratees:

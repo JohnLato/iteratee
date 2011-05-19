@@ -17,6 +17,7 @@ module Data.Iteratee.Base (
   ,run
   ,tryRun
   ,mapIteratee
+  ,ilift
   -- ** Creating Iteratees
   ,idone
   ,icont
@@ -165,8 +166,8 @@ instance (MonadIO m, Nullable s, NullPoint s) => MonadIO (Iteratee s m) where
 instance (MonadCatchIO m, Nullable s, NullPoint s) =>
   MonadCatchIO (Iteratee s m) where
     m `catch` f = Iteratee $ \od oc -> runIter m od oc `catch` (\e -> runIter (f e) od oc)
-    block       = mapIteratee block
-    unblock     = mapIteratee unblock
+    block       = ilift block
+    unblock     = ilift unblock
 
 -- |Send 'EOF' to the @Iteratee@ and disregard the unconsumed part of the
 -- stream.  If the iteratee is in an exception state, that exception is
@@ -202,3 +203,30 @@ mapIteratee :: (NullPoint s, Monad n, Monad m) =>
   -> Iteratee s m a
   -> Iteratee s n b
 mapIteratee f = lift . f . run
+{-# DEPRECATED mapIteratee "This function will be removed, compare to 'ilift'" #-}
+
+-- | Lift a computation in the inner monad of an iteratee.
+-- 
+-- A simple use would be to lift a logger iteratee to a monad stack.
+-- 
+-- > logger :: Iteratee String IO ()
+-- > logger = mapChunksM_ putStrLn
+-- > 
+-- > loggerG :: MonadIO m => Iteratee String m ()
+-- > loggerG = ilift liftIO logger
+-- 
+-- A more complex example would involve lifting an iteratee to work with
+-- interleaved streams:
+-- 
+-- > run =<< (enumFile 10 "file1" $ enumFile 10 "file2"
+-- >       (joinI . merge $ ilift lift loggerG) >>= run)
+-- 
+ilift ::
+  (Monad m, Monad n)
+  => (forall r. m r -> n r)
+  -> Iteratee s m a
+  -> Iteratee s n a
+ilift f i = Iteratee $  \od oc ->
+  let onDone a str  = return $ Left (a,str)
+      onCont k mErr = return $ Right (ilift f . k, mErr)
+  in f (runIter i onDone onCont) >>= either (uncurry od) (uncurry oc)

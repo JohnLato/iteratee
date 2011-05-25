@@ -24,6 +24,7 @@ module Data.Iteratee.ListLike (
   ,roll
   ,length
   ,chunkLength
+  ,takeFromChunk
   -- ** Nested iteratee combinators
   ,breakE
   ,take

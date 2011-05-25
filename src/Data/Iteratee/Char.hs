@@ -83,12 +83,12 @@ enumLines = convStream getter
     step (Chunk xs)
       | LL.null xs = getter
       | lChar xs   = idone (LL.lines xs) mempty
-      | True       = icont (step' xs) Nothing
+      | otherwise  = icont (step' xs) Nothing
     step _str      = getter
     step' xs (Chunk ys)
       | LL.null ys = icont (step' xs) Nothing
       | lChar ys   = idone (LL.lines . mappend xs $ ys) mempty
-      | True       = let w' = LL.lines $ mappend xs ys
+      | otherwise  = let w' = LL.lines $ mappend xs ys
                          ws = init w'
                          ck = last w'
                      in idone ws (Chunk ck)
@@ -114,12 +114,12 @@ enumWordsBS iter = convStream getter iter
     step (Chunk xs)
       | BC.null xs = getter
       | lChar xs   = idone (BC.words xs) (Chunk BC.empty)
-      | True       = icont (step' xs) Nothing
+      | otherwise  = icont (step' xs) Nothing
     step str       = idone mempty str
     step' xs (Chunk ys)
       | BC.null ys = icont (step' xs) Nothing
       | lChar ys   = idone (BC.words . BC.append xs $ ys) mempty
-      | True       = let w' = BC.words . BC.append xs $ ys
+      | otherwise  = let w' = BC.words . BC.append xs $ ys
                          ws = init w'
                          ck = last w'
                      in idone ws (Chunk ck)
@@ -138,12 +138,12 @@ enumLinesBS = convStream getter
     step (Chunk xs)
       | BC.null xs = getter
       | lChar xs   = idone (BC.lines xs) (Chunk BC.empty)
-      | True       = icont (step' xs) Nothing
+      | otherwise  = icont (step' xs) Nothing
     step str       = idone mempty str
     step' xs (Chunk ys)
       | BC.null ys = icont (step' xs) Nothing
       | lChar ys   = idone (BC.lines . BC.append xs $ ys) mempty
-      | True       = let w' = BC.lines $ BC.append xs ys
+      | otherwise  = let w' = BC.lines $ BC.append xs ys
                          ws = init w'
                          ck = last w'
                      in idone ws (Chunk ck)

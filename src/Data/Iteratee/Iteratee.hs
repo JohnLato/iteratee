@@ -147,9 +147,9 @@ mapChunksM_ :: (Monad m, Nullable s) => (s -> m b) -> Iteratee s m ()
 mapChunksM_ f = liftI step
   where
     step (Chunk xs)
-      | nullC xs = liftI step
-      | True     = lift (f xs) >> liftI step
-    step s@(EOF _)  = idone () s
+      | nullC xs   = liftI step
+      | otherwise  = lift (f xs) >> liftI step
+    step s@(EOF _) = idone () s
 {-# INLINE mapChunksM_ #-}
 
 -- | Perform a parallel map/reduce.  The `bufsize` parameter controls
@@ -197,9 +197,9 @@ getChunks :: (Monad m, Nullable s) => Iteratee s m [s]
 getChunks = liftI (step [])
  where
   step acc (Chunk xs)
-    | nullC xs = liftI (step acc)
-    | True     = liftI (step (xs:acc))
-  step acc stream     = idone (reverse acc) stream
+    | nullC xs    = liftI (step acc)
+    | otherwise   = liftI (step (xs:acc))
+  step acc stream = idone (reverse acc) stream
 {-# INLINE getChunks #-}
 
 -- ---------------------------------------------------

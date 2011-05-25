@@ -85,8 +85,8 @@ isFinished :: (Monad m, Nullable s) => Iteratee s m Bool
 isFinished = liftI check
   where
   check c@(Chunk xs)
-    | nullC xs     = liftI check
-    | True        = idone False c
+    | nullC xs    = liftI check
+    | otherwise   = idone False c
   check s@(EOF _) = idone True s
 {-# INLINE isFinished #-}
 
@@ -100,8 +100,8 @@ stream2list = liftI (step [])
   where
     step acc (Chunk ls)
       | nullC ls  = liftI (step acc)
-      | True     = liftI (step (acc ++ LL.toList ls))
-    step acc str = idone acc str
+      | otherwise = liftI (step (acc ++ LL.toList ls))
+    step acc str  = idone acc str
 {-# INLINE stream2list #-}
 
 -- |Read a stream to the end and return all of its elements as a stream.
@@ -111,8 +111,8 @@ stream2stream = icont (step mempty) Nothing
   where
     step acc (Chunk ls)
       | nullC ls   = icont (step acc) Nothing
-      | True      = icont (step (acc `mappend` ls)) Nothing
-    step acc str  = idone acc str
+      | otherwise  = icont (step (acc `mappend` ls)) Nothing
+    step acc str   = idone acc str
 {-# INLINE stream2stream #-}
 
 
@@ -136,10 +136,10 @@ break cpred = icont (step mempty) Nothing
   where
     step bfr (Chunk str)
       | LL.null str       =  icont (step bfr) Nothing
-      | True              =  case LL.break cpred str of
+      | otherwise         =  case LL.break cpred str of
         (str', tail')
           | LL.null tail' -> icont (step (bfr `mappend` str)) Nothing
-          | True          -> idone (bfr `mappend` str') (Chunk tail')
+          | otherwise     -> idone (bfr `mappend` str') (Chunk tail')
     step bfr stream       =  idone bfr stream
 {-# INLINE break #-}
 
@@ -153,7 +153,7 @@ head = liftI step
   where
   step (Chunk vec)
     | LL.null vec  = icont step Nothing
-    | True         = idone (LL.head vec) (Chunk $ LL.tail vec)
+    | otherwise    = idone (LL.head vec) (Chunk $ LL.tail vec)
   step stream      = icont step (Just (setEOF stream))
 {-# INLINE head #-}
 
@@ -184,8 +184,8 @@ heads st | nullC st = return 0
 heads st = loop 0 st
   where
   loop cnt xs
-    | nullC xs = return cnt
-    | True     = liftI (step cnt xs)
+    | nullC xs  = return cnt
+    | otherwise = liftI (step cnt xs)
   step cnt str (Chunk xs) | nullC xs  = liftI (step cnt str)
   step cnt str stream     | nullC str = idone cnt stream
   step cnt str s@(Chunk xs) =
@@ -205,7 +205,7 @@ peek = liftI step
   where
     step s@(Chunk vec)
       | LL.null vec = liftI step
-      | True        = idone (Just $ LL.head vec) s
+      | otherwise   = idone (Just $ LL.head vec) s
     step stream     = idone Nothing stream
 {-# INLINE peek #-}
 
@@ -224,7 +224,7 @@ roll t d | t > d  = liftI step
       | LL.length vec >= t =
           idone (LL.singleton $ LL.take t vec) mempty <* drop (d-LL.length vec)
       | LL.null vec        = liftI step
-      | True               = liftI (step' vec)
+      | otherwise          = liftI (step' vec)
     step stream            = idone LL.empty stream
     step' v1 (Chunk vec)   = step . Chunk $ v1 `mappend` vec
     step' v1 stream        = idone (LL.singleton v1) stream
@@ -242,7 +242,7 @@ drop n' = liftI (step n')
   where
     step n (Chunk str)
       | LL.length str < n = liftI (step (n - LL.length str))
-      | True              = idone () (Chunk (LL.drop n str))
+      | otherwise         = idone () (Chunk (LL.drop n str))
     step _ stream         = idone () stream
 {-# INLINE drop #-}
 
@@ -254,7 +254,7 @@ dropWhile p = liftI step
   where
     step (Chunk str)
       | LL.null left = liftI step
-      | True         = idone () (Chunk left)
+      | otherwise    = idone () (Chunk left)
       where
         left = LL.dropWhile p str
     step stream      = idone () stream
@@ -329,8 +329,8 @@ breakE cpred = eneeCheckIfDone (liftI . step)
 -- The analogue of @List.take@
 take :: (Monad m, Nullable s, LL.ListLike s el) => Int -> Enumeratee s s m a
 take n' iter
- | n' <= 0 = return iter
- | True    = Iteratee $ \od oc -> runIter iter (on_done od oc) (on_cont od oc)
+ | n' <= 0   = return iter
+ | otherwise = Iteratee $ \od oc -> runIter iter (on_done od oc) (on_cont od oc)
   where
     on_done od oc x _ = runIter (drop n' >> return (return x)) od oc
     on_cont od oc k Nothing = if n' == 0 then od (liftI k) (Chunk mempty)
@@ -339,7 +339,7 @@ take n' iter
     step n k (Chunk str)
       | LL.null str        = liftI (step n k)
       | LL.length str <= n = take (n - LL.length str) $ k (Chunk str)
-      | True               = idone (k (Chunk s1)) (Chunk s2)
+      | otherwise          = idone (k (Chunk s1)) (Chunk s2)
       where (s1, s2) = LL.splitAt n str
     step _n k stream       = idone (k stream) stream
 {-# SPECIALIZE take :: Monad m => Int -> Enumeratee [el] [el] m a #-}
@@ -389,13 +389,13 @@ takeUpTo i iter
          -- the outer iteratee is always complete at this stage, although
          -- the inner may not be.
          let (s1, s2) = LL.splitAt n str
-         in Iteratee $ \od' oc' -> do
-              res <- runIter (k (Chunk s1)) (\a s -> return $ Left (a,s))
-                                            (\k e -> return $ Right (k,e))
+         in Iteratee $ \od' _ -> do
+              res <- runIter (k (Chunk s1)) (\a s  -> return $ Left  (a, s))
+                                            (\k' e -> return $ Right (k',e))
               case res of
                 Left (a,Chunk s1') -> od' (return a)
                                           (Chunk $ s1' `LL.append` s2)
-                Left (a,str)       -> od' (return a) (Chunk s2)
+                Left  (a,s')       -> od' (idone a s') (Chunk s2)
                 Right (k',e)       -> od' (icont k' e) (Chunk s2)
     step _ k stream       = idone (k stream) stream
 {-# SPECIALIZE takeUpTo :: Monad m => Int -> Enumeratee [el] [el] m a #-}
@@ -421,7 +421,7 @@ mapStream f = eneeCheckIfDone (liftI . step)
   where
     step k (Chunk xs)
       | LL.null xs = liftI (step k)
-      | True       = mapStream f $ k (Chunk $ lMap f xs)
+      | otherwise  = mapStream f $ k (Chunk $ lMap f xs)
     step k s       = idone (liftI k) s
 {-# SPECIALIZE mapStream :: Monad m => (el -> el') -> Enumeratee [el] [el'] m a #-}
 
@@ -438,7 +438,7 @@ rigidMapStream f = eneeCheckIfDone (liftI . step)
   where
     step k (Chunk xs)
       | LL.null xs = liftI (step k)
-      | True       = rigidMapStream f $ k (Chunk $ LL.rigidMap f xs)
+      | otherwise  = rigidMapStream f $ k (Chunk $ LL.rigidMap f xs)
     step k s       = idone (liftI k) s
 {-# SPECIALIZE rigidMapStream :: Monad m => (el -> el) -> Enumeratee [el] [el] m a #-}
 {-# SPECIALIZE rigidMapStream :: Monad m => (Word8 -> Word8) -> Enumeratee B.ByteString B.ByteString m a #-}
@@ -457,7 +457,7 @@ filter p = convStream f'
     f' = icont step Nothing
     step (Chunk xs)
       | LL.null xs = f'
-      | True       = idone (LL.filter p xs) mempty
+      | otherwise  = idone (LL.filter p xs) mempty
     step _ = f'
 {-# INLINE filter #-}
 
@@ -581,7 +581,7 @@ mergeByChunks f f1 f2 = unfoldConvStream iter (0 :: Int)
         let tval = min l1 l2
         c1 <- lift $ takeFromChunk tval
         c2 <- takeFromChunk tval
-        return $ (0, f c1 c2)
+        return (0, f c1 c2)
       (Just _, Nothing) -> iter 1
       (Nothing, _)      -> iter 2
 {-# INLINE mergeByChunks #-}
@@ -601,7 +601,7 @@ foldl f i = liftI (step i)
   where
     step acc (Chunk xs)
       | LL.null xs  = liftI (step acc)
-      | True   = liftI (step $ FLL.foldl f acc xs)
+      | otherwise   = liftI (step $ FLL.foldl f acc xs)
     step acc stream = idone acc stream
 {-# INLINE foldl #-}
 
@@ -619,7 +619,7 @@ foldl' f i = liftI (step i)
   where
     step acc (Chunk xs)
       | LL.null xs = liftI (step acc)
-      | True       = liftI (step $! FLL.foldl' f acc xs)
+      | otherwise  = liftI (step $! FLL.foldl' f acc xs)
     step acc stream = idone acc stream
 {-# INLINE foldl' #-}
 
@@ -636,7 +636,7 @@ foldl1 f = liftI step
     step (Chunk xs)
     -- After the first chunk, just use regular foldl.
       | LL.null xs = liftI step
-      | True       = foldl f $ FLL.foldl1 f xs
+      | otherwise  = foldl f $ FLL.foldl1 f xs
     step stream    = icont step (Just (setEOF stream))
 {-# INLINE foldl1 #-}
 
@@ -651,7 +651,7 @@ foldl1' f = liftI step
     step (Chunk xs)
     -- After the first chunk, just use regular foldl'.
       | LL.null xs = liftI step
-      | True       = foldl' f $ FLL.foldl1 f xs
+      | otherwise  = foldl' f $ FLL.foldl1 f xs
     step stream    = icont step (Just (setEOF stream))
 {-# INLINE foldl1' #-}
 
@@ -662,7 +662,7 @@ sum = liftI (step 0)
   where
     step acc (Chunk xs)
       | LL.null xs = liftI (step acc)
-      | True       = liftI (step $! acc + LL.sum xs)
+      | otherwise  = liftI (step $! acc + LL.sum xs)
     step acc str   = idone acc str
 {-# INLINE sum #-}
 
@@ -673,7 +673,7 @@ product = liftI (step 1)
   where
     step acc (Chunk xs)
       | LL.null xs = liftI (step acc)
-      | True       = liftI (step $! acc * LL.product xs)
+      | otherwise  = liftI (step $! acc * LL.product xs)
     step acc str   = idone acc str
 {-# INLINE product #-}
 
@@ -814,7 +814,7 @@ sequence_ = self
             then idone () <=< remainingStream $ is'
             else self is''
         step s@(EOF _) = do
-          s' <- remainingStream <=< lift $ mapM (enumChunk s) $ is
+          s' <- remainingStream <=< lift $ mapM (enumChunk s) is
           case s' of
             EOF (Just e) -> throwErr e
             _            -> idone () s'
@@ -855,11 +855,11 @@ enumPureNChunk :: (Monad m, LL.ListLike s el) => s -> Int -> Enumerator s m a
 enumPureNChunk str n iter
   | LL.null str = return iter
   | n > 0       = enum' str iter
-  | True        = error $ "enumPureNChunk called with n==" ++ show n
+  | otherwise   = error $ "enumPureNChunk called with n==" ++ show n
   where
     enum' str' iter'
       | LL.null str' = return iter'
-      | True         = let (s1, s2) = LL.splitAt n str'
+      | otherwise    = let (s1, s2) = LL.splitAt n str'
                            on_cont k Nothing = enum' s2 . k $ Chunk s1
                            on_cont k e = return $ icont k e
                        in runIter iter' idoneM on_cont

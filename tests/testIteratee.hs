@@ -291,6 +291,12 @@ prop_takeUpTo2 xs n = n >= 0 ==>
  runner2 (enumPure1Chunk xs (takeUpTo n identity)) == ()
   where types = xs :: [Int]
 
+-- check for final stream state
+prop_takeUpTo3 xs n d t = n > 0 ==>
+ runner1 (enumPureNChunk xs n (joinI (takeUpTo t (Iter.drop d)) >> stream2list))
+ == P.drop (min t d) xs
+  where types = xs :: [Int]
+
 prop_filter xs n f = n > 0 ==>
  runner2 (enumSpecial xs n (Iter.filter f stream2list)) == P.filter f xs
   where types = xs :: [Int]
@@ -391,6 +397,7 @@ tests = [
     ,testProperty "take (finished iteratee)" prop_take2
     ,testProperty "takeUpTo" prop_takeUpTo
     ,testProperty "takeUpTo (finished iteratee)" prop_takeUpTo2
+    ,testProperty "takeUpTo (remaining stream)" prop_takeUpTo3
     ,testProperty "filter" prop_filter
     ,testProperty "group" prop_group
     ,testProperty "groupBy" prop_groupBy

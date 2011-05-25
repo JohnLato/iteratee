@@ -241,9 +241,9 @@ drop 0  = return ()
 drop n' = liftI (step n')
   where
     step n (Chunk str)
-      | LL.length str <= n = liftI (step (n - LL.length str))
-      | True               = idone () (Chunk (LL.drop n str))
-    step _ stream          = idone () stream
+      | LL.length str < n = liftI (step (n - LL.length str))
+      | True              = idone () (Chunk (LL.drop n str))
+    step _ stream         = idone () stream
 {-# INLINE drop #-}
 
 -- |Skip all elements while the predicate is true.

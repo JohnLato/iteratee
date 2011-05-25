@@ -57,7 +57,7 @@ module Data.Iteratee.ListLike (
   -- ** Monadic functions
   ,mapM_
   ,foldM
-  -- * Classes
+  -- * Re-exported modules
   ,module Data.Iteratee.Iteratee
 )
 where
@@ -125,7 +125,7 @@ stream2stream = icont (step mempty) Nothing
 -- If the stream is not terminated, the first character of the remaining stream
 -- satisfies the predicate.
 -- 
--- N.B. @breakE@ should be used in preference to @break@.
+-- N.B. 'breakE' should be used in preference to @break@.
 -- @break@ will retain all data until the predicate is met, which may
 -- result in a space leak.
 -- 
@@ -177,8 +177,8 @@ last = liftI (step Nothing)
 -- the characters on the stream.  Return the count of how many
 -- characters matched.  The matched characters are removed from the
 -- stream.
--- For example, if the stream contains "abd", then (heads "abc")
--- will remove the characters "ab" and return 2.
+-- For example, if the stream contains 'abd', then (heads 'abc')
+-- will remove the characters 'ab' and return 2.
 heads :: (Monad m, Nullable s, LL.ListLike s el, Eq el) => s -> Iteratee s m Int
 heads st | nullC st = return 0
 heads st = loop 0 st
@@ -199,7 +199,7 @@ heads st = loop 0 st
 -- |Look ahead at the next element of the stream, without removing
 -- it from the stream.
 -- Return @Just c@ if successful, return @Nothing@ if the stream is
--- terminated by EOF.
+-- terminated by 'EOF'.
 peek :: (Monad m, LL.ListLike s el) => Iteratee s m (Maybe el)
 peek = liftI step
   where
@@ -209,12 +209,13 @@ peek = liftI step
     step stream     = idone Nothing stream
 {-# INLINE peek #-}
 
--- | Return a chunk of `t' elements length, while consuming `d' elements
---   from the stream.  Useful for creating a "rolling average" with convStream.
+-- | Return a chunk of @t@ elements length while consuming @d@ elements
+--   from the stream.  Useful for creating a 'rolling average' with
+--  'convStream'.
 roll
   :: (Monad m, Functor m, Nullable s, LL.ListLike s el, LL.ListLike s' s)
-  => Int
-  -> Int
+  => Int  -- ^ length of chunk (t)
+  -> Int  -- ^ amount to consume (d)
   -> Iteratee s m s'
 roll t d | t > d  = liftI step
   where
@@ -273,7 +274,7 @@ length = liftI (step 0)
     step !i stream     = idone i stream
 {-# INLINE length #-}
 
--- | Get the length of the current chunk, or Nothing if EOF.
+-- | Get the length of the current chunk, or @Nothing@ if 'EOF'.
 -- 
 -- This function consumes no input.
 chunkLength :: (Monad m, LL.ListLike s el) => Iteratee s m (Maybe Int)
@@ -327,7 +328,10 @@ breakE cpred = eneeCheckIfDone (liftI . step)
 -- read exactly n elements, even if the iteratee has accepted fewer.
 -- 
 -- The analogue of @List.take@
-take :: (Monad m, Nullable s, LL.ListLike s el) => Int -> Enumeratee s s m a
+take ::
+  (Monad m, Nullable s, LL.ListLike s el)
+  => Int   -- ^ number of elements to consume
+  -> Enumeratee s s m a
 take n' iter
  | n' <= 0   = return iter
  | otherwise = Iteratee $ \od oc -> runIter iter (on_done od oc) (on_cont od oc)
@@ -349,11 +353,11 @@ take n' iter
 -- |Read n elements from a stream and apply the given iteratee to the
 -- stream of the read elements. If the given iteratee accepted fewer
 -- elements, we stop.
--- This is the variation of `take' with the early termination
+-- This is the variation of 'take' with the early termination
 -- of processing of the outer stream once the processing of the inner stream
 -- finished early.
 -- 
--- Iteratees composed with @takeUpTo@ will consume only enough elements to
+-- Iteratees composed with 'takeUpTo' will consume only enough elements to
 -- reach a done state.  Any remaining data will be available in the outer
 -- stream.
 -- 
@@ -404,7 +408,7 @@ takeUpTo i iter
 
 
 -- |Map the stream: another iteratee transformer
--- Given the stream of elements of the type @el@ and the function @el->el'@,
+-- Given the stream of elements of the type @el@ and the function @(el->el')@,
 -- build a nested stream of elements of the type @el'@ and apply the
 -- given iteratee to it.
 -- 
@@ -461,12 +465,12 @@ filter p = convStream f'
     step _ = f'
 {-# INLINE filter #-}
 
--- |Creates an 'enumeratee' in which elements from the stream are
--- grouped into \sz\-sized blocks.  The outer stream is completely
+-- |Creates an 'Enumeratee' in which elements from the stream are
+-- grouped into @sz@-sized blocks.  The outer stream is completely
 -- consumed and the final block may be smaller than \sz\.
 group
   :: (LL.ListLike s el, Monad m, Nullable s)
-  => Int
+  => Int  -- ^ size of group
   -> Enumeratee s [s] m a
 group sz iinit = liftI $ go iinit LL.empty
   where go icurr pfx (Chunk s) = case gsplit (pfx `LL.append` s) of 
@@ -559,7 +563,8 @@ merge f = convStream $ f <$> lift head <*> head
 -- until both streams are exhausted.
 -- 
 -- 'mergeByChunks' guarantees that both chunks passed to the merge function
--- will have the same length, although that length may vary between calls.
+-- will have the same number of elements, although that number may vary
+-- between calls.
 mergeByChunks ::
   (Nullable c2, Nullable c1
   ,NullPoint c2, NullPoint c1
@@ -696,7 +701,7 @@ enumPair = zip
 
 -- |Enumerate two iteratees over a single stream simultaneously.
 -- 
--- Compare to @zip@.
+-- Compare to @List.zip@.
 zip
   :: (Monad m, Nullable s, LL.ListLike s el)
   => Iteratee s m a
@@ -795,7 +800,7 @@ enumWith i1 i2 = go i1 i2
 -- and discard the results. This is a different behavior than Prelude's
 -- sequence_ which runs iteratees in the list one after the other.
 -- 
--- Compare to @sequence_@.
+-- Compare to @Prelude.sequence_@.
 sequence_
   :: (Monad m, LL.ListLike s el, Nullable s)
   => [Iteratee s m a]

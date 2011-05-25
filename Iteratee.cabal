@@ -4,6 +4,8 @@ synopsis:      Iteratee-based I/O
 description:
   The Iteratee monad provides strict, safe, and functional I/O. In addition
   to pure Iteratee processors, file IO and combinator functions are provided.
+
+  See @Data.Iteratee@ for full documentation.
 category:      System, Data
 author:        Oleg Kiselyov, John W. Lato
 maintainer:    John W. Lato <jwlato@gmail.com>

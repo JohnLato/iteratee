@@ -353,24 +353,51 @@ take n' iter
 -- of processing of the outer stream once the processing of the inner stream
 -- finished early.
 -- 
--- N.B. If the inner iteratee finishes early, remaining data within the current
--- chunk will be dropped.
+-- Iteratees composed with @takeUpTo@ will consume only enough elements to
+-- reach a done state.  Any remaining data will be available in the outer
+-- stream.
+-- 
+-- > > let iter = do
+-- > h <- joinI $ takeUpTo 5 I.head
+-- > t <- stream2list
+-- > return (h,t)
+-- > 
+-- > > enumPureNChunk [1..10::Int] 3 iter >>= run >>= print
+-- > (1,[2,3,4,5,6,7,8,9,10])
+-- > 
+-- > > enumPureNChunk [1..10::Int] 7 iter >>= run >>= print
+-- > (1,[2,3,4,5,6,7,8,9,10])
+-- 
+-- in each case, @I.head@ consumes only one element, returning the remaining
+-- 4 elements to the outer stream
 takeUpTo :: (Monad m, Nullable s, LL.ListLike s el) => Int -> Enumeratee s s m a
 takeUpTo i iter
  | i <= 0    = return iter
  | otherwise = Iteratee $ \od oc ->
     runIter iter (onDone od oc) (onCont od oc)
   where
-    onDone od oc x _        = runIter (return (return x)) od oc
+    onDone od oc x str      = runIter (idone (return x) str) od oc
     onCont od oc k Nothing  = if i == 0 then od (liftI k) (Chunk mempty)
                                  else runIter (liftI (step i k)) od oc
     onCont od oc _ (Just e) = runIter (throwErr e) od oc
     step n k (Chunk str)
-      | LL.null str         = liftI (step n k)
-      | LL.length str <= n  = takeUpTo (n - LL.length str) $ k (Chunk str)
-      | True                = idone (k (Chunk s1)) (Chunk s2)
-      where (s1, s2) = LL.splitAt n str
-    step _ k stream         = idone (k stream) stream
+      | LL.null str       = liftI (step n k)
+      | LL.length str < n = takeUpTo (n - LL.length str) $ k (Chunk str)
+      | otherwise         =
+         -- check to see if the inner iteratee has completed, and if so,
+         -- grab any remaining stream to put it in the outer iteratee.
+         -- the outer iteratee is always complete at this stage, although
+         -- the inner may not be.
+         let (s1, s2) = LL.splitAt n str
+         in Iteratee $ \od' oc' -> do
+              res <- runIter (k (Chunk s1)) (\a s -> return $ Left (a,s))
+                                            (\k e -> return $ Right (k,e))
+              case res of
+                Left (a,Chunk s1') -> od' (return a)
+                                          (Chunk $ s1' `LL.append` s2)
+                Left (a,str)       -> od' (return a) (Chunk s2)
+                Right (k',e)       -> od' (icont k' e) (Chunk s2)
+    step _ k stream       = idone (k stream) stream
 {-# SPECIALIZE takeUpTo :: Monad m => Int -> Enumeratee [el] [el] m a #-}
 {-# SPECIALIZE takeUpTo :: Monad m => Int -> Enumeratee B.ByteString B.ByteString m a #-}
 {-# INLINABLE takeUpTo #-}

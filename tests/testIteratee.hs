@@ -153,6 +153,12 @@ prop_length xs = runner1 (enumPure1Chunk xs Iter.length) == P.length xs
 
 type I = Iteratee [Int] Identity [Int]
 
+prop_enumNoStream xs =
+  runIdentity (enumPure1Chunk xs (return 'a') >>= \i ->
+    Iter.run (i >> stream2list))
+  == xs
+  where types = xs :: [Int]
+
 prop_enumChunks n xs i = n > 0  ==>
   runner1 (enumPure1Chunk xs i) == runner1 (enumSpecial xs n i)
   where types = (n :: Int, xs :: [Int], i :: I)
@@ -376,7 +382,8 @@ tests = [
     ,testProperty "iteratee Monad Assc" prop_iterMonad3
     ]
   ,testGroup "Simple Enumerators/Combinators" [
-    testProperty "enumPureNChunk" prop_enumChunks
+    testProperty "enumPure1Chunk - final stream state" prop_enumNoStream
+    ,testProperty "enumPureNChunk" prop_enumChunks
     ,testProperty "enum append 1" prop_app1
     ,testProperty "enum sequencing" prop_app2
     ,testProperty "enum sequencing 2" prop_app3

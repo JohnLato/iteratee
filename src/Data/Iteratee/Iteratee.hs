@@ -325,7 +325,7 @@ type Enumerator s m a = Iteratee s m a -> m (Iteratee s m a)
 -- |Applies the iteratee to the given stream.  This wraps 'enumEof',
 -- 'enumErr', and 'enumPure1Chunk', calling the appropriate enumerator
 -- based upon 'Stream'.
-enumChunk :: (Monad m) => Stream s -> Enumerator s m a
+enumChunk :: (Monad m, Monoid s) => Stream s -> Enumerator s m a
 enumChunk (Chunk xs)     = enumPure1Chunk xs
 enumChunk (EOF Nothing)  = enumEof
 enumChunk (EOF (Just e)) = enumErr e
@@ -402,9 +402,10 @@ mergeEnums e1 e2 etee i = e1 $ e2 (joinI . etee $ ilift lift i) >>= run
 -- 
 -- It passes a given list of elements to the iteratee in one chunk
 -- This enumerator does no IO and is useful for testing of base parsing
-enumPure1Chunk :: (Monad m) => s -> Enumerator s m a
-enumPure1Chunk str iter = runIter iter idoneM onCont
+enumPure1Chunk :: (Monad m, Monoid s) => s -> Enumerator s m a
+enumPure1Chunk str iter = runIter iter onDone onCont
   where
+    onDone a str'    = idoneM a (Chunk str `mappend` str')
     onCont k Nothing = return $ k $ Chunk str
     onCont k e       = return $ icont k e
 

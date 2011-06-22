@@ -467,29 +467,47 @@ filter p = convStream f'
 {-# INLINE filter #-}
 
 -- |Creates an 'Enumeratee' in which elements from the stream are
--- grouped into @sz@-sized blocks.  The outer stream is completely
--- consumed and the final block may be smaller than \sz\.
+-- grouped into @sz@-sized blocks.  The final block may be smaller
+-- than \sz\.
 group
   :: (LL.ListLike s el, Monad m, Nullable s)
   => Int  -- ^ size of group
   -> Enumeratee s [s] m a
-group sz iinit = liftI $ go iinit LL.empty
-  where go icurr pfx (Chunk s) = case gsplit (pfx `LL.append` s) of 
-          (full, partial) | LL.null full -> liftI $ go icurr partial
-                          | otherwise    -> do inext <- lift $ enumPure1Chunk full icurr
-                                               liftI $ go inext partial
-        go icurr pfx (EOF mex) 
-          | LL.null pfx = lift . enumChunk (EOF mex) $ icurr
-          | otherwise = do inext <- lift $ enumPure1Chunk (LL.singleton pfx) icurr        
-                           lift . enumChunk (EOF mex) $ inext
-        gsplit ls = case LL.splitAt sz ls of
-          (g, rest) | LL.null rest -> if LL.length g == sz
-                                         then (LL.singleton g, LL.empty)
-                                         else (LL.empty, g)
-                    | otherwise -> let (grest, leftover) = gsplit rest
-                                       g' = g `LL.cons` grest
-                                   in g' `seq` (g', leftover)
-{-# INLINE group #-}
+group cksz iinit = liftI (step 0 id iinit)
+ where
+  -- there are two cases to consider for performance purposes:
+  --  1 - grouping lots of small chunks into bigger chunks
+  --  2 - breaking large chunks into smaller pieces
+  -- case 2 is easier, simply split a chunk into as many pieces as necessary
+  -- and pass them to the inner iteratee as one list.  @gsplit@ does this.
+  --
+  -- case 1 is a bit harder, need to hold onto each chunk and coalesce them
+  -- after enough have been received.  Currently using a difference list
+  -- for this, i.e ([s] -> [s])
+  --
+  -- not using eneeCheckIfDone because that loses final chunks at EOF
+  step sz pfxd icur (Chunk s)
+    | LL.null s               = liftI (step sz pfxd icur)
+    | LL.length s + sz < cksz = liftI (step (sz+LL.length s) (pfxd . (s:)) icur)
+    | otherwise               =
+        let (full, rest) = gsplit . mconcat $ pfxd [s]
+            pfxd'        = if LL.null rest then id else (rest:)
+        in  do
+              inext <- lift $ enumPure1Chunk full icur
+              liftI $ step (LL.length rest) pfxd' inext
+  step _ pfxd icur mErr = case pfxd [] of
+                         []   -> idone icur mErr
+                         rest -> do
+                           inext <- lift $ enumPure1Chunk [mconcat rest] icur
+                           idone inext mErr
+  gsplit ls = case LL.splitAt cksz ls of
+    (g, rest) | LL.null rest -> if LL.length g == cksz
+                                   then ([g], LL.empty)
+                                   else ([], g)
+              | otherwise -> let (grest, leftover) = gsplit rest
+                                 g' = g : grest
+                             in (g', leftover)
+
 
 -- | Creates an 'enumeratee' in which elements are grouped into
 -- contiguous blocks that are equal according to a predicate.

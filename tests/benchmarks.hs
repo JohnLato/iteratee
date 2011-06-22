@@ -79,6 +79,7 @@ dropbench = makeGroup "drop" $ drop0 : dropBenches
 lengthbench = makeGroup "length" listBenches
 takebench = makeGroup "take" $ take0 : takeBenches
 takeUpTobench = makeGroup "takeUpTo" takeUpToBenches
+groupbench = makeGroup "group" groupBenches
 mapbench = makeGroup "map" $ mapBenches
 foldbench = makeGroup "fold" $ foldBenches
 convbench = makeGroup "convStream" convBenches
@@ -92,15 +93,16 @@ dropbenchbs = makeGroupBS "drop" dropBenches
 lengthbenchbs = makeGroupBS "length" listBenches
 takebenchbs = makeGroupBS "take" takeBenches
 takeUpTobenchbs = makeGroupBS "takeUpTo" takeUpToBenches
+groupbenchbs = makeGroupBS "group" groupBenches
 mapbenchbs = makeGroupBS "map" mapBenches
 foldbenchbs = makeGroupBS "fold" $ foldBenches
 convbenchbs = makeGroupBS "convStream" convBenches
 miscbenchbs = makeGroupBS "other" miscBenches
 
 
-allListBenches = bgroup "list" [listbench, streambench, breakbench, headsbench, dropbench, lengthbench, takebench, takeUpTobench, mapbench, foldbench, convbench, miscbench]
+allListBenches = bgroup "list" [listbench, streambench, breakbench, headsbench, dropbench, lengthbench, takebench, takeUpTobench, groupbench, mapbench, foldbench, convbench, miscbench]
 
-allByteStringBenches = bgroup "bytestring" [listbenchbs, streambenchbs, breakbenchbs, headsbenchbs, dropbenchbs, lengthbenchbs, takebenchbs, takeUpTobenchbs, mapbenchbs, foldbenchbs, convbenchbs, miscbenchbs]
+allByteStringBenches = bgroup "bytestring" [listbenchbs, streambenchbs, breakbenchbs, headsbenchbs, dropbenchbs, lengthbenchbs, takebenchbs, takeUpTobenchbs, groupbenchbs, mapbenchbs, foldbenchbs, convbenchbs, miscbenchbs]
 
 list0 = makeList "list one go" deepseq
 list1 = BDIter1 "stream2list one go" (flip deepseq ()) stream2list
@@ -167,6 +169,10 @@ takeUpTo4 = idN "takeUpTo head long chunked" (I.joinI $ I.takeUpTo 1000 I.head)
 takeUpTo5 = id1 "takeUpTo length long one go" (I.joinI $ I.takeUpTo 1000 I.length)
 takeUpTo6 = idN "takeUpTo length long chunked" (I.joinI $ I.takeUpTo 1000 I.length)
 takeUpToBenches = [takeUpTo1, takeUpTo2, takeUpTo3, takeUpTo4, takeUpTo5, takeUpTo6]
+
+group1 = id1 "group split" (I.joinI $ (I.group 24 ><> I.mapStream LL.length) I.length)
+group2 = idN "group coalesce" (I.joinI $ (I.group 512 ><> I.mapStream LL.length) I.length)
+groupBenches = [group1,group2]
 
 map1 = id1 "map length one go" (I.joinI $ I.rigidMapStream id I.length)
 map2 = idN "map length chunked" (I.joinI $ I.rigidMapStream id I.length)

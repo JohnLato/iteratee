@@ -97,23 +97,13 @@ isFinished = liftI check
 -- |Read a stream to the end and return all of its elements as a list.
 -- This iteratee returns all data from the stream *strictly*.
 stream2list :: (Monad m, Nullable s, LL.ListLike s el) => Iteratee s m [el]
-stream2list = liftI (step [])
-  where
-    step acc (Chunk ls)
-      | nullC ls  = liftI (step acc)
-      | otherwise = liftI (step (acc ++ LL.toList ls))
-    step acc str  = idone acc str
+stream2list = liftM (concatMap LL.toList) getChunks
 {-# INLINE stream2list #-}
 
 -- |Read a stream to the end and return all of its elements as a stream.
 -- This iteratee returns all data from the stream *strictly*.
 stream2stream :: (Monad m, Nullable s, Monoid s) => Iteratee s m s
-stream2stream = icont (step mempty) Nothing
-  where
-    step acc (Chunk ls)
-      | nullC ls   = icont (step acc) Nothing
-      | otherwise  = icont (step (acc `mappend` ls)) Nothing
-    step acc str   = idone acc str
+stream2stream = liftM mconcat getChunks
 {-# INLINE stream2stream #-}
 
 

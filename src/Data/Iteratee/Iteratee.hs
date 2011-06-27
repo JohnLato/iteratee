@@ -199,12 +199,12 @@ getChunk = liftI step
 
 -- | Get a list of all chunks from the stream.
 getChunks :: (Monad m, Nullable s) => Iteratee s m [s]
-getChunks = liftI (step [])
+getChunks = liftI (step id)
  where
   step acc (Chunk xs)
     | nullC xs    = liftI (step acc)
-    | otherwise   = liftI (step (xs:acc))
-  step acc stream = idone (reverse acc) stream
+    | otherwise   = liftI (step $ acc . (xs:))
+  step acc stream = idone (acc []) stream
 {-# INLINE getChunks #-}
 
 -- ---------------------------------------------------

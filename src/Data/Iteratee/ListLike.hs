@@ -18,6 +18,7 @@ module Data.Iteratee.ListLike (
   ,dropWhile
   ,drop
   ,head
+  ,tryHead
   ,last
   ,heads
   ,peek
@@ -136,9 +137,12 @@ break cpred = icont (step mempty) Nothing
 
 
 -- |Attempt to read the next element of the stream and return it
--- Raise a (recoverable) error if the stream is terminated
+-- Raise a (recoverable) error if the stream is terminated.
 -- 
 -- The analogue of @List.head@
+-- 
+-- Because @head@ can raise an error, it shouldn't be used when constructing
+-- iteratees for @convStream@.  Use @tryHead@ instead.
 head :: (Monad m, LL.ListLike s el) => Iteratee s m el
 head = liftI step
   where
@@ -147,6 +151,17 @@ head = liftI step
     | otherwise    = idone (LL.head vec) (Chunk $ LL.tail vec)
   step stream      = icont step (Just (setEOF stream))
 {-# INLINE head #-}
+
+-- | Similar to @head@, except it returns @Nothing@ if the stream
+-- is terminated.
+tryHead :: (Monad m, LL.ListLike s el) => Iteratee s m (Maybe el)
+tryHead = liftI step
+  where
+  step (Chunk vec)
+    | LL.null vec  = liftI step
+    | otherwise    = idone (Just $ LL.head vec) (Chunk $ LL.tail vec)
+  step stream      = idone Nothing stream
+{-# INLINE tryHead #-}
 
 -- |Attempt to read the last element of the stream and return it
 -- Raise a (recoverable) error if the stream is terminated

@@ -276,7 +276,7 @@ dropWhile p = liftI step
 length :: (Monad m, Num a, LL.ListLike s el) => Iteratee s m a
 length = liftI (step 0)
   where
-    step !i (Chunk xs) = liftI (step $! i + fromIntegral (LL.length xs))
+    step !i (Chunk xs) = liftI (step $ i + fromIntegral (LL.length xs))
     step !i stream     = idone i stream
 {-# INLINE length #-}
 
@@ -427,12 +427,7 @@ mapStream
      ,LooseMap s el el')
   => (el -> el')
   -> Enumeratee (s el) (s el') m a
-mapStream f = eneeCheckIfDone (liftI . step)
-  where
-    step k (Chunk xs)
-      | LL.null xs = liftI (step k)
-      | otherwise  = mapStream f $ k (Chunk $ lMap f xs)
-    step k s       = idone (liftI k) s
+mapStream f = mapChunks (lMap f)
 {-# SPECIALIZE mapStream :: Monad m => (el -> el') -> Enumeratee [el] [el'] m a #-}
 
 -- |Map the stream rigidly.
@@ -444,12 +439,7 @@ rigidMapStream
   :: (Monad m, LL.ListLike s el, NullPoint s)
   => (el -> el)
   -> Enumeratee s s m a
-rigidMapStream f = eneeCheckIfDone (liftI . step)
-  where
-    step k (Chunk xs)
-      | LL.null xs = liftI (step k)
-      | otherwise  = rigidMapStream f $ k (Chunk $ LL.rigidMap f xs)
-    step k s       = idone (liftI k) s
+rigidMapStream f = mapChunks (LL.rigidMap f)
 {-# SPECIALIZE rigidMapStream :: Monad m => (el -> el) -> Enumeratee [el] [el] m a #-}
 {-# SPECIALIZE rigidMapStream :: Monad m => (Word8 -> Word8) -> Enumeratee B.ByteString B.ByteString m a #-}
 
@@ -459,16 +449,10 @@ rigidMapStream f = eneeCheckIfDone (liftI . step)
 -- 
 -- The analogue of @List.filter@
 filter
-  :: (Monad m, Nullable s, LL.ListLike s el)
+  :: (Monad m, Functor m, Nullable s, LL.ListLike s el)
   => (el -> Bool)
   -> Enumeratee s s m a
-filter p = convStream f'
-  where
-    f' = icont step Nothing
-    step (Chunk xs)
-      | LL.null xs = f'
-      | otherwise  = idone (LL.filter p xs) mempty
-    step _ = f'
+filter p = convStream (LL.filter p <$> getChunk)
 {-# INLINE filter #-}
 
 -- |Creates an 'Enumeratee' in which elements from the stream are
@@ -545,7 +529,7 @@ groupBy same iinit = liftI $ go iinit LL.empty
                     xs = LL.tail l
 {-# INLINE groupBy #-}
 
--- | Merge offers another way to nest iteratees: as a monad stack.
+-- | @merge@ offers another way to nest iteratees: as a monad stack.
 -- This allows for the possibility of interleaving data from multiple
 -- streams.
 -- 
@@ -555,7 +539,7 @@ groupBy same iinit = liftI $ go iinit LL.empty
 -- >
 -- > -- combine alternating lines from two sources
 -- > -- To see how this was derived, follow the types from
--- > -- 'ileaveStream logger' and work outwards.
+-- > -- 'ileaveLines logger' and work outwards.
 -- > run =<< enumFile 10 "file1" (joinI $ enumLinesBS $
 -- >           ( enumFile 10 "file2" . joinI . enumLinesBS $ joinI
 -- >                 (ileaveLines logger)) >>= run)

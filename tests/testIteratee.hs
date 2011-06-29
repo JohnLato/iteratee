@@ -107,6 +107,11 @@ prop_head xs = P.length xs > 0 ==> runner1 (enumPure1Chunk xs Iter.head) == head
 prop_head2 xs = P.length xs > 0 ==> runner1 (enumPure1Chunk xs (Iter.head >> stream2list)) == tail xs
   where types = xs :: [Int]
 
+prop_tryhead xs = case xs of
+  [] -> runner1 (enumPure1Chunk xs tryHead) == Nothing
+  _  -> runner1 (enumPure1Chunk xs tryHead) == Just (P.head xs)
+  where types = xs :: [Int]
+
 prop_heads xs n = n > 0 ==>
  runner1 (enumSpecial xs n $ heads xs) == P.length xs
   where types = xs :: [Int]
@@ -365,6 +370,7 @@ tests = [
     ,testProperty "break remainder" prop_break2
     ,testProperty "head" prop_head
     ,testProperty "head remainder" prop_head2
+    ,testProperty "tryhead" prop_tryhead
     ,testProperty "heads" prop_heads
     ,testProperty "null heads" prop_heads2
     ,testProperty "peek" prop_peek

@@ -22,6 +22,7 @@ module Data.Iteratee.Iteratee (
   -- ** Chunkwise Iteratees
   ,mapChunksM_
   ,mapReduce
+  ,bufferStream
   ,getChunk
   ,getChunks
   -- ** Nested iteratee combinators
@@ -69,6 +70,7 @@ import Data.Iteratee.Base
 import Control.Exception
 import Control.Monad.Trans.Class
 import Control.Parallel
+import Control.Parallel.Strategies
 import Data.Maybe
 import Data.Monoid
 import Data.Typeable
@@ -185,6 +187,35 @@ mapReduce bufsize f = liftI (step (0, []))
     idone (mconcat acc) s
   step acc       (EOF (Just err))  =
     throwRecoverableErr err (step acc)
+
+-- | Create a buffered stream.  Up to 'n' chunks of the outer stream will be
+-- read and fed to the inner iteratee at a time.  These chunks will be
+-- evaluated in parallel according to the provided strategy.
+-- 
+-- In order to take advantage of parallelism, it's required that evaluation
+-- of each chunk (under the given strategy) do some actual work.  Since chunks
+-- are read strictly, the following won't exhibit any benefit:
+-- 
+-- > enumFile 1024 "somefile" (joinI $ bufferStream 8 rdeepseq Iteratee.length)
+-- 
+-- instead, each chunk should be created via mapChunks or similar, then
+-- immediately converted via bufferStream.  Many enumeratees will force
+-- evaluation of the chunk (at least the head, often the spine), again negating
+-- parallelism.
+bufferStream ::
+  (Monad m, NullPoint a)
+  => Int
+  -> Strategy a
+  -> Enumeratee a [a] m b
+bufferStream n strat = eneeCheckIfDone (liftI . step (n-1,id))
+ where
+  step (0,acc)  k (Chunk xs) =
+    ($||) (\c -> eneeCheckIfDone (liftI . step (n-1,id)) $ k $ Chunk (acc [c]))
+          strat
+          xs
+  step (n',acc) k (Chunk xs) =
+    ($||) (\c -> liftI $ step (n'-1,acc . (c:)) k) strat xs
+  step (_, acc) k stream     = idone (k $ Chunk (acc [])) stream
 
 -- | Get the current chunk from the stream.
 getChunk :: (Monad m, Nullable s, NullPoint s) => Iteratee s m s

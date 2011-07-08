@@ -21,8 +21,6 @@ module Data.Iteratee.Iteratee (
   ,isStreamFinished
   -- ** Chunkwise Iteratees
   ,mapChunksM_
-  ,mapReduce
-  ,bufferStream
   ,getChunk
   ,getChunks
   -- ** Nested iteratee combinators
@@ -69,8 +67,6 @@ import Data.Iteratee.Base
 
 import Control.Exception
 import Control.Monad.Trans.Class
-import Control.Parallel
-import Control.Parallel.Strategies
 import Data.Maybe
 import Data.Monoid
 import Data.Typeable
@@ -158,64 +154,6 @@ mapChunksM_ f = liftI step
       | otherwise  = lift (f xs) >> liftI step
     step s@(EOF _) = idone () s
 {-# INLINE mapChunksM_ #-}
-
--- | Perform a parallel map/reduce.  The `bufsize` parameter controls
--- the maximum number of chunks to read at one time.  A larger bufsize
--- allows for greater parallelism, but will require more memory.
--- 
--- Implementation of `sum`
--- 
--- > sum :: (Monad m, LL.ListLike s, Nullable s) => Iteratee s m Int64
--- > sum = getSum <$> mapReduce 4 (Sum . LL.sum)
-mapReduce ::
-  (Monad m, Nullable s, Monoid b)
-  => Int               -- ^ maximum number of chunks to read
-  -> (s -> b)          -- ^ map function
-  -> Iteratee s m b
-mapReduce bufsize f = liftI (step (0, []))
- where
-  step a@(!buf,acc) (Chunk xs)
-    | nullC xs = liftI (step a)
-    | buf >= bufsize =
-        let acc'  = mconcat acc
-            b'    = f xs
-        in b' `par` acc' `pseq` liftI (step (0,[b' `mappend` acc']))
-    | otherwise     =
-        let b' = f xs
-        in b' `par` liftI (step (succ buf,b':acc))
-  step (_,acc) s@(EOF Nothing) =
-    idone (mconcat acc) s
-  step acc       (EOF (Just err))  =
-    throwRecoverableErr err (step acc)
-
--- | Create a buffered stream.  Up to 'n' chunks of the outer stream will be
--- read and fed to the inner iteratee at a time.  These chunks will be
--- evaluated in parallel according to the provided strategy.
--- 
--- In order to take advantage of parallelism, it's required that evaluation
--- of each chunk (under the given strategy) do some actual work.  Since chunks
--- are read strictly, the following won't exhibit any benefit:
--- 
--- > enumFile 1024 "somefile" (joinI $ bufferStream 8 rdeepseq Iteratee.length)
--- 
--- instead, each chunk should be created via mapChunks or similar, then
--- immediately converted via bufferStream.  Many enumeratees will force
--- evaluation of the chunk (at least the head, often the spine), again negating
--- parallelism.
-bufferStream ::
-  (Monad m, NullPoint a)
-  => Int
-  -> Strategy a
-  -> Enumeratee a [a] m b
-bufferStream n strat = eneeCheckIfDone (liftI . step (n-1,id))
- where
-  step (0,acc)  k (Chunk xs) =
-    ($||) (\c -> eneeCheckIfDone (liftI . step (n-1,id)) $ k $ Chunk (acc [c]))
-          strat
-          xs
-  step (n',acc) k (Chunk xs) =
-    ($||) (\c -> liftI $ step (n'-1,acc . (c:)) k) strat xs
-  step (_, acc) k stream     = idone (k $ Chunk (acc [])) stream
 
 -- | Get the current chunk from the stream.
 getChunk :: (Monad m, Nullable s, NullPoint s) => Iteratee s m s

@@ -21,8 +21,6 @@ import qualified Data.ListLike as LL
 import           Control.Monad as CM
 import           Control.Monad.Writer
 
-import Text.Printf (printf)
-import System.Environment (getArgs)
 
 instance Show (a -> b) where
   show _ = "<<function>>"

@@ -13,6 +13,7 @@ module Data.Iteratee.Binary (
   ,endianRead3
   ,endianRead3i
   ,endianRead4
+  ,endianRead8
 )
 where
 
@@ -100,6 +101,39 @@ endianRead4 e = do
                 `shiftL` 8) .|. fromIntegral c4
     LSB -> return $
                (((((fromIntegral c4
+                `shiftL` 8) .|. fromIntegral c3)
+                `shiftL` 8) .|. fromIntegral c2)
+                `shiftL` 8) .|. fromIntegral c1
+
+endianRead8
+  :: (Nullable s, LL.ListLike s Word8, Monad m) =>
+     Endian
+     -> Iteratee s m Word64
+endianRead8 e = do
+  c1 <- I.head
+  c2 <- I.head
+  c3 <- I.head
+  c4 <- I.head
+  c5 <- I.head
+  c6 <- I.head
+  c7 <- I.head
+  c8 <- I.head
+  case e of
+    MSB -> return $
+               (((((((((((((fromIntegral c1
+                `shiftL` 8) .|. fromIntegral c2)
+                `shiftL` 8) .|. fromIntegral c3)
+                `shiftL` 8) .|. fromIntegral c4)
+                `shiftL` 8) .|. fromIntegral c5)
+                `shiftL` 8) .|. fromIntegral c6)
+                `shiftL` 8) .|. fromIntegral c7)
+                `shiftL` 8) .|. fromIntegral c8
+    LSB -> return $
+               (((((((((((((fromIntegral c8
+                `shiftL` 8) .|. fromIntegral c7)
+                `shiftL` 8) .|. fromIntegral c6)
+                `shiftL` 8) .|. fromIntegral c5)
+                `shiftL` 8) .|. fromIntegral c4)
                 `shiftL` 8) .|. fromIntegral c3)
                 `shiftL` 8) .|. fromIntegral c2)
                 `shiftL` 8) .|. fromIntegral c1

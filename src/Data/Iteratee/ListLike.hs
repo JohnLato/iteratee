@@ -506,27 +506,71 @@ groupBy
   :: (LL.ListLike s el, Monad m, Nullable s)
   => (el -> el -> Bool)
   -> Enumeratee s [s] m a
-groupBy same iinit = liftI $ go iinit LL.empty
-    where go icurr pfx (Chunk s) = case gsplit (pfx `LL.append` s) of
-                                          (full, partial)
-                                              | LL.null full -> liftI $ go icurr partial
-                                              | otherwise -> do inext <- lift . enumPure1Chunk full $ icurr
-                                                                liftI $ go inext partial
-          go icurr pfx (EOF mex) 
-            | LL.null pfx = lift . enumChunk (EOF mex) $ icurr
-            | otherwise = do inext <- lift . enumPure1Chunk (LL.singleton pfx) $ icurr
-                             lift . enumChunk (EOF mex) $ inext
-          gsplit ll | LL.null ll = (LL.empty, LL.empty)
-                    | otherwise = let groups = llGroupBy same ll
-                                      full = LL.init groups
-                                      partial = LL.last groups
-                                  in full `seq` partial `seq` (full, partial)
-          llGroupBy eq l -- Copied from Data.ListLike, avoid spurious (Eq el) constraint
-              | LL.null l = LL.empty
-              | otherwise = LL.cons (LL.cons x ys) (llGroupBy eq zs)
-              where (ys, zs) = LL.span (eq x) xs
-                    x = LL.head l
-                    xs = LL.tail l
+groupBy same iinit = liftI $ go iinit (const True, id)
+  where 
+    -- As in group, need to handle grouping efficiently when we're fed
+    -- many small chunks.
+    -- 
+    -- Move the accumulation of groups by chunks into an accumulator
+    -- that runs through gsplit, which is pfx / partial here. When we
+    -- get a chunk, use gsplit to retrieve any full chunks and get the
+    -- carried accumulator.
+    -- 
+    -- At the end, "finish" the accumulator and handle the last chunk,
+    -- unless the stream was entirely empty and there is no
+    -- accumulator.
+    go icurr pfx (Chunk s) = case gsplit pfx s of
+      ([], partial)   -> liftI $ go icurr partial
+      (full, partial) -> do inext <- lift $ enumPure1Chunk full icurr
+                            liftI $ go inext partial
+    go icurr (_inpfx, pfxd) (EOF mex) = case pfxd [] of
+      [] -> lift . enumChunk (EOF mex) $ icurr
+      rest -> do inext <- lift . enumPure1Chunk [mconcat rest] $ icurr
+                 lift . enumChunk (EOF mex) $ inext
+    -- Here, gsplit carries an accumulator consisting of a predicate
+    -- "inpfx" that indicates whether a new element belongs in the
+    -- growing group, and a difference list to ultimately generate the
+    -- group.
+    --
+    -- The initial accumulator is a group that can accept anything and
+    -- is empty.
+    -- 
+    -- New chunks are split into groups. The cases are 
+
+    --   0. Trivially, empty chunk
+
+    --   1. One chunk, in the currently growing group: continue the
+    --   current prefix (and generate a new predicate, in case we had
+    --   the initial predicate
+    
+    --   2. One chunk, but not in the current group: finish the
+    --   current group and return a new accumulator for the
+    --   newly-started gorup
+    
+    --   3. Multiple chunks, the first of which completes the
+    --   currently growing group
+    
+    --   4. Multiple chunks, the first of which is a new group
+    --   separate from the currently-growing group
+    gsplit (inpfx, pfxd) curr = case llGroupBy same curr of
+      [] -> ([], (inpfx, pfxd))
+      [g0] | inpfx (LL.head g0) -> ([], (same $ LL.head g0, pfxd . (g0 :)))
+           | otherwise          -> ([mconcat $ pfxd []], (same $ LL.head g0, pfxd . (g0 :)))
+      (g0:grest@(_:_)) | inpfx (LL.head g0) -> let glast = Prelude.last grest
+                                                   gfirst = mconcat $ (pfxd . (g0 :)) []
+                                                   gdone = gfirst : Prelude.init grest
+                                               in ( gdone, (same (LL.head glast), (glast :)) )
+                       | otherwise -> let glast = Prelude.last grest
+                                          gfirst = mconcat $ pfxd []
+                                          gdone = gfirst : Prelude.init grest
+                                      in ( gdone, (same (LL.head glast), (glast :)) )
+    llGroupBy eq l -- Copied from Data.ListLike, avoid spurious (Eq el) constraint
+      | LL.null l = []
+      | otherwise = (LL.cons x ys):(llGroupBy eq zs)
+        where (ys, zs) = LL.span (eq x) xs
+              x = LL.head l
+              xs = LL.tail l
+
 {-# INLINE groupBy #-}
 
 -- | @merge@ offers another way to nest iteratees: as a monad stack.

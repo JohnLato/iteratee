@@ -21,7 +21,6 @@ import qualified Data.ListLike as LL
 import           Control.Monad as CM
 import           Control.Monad.Writer
 
-
 instance Show (a -> b) where
   show _ = "<<function>>"
 
@@ -319,11 +318,11 @@ prop_group xs n = n > 0 ==>
           where groupOne [] = Nothing
                 groupOne elts@(_:_) = Just . splitAt n $ elts
                            
-prop_groupBy xs m = m > 0 ==>
-                  runner2 (enumPure1Chunk xs $ Iter.groupBy pred stream2list)
-                  == runner1 (enumPure1Chunk (List.groupBy pred xs) stream2list)
+prop_groupBy xs = forAll (choose (2,5)) $ \m ->
+  let pred z1 z2 = (z1 `mod` m == z2 `mod` m)
+  in runner2 (enumPure1Chunk xs $ Iter.groupBy pred stream2list)
+       == runner1 (enumPure1Chunk (List.groupBy pred xs) stream2list)
   where types = xs :: [Int]
-        pred z1 z2 = (z1 `mod` m == z2 `mod` m)
 
 prop_mapM_ xs n = n > 0 ==>
  runWriter ((enumSpecial xs n (Iter.mapM_ f)) >>= run)

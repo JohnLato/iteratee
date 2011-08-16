@@ -21,10 +21,12 @@ module Data.Iteratee.Iteratee (
   ,isStreamFinished
   -- ** Chunkwise Iteratees
   ,mapChunksM_
+  ,foldChunksM
   ,getChunk
   ,getChunks
   -- ** Nested iteratee combinators
   ,mapChunks
+  ,mapChunksM
   ,convStream
   ,unfoldConvStream
   ,unfoldConvStreamCheck
@@ -155,6 +157,14 @@ mapChunksM_ f = liftI step
     step s@(EOF _) = idone () s
 {-# INLINE mapChunksM_ #-}
 
+-- | A fold over chunks
+foldChunksM :: (Monad m, Nullable s) => (a -> s -> m a) -> a -> Iteratee s m a
+foldChunksM f = liftI . go
+  where
+    go a (Chunk c) = lift (f a c) >>= liftI . go
+    go a e = idone a e
+{-# INLINE foldChunksM #-}
+
 -- | Get the current chunk from the stream.
 getChunk :: (Monad m, Nullable s, NullPoint s) => Iteratee s m s
 getChunk = liftI step
@@ -269,6 +279,17 @@ mapChunks f = eneeCheckIfDone (liftI . step)
   step k str@(EOF mErr) = idone (k $ EOF mErr) str
 {-# INLINE mapChunks #-}
 
+-- | Convert a stream of @s@ to a stream of @s'@ using the supplied function.
+mapChunksM
+  :: (Monad m, NullPoint s, Nullable s)
+  => (s -> m s')
+  -> Enumeratee s s' m a
+mapChunksM f = eneeCheckIfDone (liftI . step)
+ where
+  step k (Chunk xs)     = lift (f xs) >>=
+                          eneeCheckIfDone (liftI . step) . k . Chunk
+  step k str@(EOF mErr) = idone (k $ EOF mErr) str
+{-# INLINE mapChunksM #-}
 
 -- |Convert one stream into another, not necessarily in lockstep.
 -- The transformer mapStream maps one element of the outer stream

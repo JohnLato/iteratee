@@ -76,8 +76,8 @@ enumHandleCatch
  forall e s el m a.(IException e,
                     NullPoint s,
                     ReadableChunk s el,
-                    MonadCatchIO m) =>
-  Int -- ^Buffer size (number of elements per read)
+                    MonadCatchIO m)
+  => Int -- ^Buffer size (number of elements per read)
   -> Handle
   -> (e -> m (Maybe EnumException))
   -> Enumerator s m a

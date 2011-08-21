@@ -511,9 +511,9 @@ instance IException NotAnException where
 
 -- |Create an enumerator from a callback function with an exception handler.
 -- The exception handler is called if an iteratee reports an exception.
-enumFromCallbackCatch ::
- (IException e, Monad m, NullPoint s) =>
-  (st -> m (Either SomeException ((Bool, st), s)))
+enumFromCallbackCatch
+  :: (IException e, Monad m, NullPoint s)
+  => (st -> m (Either SomeException ((Bool, st), s)))
   -> (e -> m (Maybe EnumException))
   -> st
   -> Enumerator s m a

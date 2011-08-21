@@ -520,12 +520,13 @@ enumFromCallbackCatch
 enumFromCallbackCatch c handler = loop
   where
     loop st iter = runIter iter idoneM (onCont st)
+    check k (True, st') = loop st' . k . Chunk
+    check k (False,st') = return . k . Chunk
     onCont st k Nothing = c st >>=
-        either (return . k . EOF . Just) (uncurry check)
-      where
-        check (b,st') = if b then loop st' . k . Chunk else return . k . Chunk
+        either (return . k . EOF . Just) (uncurry (check k))
     onCont st k j@(Just e) = case fromException e of
-      Just e' -> handler e' >>= maybe (loop st . k $ Chunk empty)
-                                 (return . icont k . Just) . fmap toException
+      Just e' -> handler e' >>=
+                   maybe (loop st . k $ Chunk empty)
+                         (return . icont k . Just) . fmap toException
       Nothing -> return (icont k j)
 

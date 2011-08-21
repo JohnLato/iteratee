@@ -529,4 +529,6 @@ enumFromCallbackCatch c handler = loop
                    maybe (loop st . k $ Chunk empty)
                          (return . icont k . Just) . fmap toException
       Nothing -> return (icont k j)
+{-# INLINE enumFromCallbackCatch #-}
+
 

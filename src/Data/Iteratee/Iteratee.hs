@@ -10,8 +10,9 @@
 
 module Data.Iteratee.Iteratee (
   -- * Types
+  EnumerateeHandler
   -- ** Error handling
-  throwErr
+  ,throwErr
   ,throwRecoverableErr
   ,checkErr
   -- ** Basic Iteratees
@@ -27,6 +28,7 @@ module Data.Iteratee.Iteratee (
   ,mapChunks
   ,convStream
   ,unfoldConvStream
+  ,unfoldConvStreamCheck
   ,joinI
   ,joinIM
   -- * Enumerators
@@ -44,6 +46,9 @@ module Data.Iteratee.Iteratee (
   -- ** Enumerator Combinators
   ,(>>>)
   ,eneeCheckIfDone
+  ,eneeCheckIfDoneHandle
+  ,eneeCheckIfDoneIgnore
+  ,eneeCheckIfDonePass
   ,mergeEnums
   -- ** Enumeratee Combinators
   ,(><>)
@@ -240,6 +245,47 @@ eneeCheckIfDone f inner = Iteratee $ \od oc ->
       onCont _ (Just e) = runIter (throwErr e) od oc
   in runIter inner onDone onCont
 
+
+type EnumerateeHandler eli elo m a =
+  (Stream eli -> Iteratee eli m a)
+  -> SomeException
+  -> Iteratee elo m (Iteratee eli m a)
+
+-- | The same as eneeCheckIfDonePass, with one extra argument:
+-- a handler which is used
+-- to process any exceptions in a separate method.
+eneeCheckIfDoneHandle
+  :: (Monad m, NullPoint elo)
+  => EnumerateeHandler eli elo m a
+  -> ((Stream eli -> Iteratee eli m a)
+      -> Maybe SomeException
+      -> Iteratee elo m (Iteratee eli m a)
+     )
+  -> Enumeratee elo eli m a
+eneeCheckIfDoneHandle h f inner = Iteratee $ \od oc ->
+  let onDone x s = od (idone x s) (Chunk empty)
+      onCont k Nothing  = runIter (f k Nothing) od oc
+      onCont k (Just e) = runIter (h k e)       od oc
+  in runIter inner onDone onCont
+
+eneeCheckIfDonePass
+  :: (Monad m, NullPoint elo)
+  => ((Stream eli -> Iteratee eli m a)
+      -> Maybe SomeException
+      -> Iteratee elo m (Iteratee eli m a)
+     )
+  -> Enumeratee elo eli m a
+eneeCheckIfDonePass f = eneeCheckIfDoneHandle (\k e -> f k (Just e)) f
+
+eneeCheckIfDoneIgnore
+  :: (Monad m, NullPoint elo)
+  => ((Stream eli -> Iteratee eli m a)
+      -> Maybe SomeException
+      -> Iteratee elo m (Iteratee eli m a)
+     )
+  -> Enumeratee elo eli m a
+eneeCheckIfDoneIgnore f = eneeCheckIfDoneHandle (\k _ -> f k Nothing) f
+
 -- | Convert one stream into another with the supplied mapping function.
 -- This function operates on whole chunks at a time, contrasting to
 -- @mapStream@ which operates on single elements.
@@ -286,6 +332,27 @@ unfoldConvStream f acc0 = eneeCheckIfDone (check acc0)
     step acc k = f acc >>= \(acc', s') ->
                     eneeCheckIfDone (check acc') . k . Chunk $ s'
 
+unfoldConvStreamCheck
+  :: (Monad m, Nullable elo, Monoid elo)
+  => (((Stream eli -> Iteratee eli m a)
+        -> Maybe SomeException
+        -> Iteratee elo m (Iteratee eli m a)
+      )
+      -> Enumeratee elo eli m a
+     )
+  -> (acc -> Iteratee elo m (acc, eli))
+  -> acc
+  -> Enumeratee elo eli m a
+unfoldConvStreamCheck checkDone f acc0 = checkDone (check acc0)
+  where
+    check acc k mX = isStreamFinished >>=
+                   maybe (step acc k mX) (idone (icont k mX) . EOF . Just)
+    step acc k Nothing = f acc >>= \(acc', s') ->
+                  (checkDone (check acc') . k $ Chunk s')
+    step acc k (Just ex) = throwRecoverableErr ex $ \str' ->
+      let i = f acc >>= \(acc', s') ->
+                           (checkDone (check acc') . k $ Chunk s')
+      in joinIM $ enumChunk str' i
 
 -- | Collapse a nested iteratee.  The inner iteratee is terminated by @EOF@.
 --   Errors are propagated through the result.

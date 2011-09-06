@@ -30,6 +30,8 @@ module Data.Iteratee.ListLike (
   ,breakE
   ,take
   ,takeUpTo
+  ,takeWhile
+  ,takeWhileE
   ,mapStream
   ,rigidMapStream
   ,filter
@@ -64,7 +66,7 @@ module Data.Iteratee.ListLike (
 )
 where
 
-import Prelude hiding (mapM_, null, head, last, drop, dropWhile, take, break, foldl, foldl1, length, filter, sum, product, zip, zip3, sequence_)
+import Prelude hiding (mapM_, null, head, last, drop, dropWhile, take, takeWhile, break, foldl, foldl1, length, filter, sum, product, zip, zip3, sequence_)
 
 import qualified Prelude as Prelude
 
@@ -412,6 +414,27 @@ takeUpTo i iter
 {-# SPECIALIZE takeUpTo :: Monad m => Int -> Enumeratee B.ByteString B.ByteString m a #-}
 {-# INLINABLE takeUpTo #-}
 
+-- | Takes an element predicate and returns the (possibly empty)
+-- prefix of the stream. All characters
+-- in the string will satisfy the character predicate. If the stream
+-- is not terminated, the first character of the
+-- remaining stream will not satisfy the predicate.
+-- 
+-- The analogue of @List.takeWhile@, see also @break@ and @takeWhileE@
+takeWhile :: (LL.ListLike s el, Monad m) => (el -> Bool) -> Iteratee s m s
+takeWhile = break . (not .)
+{-# INLINEABLE takeWhile #-}
+
+-- |Takes an element predicate and an iteratee, running the iteratee
+-- on all elements of the stream while the predicate is met.
+-- 
+-- This is preferred to @takeWhile@.
+takeWhileE
+ :: (Monad m, LL.ListLike s el, NullPoint s)
+ => (el -> Bool)
+ -> Enumeratee s s m a
+takeWhileE = breakE . (not .)
+{-# INLINEABLE takeWhileE #-}
 
 -- |Map the stream: another iteratee transformer
 -- Given the stream of elements of the type @el@ and the function @(el->el')@,

@@ -94,7 +94,7 @@ executable testIteratee
       base                       >= 3   && < 6,
       mtl                        >= 2   && < 3,
       QuickCheck                 >= 2   && < 3,
-      test-framework             >= 0.3 && < 0.4,
+      test-framework             >= 0.3 && < 0.5,
       test-framework-quickcheck2 >= 0.2 && < 0.3
   else
     buildable:  False

@@ -6,6 +6,7 @@ module Main where
 
 import Data.Iteratee
 import qualified Data.Iteratee.ListLike as I
+import qualified Data.Iteratee.Parallel as I
 import Data.Iteratee.ListLike (enumPureNChunk, stream2list, stream2stream)
 import Data.Word
 import Data.Monoid

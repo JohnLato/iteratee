@@ -46,4 +46,5 @@ instance (Num a, Ord a, Arbitrary a, Monad m) => Arbitrary (Iteratee [a] m [a]) 
               ,I.break (< 5)
               ,I.heads ns >> stream2list
               ,I.peek >> stream2list
+              ,I.identity >> return []
               ]

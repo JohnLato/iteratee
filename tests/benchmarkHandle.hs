@@ -9,6 +9,7 @@ import Criterion.Main
 import Data.Monoid
 import Data.Word
 import Data.Iteratee
+import Data.Iteratee.Parallel
 import Data.Iteratee.Base.ReadableChunk
 import Data.Iteratee.IO.Fd (fileDriverFd)
 import Data.Iteratee.IO.Handle (fileDriverHandle)

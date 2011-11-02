@@ -186,6 +186,7 @@ run iter = runIter iter onDone onCont
 -- Note that only internal iteratee exceptions will be returned; exceptions
 -- thrown with @Control.Exception.throw@ or @Control.Monad.CatchIO.throw@ will
 -- not be returned.
+-- 
 -- See 'Data.Iteratee.Exception.IFException' for details.
 tryRun :: (Exception e, Monad m) => Iteratee s m a -> m (Either e a)
 tryRun iter = runIter iter onDone onCont

@@ -504,9 +504,14 @@ group cksz iinit = liftI (step 0 id iinit)
     | otherwise               =
         let (full, rest) = gsplit . mconcat $ pfxd [s]
             pfxd'        = if LL.null rest then id else (rest:)
+            onDone x str = return $ Left (x,str)
+            onCont k Nothing = return $ Right $ k $ Chunk full
+            onCont k e       = return $ Right $ icont k e
         in  do
-              inext <- lift $ enumPure1Chunk full icur
-              liftI $ step (LL.length rest) pfxd' inext
+              res <- lift $ runIter icur onDone onCont
+              case res of
+                Left (x,str) -> idone (idone x str) (Chunk rest)
+                Right inext  -> liftI $ step (LL.length rest) pfxd' inext
   step _ pfxd icur mErr = case pfxd [] of
                          []   -> idone icur mErr
                          rest -> do

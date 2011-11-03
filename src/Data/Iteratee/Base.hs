@@ -34,8 +34,11 @@ where
 
 import Prelude hiding (null, catch)
 import Data.Iteratee.Exception
-import Data.Nullable
-import Data.NullPoint
+import Data.Iteratee.Base.LooseMap as X
+import Data.Nullable               as X
+import Data.NullPoint              as X
+
+import Data.Maybe
 import Data.Monoid
 
 import Control.Monad (liftM)

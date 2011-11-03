@@ -12,7 +12,7 @@ maintainer:    John W. Lato <jwlato@gmail.com>
 license:       BSD3
 license-file:  LICENSE
 homepage:      http://www.tiresiaspress.us/haskell/iteratee
-tested-with:   GHC == 7.0.3, GHC == 6.12.3
+tested-with:   GHC == 7.0.4, GHC == 7.2.1
 stability:     experimental
 
 cabal-version: >= 1.6
@@ -26,9 +26,6 @@ extra-source-files:
   Examples/*.txt
   tests/*.hs
 
-flag splitBase
-  description: Use the split-up base package.
-
 flag buildTests
   description: Build test executables.
   default:     False
@@ -36,13 +33,6 @@ flag buildTests
 library
   hs-source-dirs:
     src
-
-  if flag(splitBase)
-    build-depends:
-      base >= 3 && < 6
-  else
-    build-depends:
-      base < 3
 
   if os(windows)
     cpp-options: -DUSE_WINDOWS
@@ -57,6 +47,7 @@ library
       unix >= 2 && < 3
 
   build-depends:
+    base                      >= 3       && < 6,
     ListLike                  >= 1.0     && < 4,
     MonadCatchIO-transformers >  0.2     && < 0.3,
     bytestring                >= 0.9     && < 0.10,
@@ -100,19 +91,13 @@ executable testIteratee
 
   if flag(buildTests)
     build-depends:
+      base                       >= 3   && < 6,
       mtl                        >= 2   && < 3,
       QuickCheck                 >= 2   && < 3,
       test-framework             >= 0.3 && < 0.4,
       test-framework-quickcheck2 >= 0.2 && < 0.3
   else
     buildable:  False
-
-  if flag(splitBase)
-    build-depends:
-      base >= 3 && < 5
-  else
-    build-depends:
-      base < 3
 
 source-repository head
   type:     darcs

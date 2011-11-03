@@ -865,7 +865,17 @@ enumWith
   => Iteratee s m a
   -> Iteratee s m b
   -> Iteratee s m (a, b)
-enumWith i1 i2 = go i1 i2
+enumWith i1 i2 = do
+    -- as with zip, first check to see if the initial iteratee is complete,
+    -- otherwise data would be dropped.
+    -- running the second iteratee as well to prevent a monadic effect mismatch
+    -- although I think that would be highly unlikely to happen in common
+    -- code
+    (a', x') <- lift $ runIter i1 od oc
+    (_,  y') <- lift $ runIter i2 od oc
+    case a' of
+      Just (a, s) -> flip idone s =<< lift (liftM (a,) $ run i2)
+      Nothing     -> go x' y'
   where
     od a s = return (Just (a, s), idone a s)
     oc k e = return (Nothing    , icont k e)

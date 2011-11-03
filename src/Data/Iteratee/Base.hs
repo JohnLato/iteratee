@@ -27,17 +27,15 @@ module Data.Iteratee.Base (
   -- ** Stream Functions
   ,setEOF
   -- * Classes
-  ,module Data.NullPoint
-  ,module Data.Nullable
-  ,module Data.Iteratee.Base.LooseMap
+  ,module X
 )
 where
 
 import Prelude hiding (null, catch)
-import Data.Iteratee.Base.LooseMap
 import Data.Iteratee.Exception
-import Data.Nullable
-import Data.NullPoint
+import Data.Iteratee.Base.LooseMap as X
+import Data.Nullable               as X
+import Data.NullPoint              as X
 import Data.Monoid
 
 import Control.Monad.IO.Class

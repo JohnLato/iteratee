@@ -778,7 +778,6 @@ enumPair
   -> Iteratee s m (a, b)
 enumPair = zip
 
-
 -- |Enumerate two iteratees over a single stream simultaneously.
 -- 
 -- Compare to @List.zip@.
@@ -787,25 +786,38 @@ zip
   => Iteratee s m a
   -> Iteratee s m b
   -> Iteratee s m (a, b)
-zip x y = liftI step
+zip x0 y0 = do
+    -- need to check if both iteratees are initially finished.  If so,
+    -- we don't want to push a chunk which will be dropped
+    (a', x') <- lift $ runIter x0 od oc
+    (b', y') <- lift $ runIter y0 od oc
+    case checkDone a' b' of
+      Just (Right (a,b,s))  -> idone (a,b) s  -- 's' may be EOF, needs to stay
+      Just (Left (Left a))  -> liftM (a,) y'
+      Just (Left (Right b)) -> liftM (,b) x'
+      Nothing               -> liftI (step x' y')
   where
-    step (Chunk xs) | nullC xs = liftI step
-    step (Chunk xs) = do
+    step x y (Chunk xs) | nullC xs = liftI (step x y)
+    step x y (Chunk xs) = do
       (a', x') <- lift $ (\i -> runIter i od oc) =<< enumPure1Chunk xs x
       (b', y') <- lift $ (\i -> runIter i od oc) =<< enumPure1Chunk xs y
       case checkDone a' b' of
-        Just (a, b, s) -> idone (a, b) s
-        Nothing        -> zip x' y'
-    step (EOF err) = joinIM $ case err of
+        Just (Right (a,b,s))  -> idone (a,b) s
+        Just (Left (Left a))  -> liftM (a,) y'
+        Just (Left (Right b)) -> liftM (,b) x'
+        Nothing               -> liftI (step x' y')
+    step x y (EOF err) = joinIM $ case err of
       Nothing -> (liftM2.liftM2) (,) (enumEof   x) (enumEof   y)
       Just e  -> (liftM2.liftM2) (,) (enumErr e x) (enumErr e y)
 
     od a s = return (Just (a, s), idone a s)
     oc k e = return (Nothing    , icont k e)
 
-    checkDone r1 r2 =
-      r1 >>= \(a, s1) -> r2 >>= \(b, s2) ->
-      return (a, b, shorter s1 s2)
+    checkDone r1 r2 = case (r1, r2) of
+      (Just (a, s1), Just (b,s2)) -> Just $ Right (a, b, shorter s1 s2)
+      (Just (a, _), Nothing)      -> Just . Left $ Left a
+      (Nothing, Just (b, _))      -> Just . Left $ Right b
+      (Nothing, Nothing)          -> Nothing
 
     shorter c1@(Chunk xs) c2@(Chunk ys)
       | LL.length xs < LL.length ys = c1

@@ -505,13 +505,16 @@ group cksz iinit = liftI (step 0 id iinit)
         let (full, rest) = gsplit . mconcat $ pfxd [s]
             pfxd'        = if LL.null rest then id else (rest:)
             onDone x str = return $ Left (x,str)
-            onCont k Nothing = return $ Right $ k $ Chunk full
-            onCont k e       = return $ Right $ icont k e
+            onCont k Nothing = return . Right . Left . k $ Chunk full
+            onCont k e       = return . Right $ Right (liftI k, e)
         in  do
               res <- lift $ runIter icur onDone onCont
               case res of
                 Left (x,str) -> idone (idone x str) (Chunk rest)
-                Right inext  -> liftI $ step (LL.length rest) pfxd' inext
+                Right (Left inext)  -> liftI $ step (LL.length rest) pfxd' inext
+                Right (Right (inext, e)) -> icont (step (LL.length rest)
+                                                        pfxd' inext)
+                                                  e
   step _ pfxd icur mErr = case pfxd [] of
                          []   -> idone icur mErr
                          rest -> do
@@ -549,8 +552,19 @@ groupBy same iinit = liftI $ go iinit (const True, id)
     -- accumulator.
     go icurr pfx (Chunk s) = case gsplit pfx s of
       ([], partial)   -> liftI $ go icurr partial
-      (full, partial) -> do inext <- lift $ enumPure1Chunk full icurr
-                            liftI $ go inext partial
+      (full, partial) -> do
+        -- if the inner iteratee is done, the outer iteratee needs to be
+        -- notified to terminate.
+        -- if the inner iteratee is in an error state, that error should
+        -- be lifted to the outer iteratee
+        let onCont k Nothing = return $ Right $ Left $ k $ Chunk full
+            onCont k e       = return $ Right $ Right (liftI k, e)
+            onDone x str     = return $ Left (x,str)
+        res <- lift $ runIter icurr onDone onCont
+        case res of
+          Left (x,str) -> idone (idone x str) (Chunk (mconcat $ snd partial []))
+          Right (Left inext)      -> liftI $ go inext partial
+          Right (Right (inext,e)) -> icont (go inext partial) e
     go icurr (_inpfx, pfxd) (EOF mex) = case pfxd [] of
       [] -> lift . enumChunk (EOF mex) $ icurr
       rest -> do inext <- lift . enumPure1Chunk [mconcat rest] $ icurr

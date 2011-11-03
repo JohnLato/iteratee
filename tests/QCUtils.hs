@@ -43,8 +43,11 @@ instance (Num a, Ord a, Arbitrary a, Monad m) => Arbitrary (Iteratee [a] m [a]) 
     ns <- arbitrary
     elements [
               I.drop n >> stream2list
+              ,I.drop n >> return ns
               ,I.break (< 5)
               ,I.heads ns >> stream2list
               ,I.peek >> stream2list
+              ,I.peek >> return ns
               ,I.identity >> return []
+              ,I.identity >> return ns
               ]

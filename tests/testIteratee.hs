@@ -240,6 +240,12 @@ prop_enumWith2 xs f n = n > 0 ==> runner1 (enumSpecial xs n $ enumWith (Iter.dro
    == runner1 (enumSpecial xs n $ Iter.dropWhile f >> stream2list)
  where types = (xs :: [Int])
 
+prop_enumWith3 xs i n =
+   n > 0
+   ==> runner1 (enumSpecial xs n $ enumWith i stream2list >> stream2list)
+   ==  runner1 (enumSpecial xs n (i >> stream2list))
+ where types = (xs :: [Int], i :: I)
+
 
 -- ---------------------------------------------
 -- Nested Iteratees
@@ -498,6 +504,7 @@ tests = [
   ,testGroup "Enumerator Combinators" [
     testProperty "enumWith" prop_enumWith
     ,testProperty "enumWith remaining" prop_enumWith2
+    ,testProperty "enumWith remaining 2" prop_enumWith3
     ]
   ,testGroup "Folds" [
     testProperty "foldl" prop_foldl

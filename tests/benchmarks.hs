@@ -77,6 +77,7 @@ streambench = makeGroup "stream" (streamBenches :: [BD [Int] () [Int] Identity])
 breakbench = makeGroup "break" $ break0 : break0' : breakBenches
 headsbench = makeGroup "heads" headsBenches
 dropbench = makeGroup "drop" $ drop0 : dropBenches
+zipbench = makeGroup "zip" $ zipBenches
 lengthbench = makeGroup "length" listBenches
 takebench = makeGroup "take" $ take0 : takeBenches
 takeUpTobench = makeGroup "takeUpTo" takeUpToBenches
@@ -91,6 +92,7 @@ streambenchbs = makeGroupBS "stream" streamBenches
 breakbenchbs = makeGroupBS "break" breakBenches
 headsbenchbs = makeGroupBS "heads" headsBenches
 dropbenchbs = makeGroupBS "drop" dropBenches
+zipbenchbs = makeGroupBS "zip" zipBenches
 lengthbenchbs = makeGroupBS "length" listBenches
 takebenchbs = makeGroupBS "take" takeBenches
 takeUpTobenchbs = makeGroupBS "takeUpTo" takeUpToBenches
@@ -101,9 +103,9 @@ convbenchbs = makeGroupBS "convStream" convBenches
 miscbenchbs = makeGroupBS "other" miscBenches
 
 
-allListBenches = bgroup "list" [listbench, streambench, breakbench, headsbench, dropbench, lengthbench, takebench, takeUpTobench, groupbench, mapbench, foldbench, convbench, miscbench]
+allListBenches = bgroup "list" [listbench, streambench, breakbench, headsbench, dropbench, zipbench, lengthbench, takebench, takeUpTobench, groupbench, mapbench, foldbench, convbench, miscbench]
 
-allByteStringBenches = bgroup "bytestring" [listbenchbs, streambenchbs, breakbenchbs, headsbenchbs, dropbenchbs, lengthbenchbs, takebenchbs, takeUpTobenchbs, groupbenchbs, mapbenchbs, foldbenchbs, convbenchbs, miscbenchbs]
+allByteStringBenches = bgroup "bytestring" [listbenchbs, streambenchbs, breakbenchbs, headsbenchbs, dropbenchbs, zipbenchbs, lengthbenchbs, takebenchbs, takeUpTobenchbs, groupbenchbs, mapbenchbs, foldbenchbs, convbenchbs, miscbenchbs]
 
 list0 = makeList "list one go" deepseq
 list1 = BDIter1 "stream2list one go" (flip deepseq ()) stream2list
@@ -147,6 +149,14 @@ dropw2 = idN "dropWhile all chunked" (I.dropWhile (const True))
 dropw3 = id1 "dropWhile small" (I.dropWhile ( < 100))
 dropw4 = id1 "dropWhile large" (I.dropWhile ( < 6000))
 dropBenches = [drop1, drop2, drop3, dropw1, dropw2, dropw3, dropw4]
+
+b_zip0 = idN "zip balanced" (I.zip (I.dropWhile (<100)) (I.dropWhile (<200))
+   >> identity)
+b_zip1 = idN "zip unbalanced" (I.zip (I.dropWhile (<8000)) (I.head) >> identity)
+b_zip2 = idN "zip unbalanced 2" (I.zip identity I.length >> identity)
+b_zip3 = idN "zip complete" (I.zip identity identity >> identity)
+b_zip4 = idN "zip nonterminating" (I.zip I.length I.stream2stream >> identity)
+zipBenches = [b_zip0, b_zip1, b_zip2, b_zip3, b_zip4 ]
 
 
 l1 = makeList "length of list" Prelude.length

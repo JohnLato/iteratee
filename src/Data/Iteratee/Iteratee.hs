@@ -196,6 +196,7 @@ type Enumeratee sFrom sTo (m :: * -> *) a =
 
 -- The following pattern appears often in Enumeratee code
 {-# INLINE eneeCheckIfDone #-}
+{-# INLINE eneeCheckIfDonePass #-}
 
 -- | Utility function for creating enumeratees.  Typical usage is demonstrated
 -- by the @breakE@ definition.
@@ -272,9 +273,9 @@ eneeCheckIfDoneIgnore f = eneeCheckIfDoneHandle (\k _ -> f k Nothing) f
 -- > unpacker = mapChunks B.unpack
 -- 
 mapChunks :: (Monad m, NullPoint s) => (s -> s') -> Enumeratee s s' m a
-mapChunks f = eneeCheckIfDone (liftI . step)
+mapChunks f = eneeCheckIfDonePass (icont . step)
  where
-  step k (Chunk xs)     = eneeCheckIfDone (liftI . step) . k . Chunk $ f xs
+  step k (Chunk xs)     = eneeCheckIfDonePass (icont . step) . k . Chunk $ f xs
   step k str@(EOF mErr) = idone (k $ EOF mErr) str
 {-# INLINE mapChunks #-}
 
@@ -283,10 +284,10 @@ mapChunksM
   :: (Monad m, NullPoint s, Nullable s)
   => (s -> m s')
   -> Enumeratee s s' m a
-mapChunksM f = eneeCheckIfDone (liftI . step)
+mapChunksM f = eneeCheckIfDonePass (icont . step)
  where
   step k (Chunk xs)     = lift (f xs) >>=
-                          eneeCheckIfDone (liftI . step) . k . Chunk
+                          eneeCheckIfDonePass (icont . step) . k . Chunk
   step k str@(EOF mErr) = idone (k $ EOF mErr) str
 {-# INLINE mapChunksM #-}
 
@@ -301,10 +302,11 @@ convStream ::
  (Monad m, Nullable s) =>
   Iteratee s m s'
   -> Enumeratee s s' m a
-convStream fi = eneeCheckIfDone check
+convStream fi = eneeCheckIfDonePass check
   where
-    check k = isStreamFinished >>= maybe (step k) (idone (liftI k) . EOF . Just)
-    step k = fi >>= eneeCheckIfDone check . k . Chunk
+    check k (Just e) = throwRecoverableErr e (const identity) >> check k Nothing
+    check k _ = isStreamFinished >>= maybe (step k) (idone (liftI k) . EOF . Just)
+    step k = fi >>= eneeCheckIfDonePass check . k . Chunk
 
 -- |The most general stream converter.  Given a function to produce iteratee
 -- transformers and an initial state, convert the stream using iteratees
@@ -314,12 +316,13 @@ unfoldConvStream ::
   (acc -> Iteratee s m (acc, s'))
   -> acc
   -> Enumeratee s s' m a
-unfoldConvStream f acc0 = eneeCheckIfDone (check acc0)
+unfoldConvStream f acc0 = eneeCheckIfDonePass (check acc0)
   where
-    check acc k = isStreamFinished >>=
+    check acc k (Just e) = throwRecoverableErr e (const identity) >> check acc k Nothing
+    check acc k _ = isStreamFinished >>=
                     maybe (step acc k) (idone (liftI k) . EOF . Just)
     step acc k = f acc >>= \(acc', s') ->
-                    eneeCheckIfDone (check acc') . k . Chunk $ s'
+                    eneeCheckIfDonePass (check acc') . k . Chunk $ s'
 
 unfoldConvStreamCheck
   :: (Monad m, Nullable elo, Monoid elo)

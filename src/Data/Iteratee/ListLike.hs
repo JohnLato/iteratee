@@ -320,13 +320,13 @@ breakE
   :: (Monad m, LL.ListLike s el, NullPoint s)
   => (el -> Bool)
   -> Enumeratee s s m a
-breakE cpred = eneeCheckIfDone (liftI . step)
+breakE cpred = eneeCheckIfDonePass (icont . step)
  where
   step k (Chunk s)
       | LL.null s  = liftI (step k)
       | otherwise  = case LL.break cpred s of
         (str', tail')
-          | LL.null tail' -> eneeCheckIfDone (liftI . step) . k $ Chunk str'
+          | LL.null tail' -> eneeCheckIfDonePass (icont . step) . k $ Chunk str'
           | otherwise     -> idone (k $ Chunk str') (Chunk tail')
   step k stream           =  idone (k stream) stream
 {-# INLINE breakE #-}

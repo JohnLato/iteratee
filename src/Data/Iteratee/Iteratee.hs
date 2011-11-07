@@ -196,7 +196,6 @@ type Enumeratee sFrom sTo (m :: * -> *) a =
 
 -- The following pattern appears often in Enumeratee code
 {-# INLINE eneeCheckIfDone #-}
-{-# INLINE eneeCheckIfDonePass #-}
 
 -- | Utility function for creating enumeratees.  Typical usage is demonstrated
 -- by the @breakE@ definition.

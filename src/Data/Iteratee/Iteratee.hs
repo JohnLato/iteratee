@@ -218,12 +218,10 @@ eneeCheckIfDone ::
  (Monad m, NullPoint elo) =>
   ((Stream eli -> Iteratee eli m a) -> Iteratee elo m (Iteratee eli m a))
   -> Enumeratee elo eli m a
-eneeCheckIfDone f inner = Iteratee $ \od oc -> 
-  let onDone x s = od (idone x s) (Chunk empty)
-      onCont k Nothing  = runIter (f k) od oc
-      onCont _ (Just e) = runIter (throwErr e) od oc
-  in runIter inner onDone onCont
-
+eneeCheckIfDone f = eneeCheckIfDonePass f'
+ where
+  f' k Nothing  = f k
+  f' k (Just e) = throwRecoverableErr e (\s -> joinIM $ enumChunk s $ eneeCheckIfDone f (liftI k))
 
 type EnumerateeHandler eli elo m a =
   (Stream eli -> Iteratee eli m a)
@@ -255,6 +253,7 @@ eneeCheckIfDonePass
      )
   -> Enumeratee elo eli m a
 eneeCheckIfDonePass f = eneeCheckIfDoneHandle (\k e -> f k (Just e)) f
+{-# INLINE eneeCheckIfDonePass #-}
 
 eneeCheckIfDoneIgnore
   :: (Monad m, NullPoint elo)

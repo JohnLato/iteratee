@@ -155,7 +155,7 @@ mapChunksM_ f = liftI step
       | nullC xs   = liftI step
       | otherwise  = lift (f xs) >> liftI step
     step s@(EOF _) = idone () s
-{-# INLINEABLE mapChunksM_ #-}
+{-# INLINE mapChunksM_ #-}
 
 -- | A fold over chunks
 foldChunksM :: (Monad m, Nullable s) => (a -> s -> m a) -> a -> Iteratee s m a
@@ -163,7 +163,7 @@ foldChunksM f = liftI . go
   where
     go a (Chunk c) = lift (f a c) >>= liftI . go
     go a e = idone a e
-{-# INLINEABLE foldChunksM #-}
+{-# INLINE foldChunksM #-}
 
 -- | Get the current chunk from the stream.
 getChunk :: (Monad m, Nullable s, NullPoint s) => Iteratee s m s
@@ -174,7 +174,7 @@ getChunk = liftI step
     | otherwise = idone xs $ Chunk empty
   step (EOF Nothing)  = throwErr $ toException EofException
   step (EOF (Just e)) = throwErr e
-{-# INLINEABLE getChunk #-}
+{-# INLINE getChunk #-}
 
 -- | Get a list of all chunks from the stream.
 getChunks :: (Monad m, Nullable s) => Iteratee s m [s]
@@ -184,7 +184,7 @@ getChunks = liftI (step id)
     | nullC xs    = liftI (step acc)
     | otherwise   = liftI (step $ acc . (xs:))
   step acc stream = idone (acc []) stream
-{-# INLINEABLE getChunks #-}
+{-# INLINE getChunks #-}
 
 -- ---------------------------------------------------
 -- The converters show a different way of composing two iteratees:
@@ -195,7 +195,7 @@ type Enumeratee sFrom sTo (m :: * -> *) a =
   -> Iteratee sFrom m (Iteratee sTo m a)
 
 -- The following pattern appears often in Enumeratee code
-{-# INLINEABLE eneeCheckIfDone #-}
+{-# INLINE eneeCheckIfDone #-}
 
 -- | Utility function for creating enumeratees.  Typical usage is demonstrated
 -- by the @breakE@ definition.
@@ -276,7 +276,7 @@ mapChunks f = eneeCheckIfDonePass (icont . step)
  where
   step k (Chunk xs)     = eneeCheckIfDonePass (icont . step) . k . Chunk $ f xs
   step k str@(EOF mErr) = idone (k $ EOF mErr) str
-{-# INLINEABLE mapChunks #-}
+{-# INLINE mapChunks #-}
 
 -- | Convert a stream of @s@ to a stream of @s'@ using the supplied function.
 mapChunksM
@@ -288,7 +288,7 @@ mapChunksM f = eneeCheckIfDonePass (icont . step)
   step k (Chunk xs)     = lift (f xs) >>=
                           eneeCheckIfDonePass (icont . step) . k . Chunk
   step k str@(EOF mErr) = idone (k $ EOF mErr) str
-{-# INLINEABLE mapChunksM #-}
+{-# INLINE mapChunksM #-}
 
 -- |Convert one stream into another, not necessarily in lockstep.
 -- The transformer mapStream maps one element of the outer stream
@@ -363,7 +363,7 @@ joinI = (>>=
       onCont  _ (Just e) = runIter (throwErr e) od oc
       onCont' _ e        = runIter (throwErr (fromMaybe excDivergent e)) od oc
   in runIter inner onDone onCont)
-{-# INLINEABLE joinI #-}
+{-# INLINE joinI #-}
 
 -- | Lift an iteratee inside a monad to an iteratee.
 joinIM :: (Monad m) => m (Iteratee s m a) -> Iteratee s m a
@@ -529,6 +529,6 @@ enumFromCallbackCatch c handler = loop
                    maybe (loop st . k $ Chunk empty)
                          (return . icont k . Just) . fmap toException
       Nothing -> return (icont k j)
-{-# INLINEABLE enumFromCallbackCatch #-}
+{-# INLINE enumFromCallbackCatch #-}
 
 

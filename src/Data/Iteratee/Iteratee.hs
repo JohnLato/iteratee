@@ -195,7 +195,7 @@ type Enumeratee sFrom sTo (m :: * -> *) a =
   -> Iteratee sFrom m (Iteratee sTo m a)
 
 -- The following pattern appears often in Enumeratee code
-{-# INLINE eneeCheckIfDone #-}
+{-# INLINEABLE eneeCheckIfDone #-}
 
 -- | Utility function for creating enumeratees.  Typical usage is demonstrated
 -- by the @breakE@ definition.

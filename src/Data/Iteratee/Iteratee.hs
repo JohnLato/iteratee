@@ -253,7 +253,7 @@ eneeCheckIfDonePass
      )
   -> Enumeratee elo eli m a
 eneeCheckIfDonePass f = eneeCheckIfDoneHandle (\k e -> f k (Just e)) f
-{-# INLINE eneeCheckIfDonePass #-}
+{-# INLINEABLE eneeCheckIfDonePass #-}
 
 eneeCheckIfDoneIgnore
   :: (Monad m, NullPoint elo)

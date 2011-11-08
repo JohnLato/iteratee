@@ -18,6 +18,7 @@ module Data.Iteratee.Base (
   ,tryRun
   ,mapIteratee
   ,ilift
+  ,ifold
   -- ** Creating Iteratees
   ,idone
   ,icont
@@ -225,3 +226,13 @@ ilift f i = Iteratee $  \od oc ->
   let onDone a str  = return $ Left (a,str)
       onCont k mErr = return $ Right (ilift f . k, mErr)
   in f (runIter i onDone onCont) >>= either (uncurry od) (uncurry oc)
+
+-- | Lift a computation in the inner monad of an iteratee, while threading
+-- through an accumulator.
+ifold :: (Monad m, Monad n) => (forall r. m r -> acc -> n (r, acc))
+      -> acc -> Iteratee s m a -> Iteratee s n (a, acc)
+ifold f acc i = Iteratee $ \ od oc -> do
+  (r, acc') <- flip f acc $
+    runIter i (curry $ return . Left) (curry $ return . Right)
+  either (uncurry (od . flip (,) acc'))
+         (uncurry (oc . (ifold f acc .))) r

@@ -52,6 +52,8 @@ module Data.Iteratee.Iteratee (
   ,eneeCheckIfDonePass
   ,mergeEnums
   -- ** Enumeratee Combinators
+  ,($=)
+  ,(=$)
   ,(><>)
   ,(<><)
   -- * Misc.
@@ -419,6 +421,29 @@ enumErr e iter = runIter iter onDone onCont
 (>>>) :: (Monad m) => Enumerator s m a -> Enumerator s m a -> Enumerator s m a
 (e1 >>> e2) i =  e1 i >>= e2
   -- I think (>>>) is identical to (>=>)...
+
+infixr 0 =$
+
+-- | Combines an Enumeratee from @s@ to @s'@ and an Iteratee that
+--  consumes @s'@ into an Iteratee which consumes @s@
+(=$)
+  :: (Nullable s, Nullable s', Monad m)
+  => Enumeratee s s' m a
+  -> Iteratee s' m a
+  -> Iteratee s m a
+(=$) = (.) joinI
+
+infixl 1 $=
+
+-- | Combines Enumerator which produces stream of @s@ and @Enumeratee@
+--  which transforms stream of @s@ to stream
+--  of @s'@ to into Enumerator which produces stream of @s'@
+($=)
+  :: (Nullable s1, Nullable s2, Monad m)
+  => (forall a. Enumerator s1 m a)
+  -> Enumeratee s1 s2 m b
+  -> Enumerator s2 m b
+($=) enum enee iter = enum (enee iter) >>= run
 
 
 -- | Enumeratee composition

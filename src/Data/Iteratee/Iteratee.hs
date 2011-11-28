@@ -439,10 +439,10 @@ infixl 1 $=
 --  which transforms stream of @s@ to stream
 --  of @s'@ to into Enumerator which produces stream of @s'@
 ($=)
-  :: (Nullable s1, Nullable s2, Monad m)
-  => (forall a. Enumerator s1 m a)
-  -> Enumeratee s1 s2 m b
-  -> Enumerator s2 m b
+  :: (Nullable s, Nullable s', Monad m)
+  => (forall a. Enumerator s m a)
+  -> Enumeratee s s' m b
+  -> Enumerator s' m b
 ($=) enum enee iter = enum (enee iter) >>= run
 
 

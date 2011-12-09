@@ -70,11 +70,11 @@ import Prelude hiding (mapM_, null, head, last, drop, dropWhile, take, takeWhile
 
 import qualified Prelude as Prelude
 
+import Data.List (partition)
 import qualified Data.ListLike as LL
 import qualified Data.ListLike.FoldableLL as FLL
 import Data.Iteratee.Iteratee
 import Data.Monoid
-import Data.Maybe (catMaybes)
 import Control.Applicative ((<$>), (<*>), (<*))
 import Control.Monad (liftM, liftM2, mplus, (<=<))
 import Control.Monad.Trans.Class
@@ -930,19 +930,15 @@ sequence_ = self
           -- give a chunk to each iteratee
           is'  <- lift $ mapM (enumChunk s) is
           -- filter done iteratees
-          is'' <- lift $ catMaybes `liftM` mapM checkIfDone is'
-          if Prelude.null is''
-            then idone () <=< remainingStream $ is'
-            else self is''
+          (done, notDone) <- lift $ partition fst `liftM` mapM enumCheckIfDone is'
+          if Prelude.null notDone
+            then idone () <=< remainingStream $ map snd done
+            else self $ map snd notDone
         step s@(EOF _) = do
           s' <- remainingStream <=< lift $ mapM (enumChunk s) is
           case s' of
             EOF (Just e) -> throwErr e
             _            -> idone () s'
-
-        checkIfDone i = runIter i
-            (\_ _ -> return Nothing)
-            (\k e -> return $ Just $ icont k e)
 
     -- returns the unconsumed part of the stream; "sequence_ is" consumes as
     -- much of the stream as the iteratee in is that consumes the most; e.g.

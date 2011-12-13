@@ -92,10 +92,12 @@ executable testIteratee
   if flag(buildTests)
     build-depends:
       base                       >= 3   && < 6,
+      HUnit                      == 1.2.* ,
       mtl                        >= 2   && < 3,
       QuickCheck                 >= 2   && < 3,
       test-framework             >= 0.3 && < 0.5,
-      test-framework-quickcheck2 >= 0.2 && < 0.3
+      test-framework-quickcheck2 >= 0.2 && < 0.3,
+      test-framework-hunit       >= 0.2 && < 0.3
   else
     buildable:  False
 

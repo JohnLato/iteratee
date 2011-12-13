@@ -7,7 +7,9 @@ import QCUtils
 
 import Test.Framework (defaultMain, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
+import Test.Framework.Providers.HUnit (testCase)
 
+import Test.HUnit
 import Test.QuickCheck
 
 import           Data.Iteratee hiding (head, break)
@@ -411,6 +413,21 @@ prop_zip xs i1 i2 n = n > 0 ==>
  where types = (i1 :: I, i2 :: I, xs :: [Int])
 
 -- ---------------------------------------------
+-- Sequences
+
+test_sequence_ =
+  assertEqual "sequence_: no duplicate runs" ((),[4,5])
+              (runWriter (Iter.enumList [[4],[5::Int]] (Iter.sequence_ [iter])
+                          >>= run))
+ where
+  iter = do
+    x <- Iter.head
+    lift $ tell [x]
+    y <- Iter.head
+    lift $ tell [y]
+
+
+-- ---------------------------------------------
 -- Data.Iteratee.Char
 
 {-
@@ -509,6 +526,7 @@ tests = [
    ]
   ,testGroup "Zips" [
     testProperty "zip" prop_zip
+   ,testCase     "sequence_" test_sequence_
    ]
   ,testGroup "Data.Iteratee.Char" [
     --testProperty "line" prop_line

@@ -1,5 +1,11 @@
-{-# LANGUAGE TypeFamilies, FlexibleContexts, FlexibleInstances, Rank2Types,
-    DeriveDataTypeable, ExistentialQuantification #-}
+{-# LANGUAGE TypeFamilies
+            ,MultiParamTypeClasses
+            ,FlexibleContexts
+            ,FlexibleInstances
+            ,UndecidableInstances
+            ,Rank2Types
+            ,DeriveDataTypeable
+            ,ExistentialQuantification #-}
 
 -- |Monadic Iteratees:
 -- incremental input parsers, processors and transformers
@@ -41,9 +47,9 @@ import Data.NullPoint              as X
 import Data.Maybe
 import Data.Monoid
 
-import Control.Monad (liftM)
+import Control.Monad (liftM, join)
+import Control.Monad.Base
 import Control.Monad.IO.Class
-import Control.Monad.IO.Control
 import Control.Monad.Trans.Class
 import Control.Monad.CatchIO (MonadCatchIO (..), Exception (..),
   catch, block, toException, fromException)
@@ -164,6 +170,9 @@ bindIteratee = self
 instance NullPoint s => MonadTrans (Iteratee s) where
   lift m = Iteratee $ \onDone _ -> m >>= flip onDone (Chunk empty)
 
+instance (MonadBase b m, Nullable s, NullPoint s) => MonadBase b (Iteratee s m) where
+  liftBase = lift . liftBase
+
 instance (MonadIO m, Nullable s, NullPoint s) => MonadIO (Iteratee s m) where
   liftIO = lift . liftIO
 
@@ -174,19 +183,27 @@ instance (MonadCatchIO m, Nullable s, NullPoint s) =>
     unblock     = ilift unblock
 
 instance forall s. (NullPoint s, Nullable s) => MonadTransControl (Iteratee s) where
-  liftControl f = lift $ f $ \t ->
-    liftM (either (uncurry idone)
-                  (\e -> te $ fromMaybe (iterStrExc
-                                       "iteratee: error in liftControl") e))
-      $ runIter t (\x s -> return $ Left (x,s))
-                  (\_ e -> return $ Right e)
+  newtype StT (Iteratee s) x =
+    StIter { unStIter :: Either (x, Stream s) (Maybe SomeException) }
+  liftWith f = lift $ f $ \t -> liftM StIter
+      (runIter t (\x s -> return $ Left (x,s))
+                 (\_ e -> return $ Right e) )
+  restoreT = join . lift . liftM
+               (either (uncurry idone)
+                       (te . fromMaybe (iterStrExc
+                          "iteratee: error in MonadTransControl instance"))
+                      . unStIter )
+  {-# INLINE liftWith #-}
+  {-# INLINE restoreT #-}
+
+instance (MonadBaseControl b m, Nullable s) => MonadBaseControl b (Iteratee s m) where
+  newtype StM (Iteratee s m) a =
+    StMIter { unStMIter :: ComposeSt (Iteratee s) m a}
+  liftBaseWith = defaultLiftBaseWith StMIter
+  restoreM     = defaultRestoreM unStMIter
 
 te :: SomeException -> Iteratee s m a
 te e = icont (const (te e)) (Just e)
-
-instance (Nullable s, MonadControlIO m) => MonadControlIO (Iteratee s m) where
-  {-# INLINE liftControlIO #-}
-  liftControlIO = liftLiftControlBase liftControlIO
 
 -- |Send 'EOF' to the @Iteratee@ and disregard the unconsumed part of the
 -- stream.  If the iteratee is in an exception state, that exception is

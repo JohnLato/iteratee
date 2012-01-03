@@ -72,7 +72,6 @@ import Data.Iteratee.Base
 import Control.Exception
 import Control.Monad.Trans.Class
 import Data.Maybe
-import Data.Monoid
 import Data.Typeable
 
 -- exception helpers
@@ -326,7 +325,7 @@ unfoldConvStream f acc0 = eneeCheckIfDonePass (check acc0)
                     eneeCheckIfDonePass (check acc') . k . Chunk $ s'
 
 unfoldConvStreamCheck
-  :: (Monad m, Nullable elo, Monoid elo)
+  :: (Monad m, Nullable elo)
   => (((Stream eli -> Iteratee eli m a)
         -> Maybe SomeException
         -> Iteratee elo m (Iteratee eli m a)

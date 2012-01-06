@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -O #-}
-{-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE NoMonomorphismRestriction, ViewPatterns #-}
 
 import Prelude as P
 
@@ -242,6 +242,10 @@ prop_enumWith3 xs i n =
    ==  runner1 (enumSpecial xs n (i >> stream2list))
  where types = (xs :: [Int], i :: I)
 
+prop_countConsumed (Positive (min (2^10) -> n)) (Positive (min (2^20) -> a)) (Positive k) =
+            runner1 (enumPureNChunk [1..] n iter) == (a, a)
+  where
+    iter = countConsumed . joinI $ (takeUpTo (a + k) ><> Iter.take a) Iter.last
 
 -- ---------------------------------------------
 -- Nested Iteratees
@@ -515,6 +519,7 @@ tests = [
     testProperty "enumWith" prop_enumWith
     ,testProperty "enumWith remaining" prop_enumWith2
     ,testProperty "enumWith remaining 2" prop_enumWith3
+    ,testProperty "countConsumed" prop_countConsumed
     ]
   ,testGroup "Folds" [
     testProperty "foldl" prop_foldl

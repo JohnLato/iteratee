@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleContexts, BangPatterns, TupleSections #-}
+{-# LANGUAGE FlexibleContexts, BangPatterns, TupleSections, ScopedTypeVariables #-}
 
 -- |Monadic Iteratees:
 -- incremental input parsers, processors and transformers
@@ -58,6 +58,7 @@ module Data.Iteratee.ListLike (
   ,zip4
   ,zip5
   ,sequence_
+  ,countConsumed
   -- ** Monadic functions
   ,mapM_
   ,foldM
@@ -962,6 +963,27 @@ sequence_ = self
     shorter (EOF e1 ) (EOF e2 ) = EOF (e1 `mplus` e2)
     shorter e@(EOF _) _         = e
     shorter _         e@(EOF _) = e
+
+-- |Transform an iteratee into one that keeps track of how much data it
+-- consumes.
+countConsumed :: forall a s el m n.
+                 (Monad m, LL.ListLike s el, Nullable s, Integral n) =>
+                 Iteratee s m a
+              -> Iteratee s m (a, n)
+countConsumed i = go 0 (const i) (Chunk empty)
+  where
+    go :: n -> (Stream s -> Iteratee s m a) -> Stream s
+       -> Iteratee s m (a, n)
+    go !n f str@(EOF _) = (, n) `liftM` f str
+    go !n f str@(Chunk c) = Iteratee rI
+      where
+        newLen = n + fromIntegral (LL.length c)
+        rI od oc = runIter (f str) onDone onCont
+          where
+            onDone a str'@(Chunk c') =
+                od (a, newLen - fromIntegral (LL.length c')) str'
+            onDone a str'@(EOF _) = od (a, n) str'
+            onCont f' mExc = oc (go newLen f') mExc
 
 -- ------------------------------------------------------------------------
 -- Enumerators

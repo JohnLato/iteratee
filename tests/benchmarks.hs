@@ -7,6 +7,7 @@ module Main where
 import Data.Iteratee
 import qualified Data.Iteratee.ListLike as I
 import qualified Data.Iteratee.Parallel as I
+import qualified Data.Iteratee.Binary as I
 import Data.Iteratee.ListLike (enumPureNChunk, stream2list, stream2stream)
 import Data.Word
 import Data.Monoid
@@ -100,12 +101,13 @@ groupbenchbs = makeGroupBS "group" groupBenches
 mapbenchbs = makeGroupBS "map" mapBenches
 foldbenchbs = makeGroupBS "fold" $ foldBenches
 convbenchbs = makeGroupBS "convStream" convBenches
+endianbenchbs = makeGroupBS "endian" endian8Benches
 miscbenchbs = makeGroupBS "other" miscBenches
 
 
 allListBenches = bgroup "list" [listbench, streambench, breakbench, headsbench, dropbench, zipbench, lengthbench, takebench, takeUpTobench, groupbench, mapbench, foldbench, convbench, miscbench]
 
-allByteStringBenches = bgroup "bytestring" [listbenchbs, streambenchbs, breakbenchbs, headsbenchbs, dropbenchbs, zipbenchbs, lengthbenchbs, takebenchbs, takeUpTobenchbs, groupbenchbs, mapbenchbs, foldbenchbs, convbenchbs, miscbenchbs]
+allByteStringBenches = bgroup "bytestring" [listbenchbs, streambenchbs, breakbenchbs, headsbenchbs, dropbenchbs, zipbenchbs, lengthbenchbs, takebenchbs, takeUpTobenchbs, groupbenchbs, mapbenchbs, foldbenchbs, convbenchbs, endianbenchbs, miscbenchbs]
 
 list0 = makeList "list one go" deepseq
 list1 = BDIter1 "stream2list one go" (flip deepseq ()) stream2list
@@ -209,3 +211,7 @@ instance NFData BS.ByteString where
 
 instance NFData a => NFData (Sum a) where
   rnf (Sum a) = rnf a
+
+endianRead8_1 = id1 "endianRead8 single" (I.endianRead8 MSB)
+endianRead8_2 = id1 "endianRead8 chunked" (I.endianRead8 MSB)
+endian8Benches = [endianRead8_1, endianRead8_2]

@@ -40,6 +40,7 @@
 module Data.Iteratee.Exception (
   -- * Exception types
   IFException (..)
+  ,Exception (..)             -- ^ from Control.Exception
   -- ** Enumerator exceptions
   ,EnumException (..)
   ,DivergentException (..)

@@ -36,6 +36,7 @@ data BD a b s (m :: * -> *) = BDIter1 String (a -> b) (Iteratee s m a)
 
 id1  name i = BDIter1 name id i
 idN  name i = BDIterN name 5 id i
+idNx name sz i = BDIterN name sz id i
 idNl name i = BDIterN name 1000 id i
 
 defTotalSize = 10000
@@ -101,8 +102,13 @@ groupbenchbs = makeGroupBS "group" groupBenches
 mapbenchbs = makeGroupBS "map" mapBenches
 foldbenchbs = makeGroupBS "fold" $ foldBenches
 convbenchbs = makeGroupBS "convStream" convBenches
-endianbenchbs = makeGroupBS "endian" endian8Benches
 miscbenchbs = makeGroupBS "other" miscBenches
+
+endian2benchbs = makeGroupBS "2" endian2Benches
+endian3benchbs = makeGroupBS "3" endian3Benches
+endian4benchbs = makeGroupBS "4" endian4Benches
+endian8benchbs = makeGroupBS "8" endian8Benches
+endianbenchbs = bgroup "endian" [endian2benchbs, endian3benchbs, endian4benchbs, endian8benchbs]
 
 
 allListBenches = bgroup "list" [listbench, streambench, breakbench, headsbench, dropbench, zipbench, lengthbench, takebench, takeUpTobench, groupbench, mapbench, foldbench, convbench, miscbench]
@@ -212,6 +218,16 @@ instance NFData BS.ByteString where
 instance NFData a => NFData (Sum a) where
   rnf (Sum a) = rnf a
 
+endianRead2_1 = id1 "endianRead2 single" (I.endianRead2 MSB)
+endianRead2_2 = idNx "endianRead2 chunked" 1 (I.endianRead2 MSB)
+endianRead3_1 = id1 "endianRead3 single" (I.endianRead3 MSB)
+endianRead3_2 = idNx "endianRead3 chunked" 2 (I.endianRead3 MSB)
+endianRead4_1 = id1 "endianRead4 single" (I.endianRead4 MSB)
+endianRead4_2 = idNx "endianRead4 chunked" 2 (I.endianRead4 MSB)
 endianRead8_1 = id1 "endianRead8 single" (I.endianRead8 MSB)
-endianRead8_2 = id1 "endianRead8 chunked" (I.endianRead8 MSB)
-endian8Benches = [endianRead8_1, endianRead8_2]
+endianRead8_2 = idN "endianRead8 chunked" (I.endianRead8 MSB)
+endianRead8_3 = idNx "endianRead8 multiple chunked" 2 (I.endianRead8 MSB)
+endian2Benches = [endianRead2_1, endianRead2_2]
+endian3Benches = [endianRead3_1, endianRead3_2]
+endian4Benches = [endianRead4_1, endianRead4_2]
+endian8Benches = [endianRead8_1, endianRead8_2, endianRead8_3]

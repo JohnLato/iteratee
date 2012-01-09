@@ -15,7 +15,12 @@ module Data.Iteratee.Binary (
   ,endianRead4
   ,endianRead8
   -- ** bytestring specializations
-  ,endianRead8BS
+  ,readWord16be_bs
+  ,readWord16le_bs
+  ,readWord32be_bs
+  ,readWord32le_bs
+  ,readWord64be_bs
+  ,readWord64le_bs
 )
 where
 
@@ -48,8 +53,8 @@ endianRead2 e = do
   c1 <- I.head
   c2 <- I.head
   case e of
-    MSB -> return $ (fromIntegral c1 `shiftL` 8) .|. fromIntegral c2
-    LSB -> return $ (fromIntegral c2 `shiftL` 8) .|. fromIntegral c1
+    MSB -> return $ word16 c1 c2
+    LSB -> return $ word16 c2 c1
 {-# INLINE endianRead2 #-}
 
 endianRead3
@@ -61,12 +66,8 @@ endianRead3 e = do
   c2 <- I.head
   c3 <- I.head
   case e of
-    MSB -> return $ (((fromIntegral c1
-                        `shiftL` 8) .|. fromIntegral c2)
-                        `shiftL` 8) .|. fromIntegral c3
-    LSB -> return $ (((fromIntegral c3
-                        `shiftL` 8) .|. fromIntegral c2)
-                        `shiftL` 8) .|. fromIntegral c1
+    MSB -> return $ word32 0 c1 c2 c3
+    LSB -> return $ word32 0 c3 c2 c1
 {-# INLINE endianRead3 #-}
 
 -- |Read 3 bytes in an endian manner.  If the first bit is set (negative),
@@ -101,22 +102,14 @@ endianRead4 MSB = do
   c2 <- I.head
   c3 <- I.head
   c4 <- I.head
-  return $
-    (((((fromIntegral c1
-     `shiftL` 8) .|. fromIntegral c2)
-     `shiftL` 8) .|. fromIntegral c3)
-     `shiftL` 8) .|. fromIntegral c4
+  return $ word32 c1 c2 c3 c4
 endianRead4 LSB = do
   c1 <- I.head
   c2 <- I.head
   c3 <- I.head
   c4 <- I.head
-  return $
-    (((((fromIntegral c4
-     `shiftL` 8) .|. fromIntegral c3)
-     `shiftL` 8) .|. fromIntegral c2)
-     `shiftL` 8) .|. fromIntegral c1
-{-# INLINE endianRead4 #-}
+  return $ word32 c4 c3 c2 c1
+{-# INLINE [1] endianRead4 #-}
 
 endianRead8
   :: (Nullable s, LL.ListLike s Word8, Monad m) =>
@@ -133,18 +126,40 @@ endianRead8 LSB = do
     [c8,c7,c6,c5,c4,c3,c2,c1] -> return $ word64 c1 c2 c3 c4 c5 c6 c7 c8
     _ -> I.throwErr (toException EofException)
 {-# INLINE [1] endianRead8 #-}
+
 {-# RULES "iteratee: binary bytestring spec." endianRead8 = endianRead8BS #-}
 
--- | An iteratee specialized for reading 'Word64's from 'ByteString' streams.
--- 
---   This function should only be necessary if the appropriate GHC RULE
---   doesn't fire.
-endianRead8BS MSB = read64be_bs
-endianRead8BS LSB = read64le_bs
+endianRead4BS :: Monad m => Endian -> Iteratee B.ByteString m Word32
+endianRead4BS MSB = readWord32be_bs
+endianRead4BS LSB = readWord32le_bs
+{-# INLINE endianRead4BS  #-}
+
+endianRead8BS :: Monad m => Endian -> Iteratee B.ByteString m Word64
+endianRead8BS MSB = readWord64be_bs
+endianRead8BS LSB = readWord64le_bs
 {-# INLINE endianRead8BS  #-}
 
-read64be_bs :: Monad m => Iteratee B.ByteString m Word64
-read64be_bs = do
+-- the 16- and 32-bit variants are only included for completeness; the
+-- polymorphic code is as fast as any specialization I've yet found
+-- in these cases.  (JWL, 2012-01-09)
+readWord16be_bs :: Monad m => Iteratee B.ByteString m Word16
+readWord16be_bs = endianRead2 MSB
+{-# INLINE readWord16be_bs  #-}
+
+readWord16le_bs :: Monad m => Iteratee B.ByteString m Word16
+readWord16le_bs = endianRead2 LSB
+{-# INLINE readWord16le_bs  #-}
+
+readWord32be_bs :: Monad m => Iteratee B.ByteString m Word32
+readWord32be_bs = endianRead4 MSB
+{-# INLINE readWord32be_bs  #-}
+
+readWord32le_bs :: Monad m => Iteratee B.ByteString m Word32
+readWord32le_bs = endianRead4 LSB
+{-# INLINE readWord32le_bs  #-}
+
+readWord64be_bs :: Monad m => Iteratee B.ByteString m Word64
+readWord64be_bs = do
   cs <- I.joinI $ I.take 8 I.stream2stream
   if B.length cs == 8
     then return $ word64 (B.unsafeIndex cs 0)
@@ -156,10 +171,10 @@ read64be_bs = do
                          (B.unsafeIndex cs 6)
                          (B.unsafeIndex cs 7)
     else I.throwErr (toException EofException)
-{-# INLINE read64be_bs  #-}
+{-# INLINE readWord64be_bs  #-}
 
-read64le_bs :: Monad m => Iteratee B.ByteString m Word64
-read64le_bs = do
+readWord64le_bs :: Monad m => Iteratee B.ByteString m Word64
+readWord64le_bs = do
   cs <- I.joinI $ I.take 8 I.stream2stream
   if B.length cs == 8
     then return $ word64 (B.unsafeIndex cs 7)
@@ -171,7 +186,19 @@ read64le_bs = do
                          (B.unsafeIndex cs 1)
                          (B.unsafeIndex cs 0)
     else I.throwErr (toException EofException)
-{-# INLINE read64le_bs  #-}
+{-# INLINE readWord64le_bs  #-}
+
+word16 :: Word8 -> Word8 -> Word16
+word16 c1 c2 = (fromIntegral c1 `shiftL`  8) .|.  fromIntegral c2
+{-# INLINE word16 #-}
+
+word32 :: Word8 -> Word8 -> Word8 -> Word8 -> Word32
+word32 c1 c2 c3 c4 =
+  (fromIntegral c1 `shiftL` 24) .|.
+  (fromIntegral c2 `shiftL` 16) .|.
+  (fromIntegral c3 `shiftL`  8) .|.
+   fromIntegral c4
+{-# INLINE word32 #-}
 
 word64
   :: Word8 -> Word8 -> Word8 -> Word8 

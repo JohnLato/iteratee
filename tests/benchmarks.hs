@@ -80,6 +80,7 @@ breakbench = makeGroup "break" $ break0 : break0' : breakBenches
 headsbench = makeGroup "heads" headsBenches
 dropbench = makeGroup "drop" $ drop0 : dropBenches
 zipbench = makeGroup "zip" $ zipBenches
+consbench = makeGroup "consumed" consBenches
 lengthbench = makeGroup "length" listBenches
 takebench = makeGroup "take" $ take0 : takeBenches
 takeUpTobench = makeGroup "takeUpTo" takeUpToBenches
@@ -95,6 +96,7 @@ breakbenchbs = makeGroupBS "break" breakBenches
 headsbenchbs = makeGroupBS "heads" headsBenches
 dropbenchbs = makeGroupBS "drop" dropBenches
 zipbenchbs = makeGroupBS "zip" zipBenches
+consbenchbs = makeGroupBS "consumed" consBenches
 lengthbenchbs = makeGroupBS "length" listBenches
 takebenchbs = makeGroupBS "take" takeBenches
 takeUpTobenchbs = makeGroupBS "takeUpTo" takeUpToBenches
@@ -111,9 +113,9 @@ endian8benchbs = makeGroupBS "8" endian8Benches
 endianbenchbs = bgroup "endian" [endian2benchbs, endian3benchbs, endian4benchbs, endian8benchbs]
 
 
-allListBenches = bgroup "list" [listbench, streambench, breakbench, headsbench, dropbench, zipbench, lengthbench, takebench, takeUpTobench, groupbench, mapbench, foldbench, convbench, miscbench]
+allListBenches = bgroup "list" [listbench, streambench, breakbench, headsbench, dropbench, zipbench, lengthbench, takebench, takeUpTobench, groupbench, mapbench, foldbench, convbench, miscbench, consbench]
 
-allByteStringBenches = bgroup "bytestring" [listbenchbs, streambenchbs, breakbenchbs, headsbenchbs, dropbenchbs, zipbenchbs, lengthbenchbs, takebenchbs, takeUpTobenchbs, groupbenchbs, mapbenchbs, foldbenchbs, convbenchbs, endianbenchbs, miscbenchbs]
+allByteStringBenches = bgroup "bytestring" [listbenchbs, streambenchbs, breakbenchbs, headsbenchbs, dropbenchbs, zipbenchbs, lengthbenchbs, takebenchbs, takeUpTobenchbs, groupbenchbs, mapbenchbs, foldbenchbs, convbenchbs, endianbenchbs, miscbenchbs, consbenchbs]
 
 list0 = makeList "list one go" deepseq
 list1 = BDIter1 "stream2list one go" (flip deepseq ()) stream2list
@@ -165,6 +167,10 @@ b_zip2 = idN "zip unbalanced 2" (I.zip identity I.length >> identity)
 b_zip3 = idN "zip complete" (I.zip identity identity >> identity)
 b_zip4 = idN "zip nonterminating" (I.zip I.length I.stream2stream >> identity)
 zipBenches = [b_zip0, b_zip1, b_zip2, b_zip3, b_zip4 ]
+
+consumed0 = idN "countConsumed" (I.countConsumed (I.foldl' (+) 0))
+consumed1 = idN "countConsumed baseline (`I.enumWith` I.length)" (I.foldl' (+) 0 `I.enumWith` I.length)
+consBenches = [consumed0, consumed1]
 
 
 l1 = makeList "length of list" Prelude.length

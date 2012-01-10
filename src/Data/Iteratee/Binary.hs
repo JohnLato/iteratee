@@ -33,22 +33,20 @@ import Data.Word
 import Data.Bits
 import Data.Int
 
-import Control.Exception
-
 -- ------------------------------------------------------------------------
 -- Binary Random IO Iteratees
 
 -- Iteratees to read unsigned integers written in Big- or Little-endian ways
 
--- |Indicate endian-ness.
+-- | Indicate endian-ness.
 data Endian = MSB -- ^ Most Significant Byte is first (big-endian)
   | LSB           -- ^ Least Significan Byte is first (little-endian)
   deriving (Eq, Ord, Show, Enum)
 
 endianRead2
-  :: (Nullable s, LL.ListLike s Word8, Monad m) =>
-     Endian
-     -> Iteratee s m Word16
+  :: (Nullable s, LL.ListLike s Word8, Monad m)
+  => Endian
+  -> Iteratee s m Word16
 endianRead2 e = do
   c1 <- I.head
   c2 <- I.head
@@ -58,9 +56,9 @@ endianRead2 e = do
 {-# INLINE endianRead2 #-}
 
 endianRead3
-  :: (Nullable s, LL.ListLike s Word8, Monad m) =>
-     Endian
-     -> Iteratee s m Word32
+  :: (Nullable s, LL.ListLike s Word8, Monad m)
+  => Endian
+  -> Iteratee s m Word32
 endianRead3 e = do
   c1 <- I.head
   c2 <- I.head
@@ -74,9 +72,9 @@ endianRead3 e = do
 -- set the entire first byte so the Int32 will be negative as
 -- well.
 endianRead3i
-  :: (Nullable s, LL.ListLike s Word8, Monad m) =>
-     Endian
-     -> Iteratee s m Int32
+  :: (Nullable s, LL.ListLike s Word8, Monad m)
+  => Endian
+  -> Iteratee s m Int32
 endianRead3i e = do
   c1 <- I.head
   c2 <- I.head
@@ -94,27 +92,39 @@ endianRead3i e = do
 {-# INLINE endianRead3i #-}
 
 endianRead4
-  :: (Nullable s, LL.ListLike s Word8, Monad m) =>
-     Endian
-     -> Iteratee s m Word32
-endianRead4 MSB = do
-  c1 <- I.head
-  c2 <- I.head
-  c3 <- I.head
-  c4 <- I.head
-  return $ word32 c1 c2 c3 c4
-endianRead4 LSB = do
-  c1 <- I.head
-  c2 <- I.head
-  c3 <- I.head
-  c4 <- I.head
-  return $ word32 c4 c3 c2 c1
-{-# INLINE [1] endianRead4 #-}
+  :: (Nullable s, LL.ListLike s Word8, Monad m)
+  => Endian
+  -> Iteratee s m Word32
+endianRead4 e = do
+  ln' <- I.chunkLength
+  case ln' of
+    Just ln | ln >= 4 -> do
+      ck <- I.getChunk
+      let t = LL.drop 4 ck
+          res = case e of
+                  MSB -> word32 (LL.index ck 0)
+                                (LL.index ck 1)
+                                (LL.index ck 2)
+                                (LL.index ck 3)
+                  LSB -> word32 (LL.index ck 0)
+                                (LL.index ck 1)
+                                (LL.index ck 2)
+                                (LL.index ck 3)
+      res `seq` idone res (I.Chunk t)
+    _ -> do
+      c1 <- I.head
+      c2 <- I.head
+      c3 <- I.head
+      c4 <- I.head
+      return $ case e of
+        MSB -> word32 c1 c2 c3 c4
+        LSB -> word32 c4 c3 c2 c1
+{-# INLINE endianRead4 #-}
 
 endianRead8
-  :: (Nullable s, LL.ListLike s Word8, Monad m) =>
-     Endian
-     -> Iteratee s m Word64
+  :: (Nullable s, LL.ListLike s Word8, Monad m)
+  => Endian
+  -> Iteratee s m Word64
 endianRead8 MSB = do
   cs <- I.joinI $ I.take 8 I.stream2list
   case cs of
@@ -127,6 +137,7 @@ endianRead8 LSB = do
     _ -> I.throwErr (toException EofException)
 {-# INLINE [1] endianRead8 #-}
 
+{-# RULES "iteratee: binary bytestring spec." endianRead4 = endianRead4BS #-}
 {-# RULES "iteratee: binary bytestring spec." endianRead8 = endianRead8BS #-}
 
 endianRead4BS :: Monad m => Endian -> Iteratee B.ByteString m Word32
@@ -151,41 +162,103 @@ readWord16le_bs = endianRead2 LSB
 {-# INLINE readWord16le_bs  #-}
 
 readWord32be_bs :: Monad m => Iteratee B.ByteString m Word32
-readWord32be_bs = endianRead4 MSB
+readWord32be_bs = do
+  ln' <- I.chunkLength
+  case ln' of
+    Just ln | ln >= 4 -> do
+      ck <- I.getChunk
+      let t = B.drop 4 ck
+          res = word32 (B.unsafeIndex ck 0)
+                       (B.unsafeIndex ck 1)
+                       (B.unsafeIndex ck 2)
+                       (B.unsafeIndex ck 3)
+      res `seq` idone res (I.Chunk t)
+    _ -> do
+      c1 <- I.head
+      c2 <- I.head
+      c3 <- I.head
+      c4 <- I.head
+      return $! word32 c1 c2 c3 c4
 {-# INLINE readWord32be_bs  #-}
 
 readWord32le_bs :: Monad m => Iteratee B.ByteString m Word32
-readWord32le_bs = endianRead4 LSB
+readWord32le_bs = do
+  ln' <- I.chunkLength
+  case ln' of
+    Just ln | ln >= 4 -> do
+      ck <- I.getChunk
+      let t = B.drop 4 ck
+          res = word32 (B.unsafeIndex ck 3)
+                       (B.unsafeIndex ck 2)
+                       (B.unsafeIndex ck 1)
+                       (B.unsafeIndex ck 0)
+      res `seq` idone res (I.Chunk t)
+    _ -> do
+      c1 <- I.head
+      c2 <- I.head
+      c3 <- I.head
+      c4 <- I.head
+      return $! word32 c4 c3 c2 c1
 {-# INLINE readWord32le_bs  #-}
 
 readWord64be_bs :: Monad m => Iteratee B.ByteString m Word64
 readWord64be_bs = do
-  cs <- I.joinI $ I.take 8 I.stream2stream
-  if B.length cs == 8
-    then return $ word64 (B.unsafeIndex cs 0)
-                         (B.unsafeIndex cs 1)
-                         (B.unsafeIndex cs 2)
-                         (B.unsafeIndex cs 3)
-                         (B.unsafeIndex cs 4)
-                         (B.unsafeIndex cs 5)
-                         (B.unsafeIndex cs 6)
-                         (B.unsafeIndex cs 7)
-    else I.throwErr (toException EofException)
+  ln' <- I.chunkLength
+  case ln' of
+    Just ln | ln >= 8 -> do
+      ck <- I.getChunk
+      let t = B.drop 8 ck
+          res = word64 (B.unsafeIndex ck 0)
+                       (B.unsafeIndex ck 1)
+                       (B.unsafeIndex ck 2)
+                       (B.unsafeIndex ck 3)
+                       (B.unsafeIndex ck 4)
+                       (B.unsafeIndex ck 5)
+                       (B.unsafeIndex ck 6)
+                       (B.unsafeIndex ck 7)
+      res `seq` idone res (I.Chunk t)
+    _ -> do
+      cs <- I.joinI $ I.take 8 I.stream2stream
+      if B.length cs == 8
+        then return $ word64 (B.unsafeIndex cs 0)
+                             (B.unsafeIndex cs 1)
+                             (B.unsafeIndex cs 2)
+                             (B.unsafeIndex cs 3)
+                             (B.unsafeIndex cs 4)
+                             (B.unsafeIndex cs 5)
+                             (B.unsafeIndex cs 6)
+                             (B.unsafeIndex cs 7)
+        else I.throwErr (toException EofException)
 {-# INLINE readWord64be_bs  #-}
 
 readWord64le_bs :: Monad m => Iteratee B.ByteString m Word64
 readWord64le_bs = do
-  cs <- I.joinI $ I.take 8 I.stream2stream
-  if B.length cs == 8
-    then return $ word64 (B.unsafeIndex cs 7)
-                         (B.unsafeIndex cs 6)
-                         (B.unsafeIndex cs 5)
-                         (B.unsafeIndex cs 4)
-                         (B.unsafeIndex cs 3)
-                         (B.unsafeIndex cs 2)
-                         (B.unsafeIndex cs 1)
-                         (B.unsafeIndex cs 0)
-    else I.throwErr (toException EofException)
+  ln' <- I.chunkLength
+  case ln' of
+    Just ln | ln >= 8 -> do
+      ck <- I.getChunk
+      let t = B.drop 8 ck
+          res = word64 (B.unsafeIndex ck 7)
+                       (B.unsafeIndex ck 6)
+                       (B.unsafeIndex ck 5)
+                       (B.unsafeIndex ck 4)
+                       (B.unsafeIndex ck 3)
+                       (B.unsafeIndex ck 2)
+                       (B.unsafeIndex ck 1)
+                       (B.unsafeIndex ck 0)
+      res `seq` idone res (I.Chunk t)
+    _ -> do
+      cs <- I.joinI $ I.take 8 I.stream2stream
+      if B.length cs == 8
+        then return $ word64 (B.unsafeIndex cs 7)
+                             (B.unsafeIndex cs 6)
+                             (B.unsafeIndex cs 5)
+                             (B.unsafeIndex cs 4)
+                             (B.unsafeIndex cs 3)
+                             (B.unsafeIndex cs 2)
+                             (B.unsafeIndex cs 1)
+                             (B.unsafeIndex cs 0)
+        else I.throwErr (toException EofException)
 {-# INLINE readWord64le_bs  #-}
 
 word16 :: Word8 -> Word8 -> Word16

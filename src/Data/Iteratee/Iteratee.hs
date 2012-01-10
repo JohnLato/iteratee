@@ -292,6 +292,7 @@ mapChunksM f = eneeCheckIfDonePass (icont . step)
 {-# INLINE mapChunksM #-}
 
 -- |Convert one stream into another, not necessarily in lockstep.
+-- 
 -- The transformer mapStream maps one element of the outer stream
 -- to one element of the nested stream.  The transformer below is more
 -- general: it may take several elements of the outer stream to produce
@@ -373,7 +374,8 @@ joinIM mIter = Iteratee $ \od oc -> mIter >>= \iter -> runIter iter od oc
 
 -- ------------------------------------------------------------------------
 -- Enumerators
--- |Each enumerator takes an iteratee and returns an iteratee
+-- | Each enumerator takes an iteratee and returns an iteratee
+-- 
 -- an Enumerator is an iteratee transformer.
 -- The enumerator normally stops when the stream is terminated
 -- or when the iteratee moves to the done state, whichever comes first.
@@ -414,6 +416,7 @@ enumErr e iter = runIter iter onDone onCont
 
 
 -- |The composition of two enumerators: essentially the functional composition
+-- 
 -- It is convenient to flip the order of the arguments of the composition
 -- though: in e1 >>> e2, e1 is executed first
 

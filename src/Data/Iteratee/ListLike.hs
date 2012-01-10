@@ -984,6 +984,7 @@ countConsumed i = go 0 (const i) (Chunk empty)
                 od (a, newLen - fromIntegral (LL.length c')) str'
             onDone a str'@(EOF _) = od (a, n) str'
             onCont f' mExc = oc (go newLen f') mExc
+{-# INLINE countConsumed #-}
 
 -- ------------------------------------------------------------------------
 -- Enumerators

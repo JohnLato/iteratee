@@ -106,10 +106,10 @@ endianRead4 e = do
                                 (LL.index ck 1)
                                 (LL.index ck 2)
                                 (LL.index ck 3)
-                  LSB -> word32 (LL.index ck 0)
-                                (LL.index ck 1)
+                  LSB -> word32 (LL.index ck 3)
                                 (LL.index ck 2)
-                                (LL.index ck 3)
+                                (LL.index ck 1)
+                                (LL.index ck 0)
       res `seq` idone res (I.Chunk t)
     _ -> do
       c1 <- I.head
@@ -119,22 +119,48 @@ endianRead4 e = do
       return $ case e of
         MSB -> word32 c1 c2 c3 c4
         LSB -> word32 c4 c3 c2 c1
-{-# INLINE endianRead4 #-}
+{-# INLINE [1] endianRead4 #-}
 
 endianRead8
   :: (Nullable s, LL.ListLike s Word8, Monad m)
   => Endian
   -> Iteratee s m Word64
-endianRead8 MSB = do
-  cs <- I.joinI $ I.take 8 I.stream2list
-  case cs of
-    [c1,c2,c3,c4,c5,c6,c7,c8] -> return $ word64 c1 c2 c3 c4 c5 c6 c7 c8
-    _ -> I.throwErr (toException EofException)
-endianRead8 LSB = do
-  cs <- I.joinI $ I.take 8 I.stream2list
-  case cs of
-    [c8,c7,c6,c5,c4,c3,c2,c1] -> return $ word64 c1 c2 c3 c4 c5 c6 c7 c8
-    _ -> I.throwErr (toException EofException)
+endianRead8 e = do
+  ln' <- I.chunkLength
+  case ln' of
+    Just ln | ln >= 8 -> do
+      ck <- I.getChunk
+      let t = LL.drop 4 ck
+          res = case e of
+                  MSB -> word64 (LL.index ck 0)
+                                (LL.index ck 1)
+                                (LL.index ck 2)
+                                (LL.index ck 3)
+                                (LL.index ck 4)
+                                (LL.index ck 5)
+                                (LL.index ck 6)
+                                (LL.index ck 7)
+                  LSB -> word64 (LL.index ck 7)
+                                (LL.index ck 6)
+                                (LL.index ck 5)
+                                (LL.index ck 4)
+                                (LL.index ck 3)
+                                (LL.index ck 2)
+                                (LL.index ck 1)
+                                (LL.index ck 0)
+      res `seq` idone res (I.Chunk t)
+    _ -> do
+      c1 <- I.head
+      c2 <- I.head
+      c3 <- I.head
+      c4 <- I.head
+      c5 <- I.head
+      c6 <- I.head
+      c7 <- I.head
+      c8 <- I.head
+      return $ case e of
+        MSB -> word64 c1 c2 c3 c4 c5 c6 c7 c8
+        LSB -> word64 c8 c7 c6 c5 c4 c3 c2 c1
 {-# INLINE [1] endianRead8 #-}
 
 {-# RULES "iteratee: binary bytestring spec." endianRead4 = endianRead4BS #-}

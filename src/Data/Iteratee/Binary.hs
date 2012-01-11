@@ -176,7 +176,7 @@ endianRead8BS MSB = readWord64be_bs
 endianRead8BS LSB = readWord64le_bs
 {-# INLINE endianRead8BS  #-}
 
--- the 16- and 32-bit variants are only included for completeness; the
+-- the 16-bit variant is only included for completeness; the
 -- polymorphic code is as fast as any specialization I've yet found
 -- in these cases.  (JWL, 2012-01-09)
 readWord16be_bs :: Monad m => Iteratee B.ByteString m Word16

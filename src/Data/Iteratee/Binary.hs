@@ -130,7 +130,7 @@ endianRead8 e = do
   case ln' of
     Just ln | ln >= 8 -> do
       ck <- I.getChunk
-      let t = LL.drop 4 ck
+      let t = LL.drop 8 ck
           res = case e of
                   MSB -> word64 (LL.index ck 0)
                                 (LL.index ck 1)

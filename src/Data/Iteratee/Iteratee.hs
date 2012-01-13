@@ -245,6 +245,7 @@ eneeCheckIfDoneHandle h f inner = Iteratee $ \od oc ->
       onCont k Nothing  = runIter (f k Nothing) od oc
       onCont k (Just e) = runIter (h k e)       od oc
   in runIter inner onDone onCont
+{-# INLINABLE eneeCheckIfDoneHandle #-}
 
 eneeCheckIfDonePass
   :: (Monad m, NullPoint elo)
@@ -254,7 +255,7 @@ eneeCheckIfDonePass
      )
   -> Enumeratee elo eli m a
 eneeCheckIfDonePass f = eneeCheckIfDoneHandle (\k e -> f k (Just e)) f
-{-# INLINEABLE eneeCheckIfDonePass #-}
+{-# INLINABLE eneeCheckIfDonePass #-}
 
 eneeCheckIfDoneIgnore
   :: (Monad m, NullPoint elo)
@@ -308,6 +309,7 @@ convStream fi = eneeCheckIfDonePass check
     check k (Just e) = throwRecoverableErr e (const identity) >> check k Nothing
     check k _ = isStreamFinished >>= maybe (step k) (idone (liftI k) . EOF . Just)
     step k = fi >>= eneeCheckIfDonePass check . k . Chunk
+{-# INLINABLE convStream #-}
 
 -- |The most general stream converter.  Given a function to produce iteratee
 -- transformers and an initial state, convert the stream using iteratees
@@ -346,6 +348,7 @@ unfoldConvStreamCheck checkDone f acc0 = checkDone (check acc0)
       let i = f acc >>= \(acc', s') ->
                            (checkDone (check acc') . k $ Chunk s')
       in joinIM $ enumChunk str' i
+{-# INLINABLE unfoldConvStreamCheck #-}
 
 -- | Collapse a nested iteratee.  The inner iteratee is terminated by @EOF@.
 --   Errors are propagated through the result.

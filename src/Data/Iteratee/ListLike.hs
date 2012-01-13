@@ -81,7 +81,6 @@ import Control.Monad (liftM, liftM2, mplus, (<=<))
 import Control.Monad.Trans.Class
 import Data.Word (Word8)
 import qualified Data.ByteString as B
-import qualified Data.ByteString.Char8 as BC
 
 -- Useful combinators for implementing iteratees and enumerators
 
@@ -355,9 +354,7 @@ take n' iter
       | otherwise          = idone (k (Chunk s1)) (Chunk s2)
       where (s1, s2) = LL.splitAt n str
     step _n k stream       = idone (k stream) stream
-{-# SPECIALIZE take :: Monad m => Int -> Enumeratee [el] [el] m a #-}
-{-# SPECIALIZE take :: Monad m => Int -> Enumeratee B.ByteString B.ByteString m a #-}
-{-# SPECIALIZE take :: Monad m => Int -> Enumeratee BC.ByteString BC.ByteString m a #-}
+{-# INLINE take #-}
 
 -- |Read n elements from a stream and apply the given iteratee to the
 -- stream of the read elements. If the given iteratee accepted fewer
@@ -411,9 +408,7 @@ takeUpTo i iter
                 Left  (a,s')       -> od' (idone a s') (Chunk s2)
                 Right (k',e)       -> od' (icont k' e) (Chunk s2)
     step _ k stream       = idone (k stream) stream
-{-# SPECIALIZE takeUpTo :: Monad m => Int -> Enumeratee [el] [el] m a #-}
-{-# SPECIALIZE takeUpTo :: Monad m => Int -> Enumeratee B.ByteString B.ByteString m a #-}
-{-# INLINABLE takeUpTo #-}
+{-# INLINE takeUpTo #-}
 
 -- | Takes an element predicate and returns the (possibly empty)
 -- prefix of the stream. All characters

@@ -59,6 +59,7 @@ module Data.Iteratee.ListLike (
   ,zip5
   ,sequence_
   ,countConsumed
+  ,greedy
   -- ** Monadic functions
   ,mapM_
   ,foldM
@@ -1000,6 +1001,28 @@ enumPureNChunk str n iter
                        in runIter iter' idoneM on_cont
 {-# INLINE enumPureNChunk #-}
 
+greedy ::
+ (Monad m, Functor m, LL.ListLike s el', LL.ListLike a el) =>
+  Iteratee s m a
+  -> Iteratee s m a
+greedy iter' = liftI (step [] iter')
+ where
+  step acc iter (Chunk str)
+    | LL.null str = liftI (step acc iter)
+    | otherwise   = joinIM $ do
+      i2 <- enumPure1Chunk str iter
+      result <- runIter i2 (\a s -> return $ Left (a,s))
+                           (\k e -> return $ Right (icont k e))
+      case result of
+        Left (a, Chunk resS)
+          | LL.null resS
+              || LL.length resS == LL.length str -> return $
+                         idone (LL.concat $ reverse (a:acc)) (Chunk resS)
+        Left (a, stream) -> return $ step (a:acc) iter stream
+        Right i -> return $ fmap (LL.concat . reverse . (:acc)) i
+  step acc iter stream = joinIM $
+    enumChunk stream (fmap (LL.concat . reverse . (:acc)) iter)
+{-# INLINE greedy #-}
 
 -- ------------------------------------------------------------------------
 -- Monadic functions

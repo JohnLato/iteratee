@@ -1,5 +1,5 @@
 name:          iteratee
-version:       0.8.7.6
+version:       0.8.8.0
 synopsis:      Iteratee-based I/O
 description:
   The Iteratee monad provides strict, safe, and functional I/O. In addition

@@ -1001,8 +1001,29 @@ enumPureNChunk str n iter
                        in runIter iter' idoneM on_cont
 {-# INLINE enumPureNChunk #-}
 
+-- | Convert an iteratee to a \"greedy\" version.
+--
+-- When a chunk is received, repeatedly run the input iteratee
+-- until the entire chunk is consumed, then the outputs
+-- are combined (via 'mconcat').
+--
+-- > > let l = [1..5::Int]
+-- > > run =<< enumPure1Chunk l (joinI (take 2 stream2list))
+-- > [1,2]
+-- > > run =<< enumPure1Chunk l (greedy $ joinI (I.take 2 stream2list))
+-- > [1,2,3,4,5]
+--
+-- Note that a greedy iteratee will consume the entire input chunk and force
+-- the next chunk before returning a value.  A portion of the second chunk may
+-- be consumed.
+-- 
+-- 'greedy' may be useful on the first parameter of 'convStream', e.g.
+-- 
+-- > convStream (greedy someIter)
+--
+-- to create more efficient converters.
 greedy ::
- (Monad m, Functor m, LL.ListLike s el', LL.ListLike a el) =>
+ (Monad m, Functor m, LL.ListLike s el', Monoid a) =>
   Iteratee s m a
   -> Iteratee s m a
 greedy iter' = liftI (step [] iter')
@@ -1017,11 +1038,11 @@ greedy iter' = liftI (step [] iter')
         Left (a, Chunk resS)
           | LL.null resS
               || LL.length resS == LL.length str -> return $
-                         idone (LL.concat $ reverse (a:acc)) (Chunk resS)
+                         idone (mconcat $ reverse (a:acc)) (Chunk resS)
         Left (a, stream) -> return $ step (a:acc) iter stream
-        Right i -> return $ fmap (LL.concat . reverse . (:acc)) i
+        Right i -> return $ fmap (mconcat . reverse . (:acc)) i
   step acc iter stream = joinIM $
-    enumChunk stream (fmap (LL.concat . reverse . (:acc)) iter)
+    enumChunk stream (fmap (mconcat . reverse . (:acc)) iter)
 {-# INLINE greedy #-}
 
 -- ------------------------------------------------------------------------

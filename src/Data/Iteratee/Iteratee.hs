@@ -85,13 +85,12 @@ excDivergent = toException DivergentException
 --  Disregard the input first and then propagate the error.  This error
 -- cannot be handled by 'enumFromCallbackCatch', although it can be cleared
 -- by 'checkErr'.
-throwErr :: (Monad m) => SomeException -> Iteratee s m a
+throwErr :: SomeException -> Iteratee s m a
 throwErr e = icont (const (throwErr e)) (Just e)
 
 -- |Report and propagate a recoverable error.  This error can be handled by
 -- both 'enumFromCallbackCatch' and 'checkErr'.
 throwRecoverableErr ::
- (Monad m) =>
   SomeException
   -> (Stream s -> Iteratee s m a)
   -> Iteratee s m a
@@ -103,7 +102,7 @@ throwRecoverableErr e i = icont i (Just e)
 -- @Left SomeException@. 'checkErr' is useful for iteratees that may not
 -- terminate, such as @Data.Iteratee.head@ with an empty stream.
 checkErr ::
- (Monad m, NullPoint s) =>
+ (NullPoint s) =>
   Iteratee s m a
   -> Iteratee s m (Either SomeException a)
 checkErr iter = Iteratee $ \onDone onCont ->
@@ -116,11 +115,11 @@ checkErr iter = Iteratee $ \onDone onCont ->
 -- Parser combinators
 
 -- |The identity iteratee.  Doesn't do any processing of input.
-identity :: (Monad m, NullPoint s) => Iteratee s m ()
+identity :: (NullPoint s) => Iteratee s m ()
 identity = idone () (Chunk empty)
 
 -- |Get the stream status of an iteratee.
-isStreamFinished :: (Monad m, Nullable s) => Iteratee s m (Maybe SomeException)
+isStreamFinished :: (Nullable s) => Iteratee s m (Maybe SomeException)
 isStreamFinished = liftI check
   where
     check s@(Chunk xs)
@@ -131,7 +130,7 @@ isStreamFinished = liftI check
 
 
 -- |Skip the rest of the stream
-skipToEof :: (Monad m) => Iteratee s m ()
+skipToEof :: Iteratee s m ()
 skipToEof = icont check Nothing
   where
     check (Chunk _) = skipToEof
@@ -139,7 +138,7 @@ skipToEof = icont check Nothing
 
 
 -- |Seek to a position in the stream
-seek :: (Monad m, NullPoint s) => FileOffset -> Iteratee s m ()
+seek :: (NullPoint s) => FileOffset -> Iteratee s m ()
 seek o = throwRecoverableErr (toException $ SeekException o) (const identity)
 
 -- | Map a monadic function over the chunks of the stream and ignore the
@@ -167,7 +166,7 @@ foldChunksM f = liftI . go
 {-# INLINE foldChunksM #-}
 
 -- | Get the current chunk from the stream.
-getChunk :: (Monad m, Nullable s, NullPoint s) => Iteratee s m s
+getChunk :: (Nullable s, NullPoint s) => Iteratee s m s
 getChunk = liftI step
  where
   step (Chunk xs)
@@ -178,7 +177,7 @@ getChunk = liftI step
 {-# INLINE getChunk #-}
 
 -- | Get a list of all chunks from the stream.
-getChunks :: (Monad m, Nullable s) => Iteratee s m [s]
+getChunks :: (Nullable s) => Iteratee s m [s]
 getChunks = liftI (step id)
  where
   step acc (Chunk xs)
@@ -233,7 +232,7 @@ type EnumerateeHandler eli elo m a =
 -- a handler which is used
 -- to process any exceptions in a separate method.
 eneeCheckIfDoneHandle
-  :: (Monad m, NullPoint elo)
+  :: (NullPoint elo)
   => EnumerateeHandler eli elo m a
   -> ((Stream eli -> Iteratee eli m a)
       -> Maybe SomeException
@@ -248,7 +247,7 @@ eneeCheckIfDoneHandle h f inner = Iteratee $ \od oc ->
 {-# INLINABLE eneeCheckIfDoneHandle #-}
 
 eneeCheckIfDonePass
-  :: (Monad m, NullPoint elo)
+  :: (NullPoint elo)
   => ((Stream eli -> Iteratee eli m a)
       -> Maybe SomeException
       -> Iteratee elo m (Iteratee eli m a)
@@ -258,7 +257,7 @@ eneeCheckIfDonePass f = eneeCheckIfDoneHandle (\k e -> f k (Just e)) f
 {-# INLINABLE eneeCheckIfDonePass #-}
 
 eneeCheckIfDoneIgnore
-  :: (Monad m, NullPoint elo)
+  :: (NullPoint elo)
   => ((Stream eli -> Iteratee eli m a)
       -> Maybe SomeException
       -> Iteratee elo m (Iteratee eli m a)
@@ -273,7 +272,7 @@ eneeCheckIfDoneIgnore f = eneeCheckIfDoneHandle (\k _ -> f k Nothing) f
 -- > unpacker :: Enumeratee B.ByteString [Word8] m a
 -- > unpacker = mapChunks B.unpack
 -- 
-mapChunks :: (Monad m, NullPoint s) => (s -> s') -> Enumeratee s s' m a
+mapChunks :: (NullPoint s) => (s -> s') -> Enumeratee s s' m a
 mapChunks f = eneeCheckIfDonePass (icont . step)
  where
   step k (Chunk xs)     = eneeCheckIfDonePass (icont . step) . k . Chunk $ f xs

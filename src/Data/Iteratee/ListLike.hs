@@ -86,7 +86,7 @@ import qualified Data.ByteString as B
 -- Useful combinators for implementing iteratees and enumerators
 
 -- | Check if a stream has received 'EOF'.
-isFinished :: (Monad m, Nullable s) => Iteratee s m Bool
+isFinished :: (Nullable s) => Iteratee s m Bool
 isFinished = liftI check
   where
   check c@(Chunk xs)
@@ -126,7 +126,7 @@ stream2stream = liftM mconcat getChunks
 -- 
 -- The analogue of @List.break@
 
-break :: (Monad m, LL.ListLike s el) => (el -> Bool) -> Iteratee s m s
+break :: (LL.ListLike s el) => (el -> Bool) -> Iteratee s m s
 break cpred = icont (step mempty) Nothing
   where
     step bfr (Chunk str)
@@ -146,7 +146,7 @@ break cpred = icont (step mempty) Nothing
 -- 
 -- Because @head@ can raise an error, it shouldn't be used when constructing
 -- iteratees for @convStream@.  Use @tryHead@ instead.
-head :: (Monad m, LL.ListLike s el) => Iteratee s m el
+head :: (LL.ListLike s el) => Iteratee s m el
 head = liftI step
   where
   step (Chunk vec)
@@ -157,7 +157,7 @@ head = liftI step
 
 -- | Similar to @head@, except it returns @Nothing@ if the stream
 -- is terminated.
-tryHead :: (Monad m, LL.ListLike s el) => Iteratee s m (Maybe el)
+tryHead :: (LL.ListLike s el) => Iteratee s m (Maybe el)
 tryHead = liftI step
   where
   step (Chunk vec)
@@ -170,7 +170,7 @@ tryHead = liftI step
 -- Raise a (recoverable) error if the stream is terminated
 -- 
 -- The analogue of @List.last@
-last :: (Monad m, LL.ListLike s el, Nullable s) => Iteratee s m el
+last :: (LL.ListLike s el, Nullable s) => Iteratee s m el
 last = liftI (step Nothing)
   where
   step l (Chunk xs)
@@ -209,7 +209,7 @@ heads st = loop 0 st
 -- it from the stream.
 -- Return @Just c@ if successful, return @Nothing@ if the stream is
 -- terminated by 'EOF'.
-peek :: (Monad m, LL.ListLike s el) => Iteratee s m (Maybe el)
+peek :: (LL.ListLike s el) => Iteratee s m (Maybe el)
 peek = liftI step
   where
     step s@(Chunk vec)
@@ -246,8 +246,8 @@ roll t d = LL.singleton <$> joinI (take t stream2stream) <* drop (d-t)
 -- |Drop n elements of the stream, if there are that many.
 -- 
 -- The analogue of @List.drop@
-drop :: (Monad m, Nullable s, LL.ListLike s el) => Int -> Iteratee s m ()
-drop 0  = return ()
+drop :: (Nullable s, LL.ListLike s el) => Int -> Iteratee s m ()
+drop 0  = idone () (Chunk empty)
 drop n' = liftI (step n')
   where
     step n (Chunk str)
@@ -259,7 +259,7 @@ drop n' = liftI (step n')
 -- |Skip all elements while the predicate is true.
 -- 
 -- The analogue of @List.dropWhile@
-dropWhile :: (Monad m, LL.ListLike s el) => (el -> Bool) -> Iteratee s m ()
+dropWhile :: (LL.ListLike s el) => (el -> Bool) -> Iteratee s m ()
 dropWhile p = liftI step
   where
     step (Chunk str)
@@ -276,7 +276,7 @@ dropWhile p = liftI step
 -- This forces evaluation of the entire stream.
 -- 
 -- The analogue of @List.length@
-length :: (Monad m, Num a, LL.ListLike s el) => Iteratee s m a
+length :: (Num a, LL.ListLike s el) => Iteratee s m a
 length = liftI (step 0)
   where
     step !i (Chunk xs) = liftI (step $ i + fromIntegral (LL.length xs))
@@ -286,7 +286,7 @@ length = liftI (step 0)
 -- | Get the length of the current chunk, or @Nothing@ if 'EOF'.
 -- 
 -- This function consumes no input.
-chunkLength :: (Monad m, LL.ListLike s el) => Iteratee s m (Maybe Int)
+chunkLength :: (LL.ListLike s el) => Iteratee s m (Maybe Int)
 chunkLength = liftI step
  where
   step s@(Chunk xs) = idone (Just $ LL.length xs) s
@@ -296,10 +296,10 @@ chunkLength = liftI step
 -- | Take @n@ elements from the current chunk, or the whole chunk if
 -- @n@ is greater.
 takeFromChunk ::
-  (Monad m, Nullable s, LL.ListLike s el)
+  (Nullable s, LL.ListLike s el)
   => Int
   -> Iteratee s m s
-takeFromChunk n | n <= 0 = return empty
+takeFromChunk n | n <= 0 = idone empty (Chunk empty)
 takeFromChunk n = liftI step
  where
   step (Chunk xs) = let (h,t) = LL.splitAt n xs in idone h $ Chunk t
@@ -318,7 +318,7 @@ takeFromChunk n = liftI step
 -- 
 -- @breakE@ should be used in preference to @break@ whenever possible.
 breakE
-  :: (Monad m, LL.ListLike s el, NullPoint s)
+  :: (LL.ListLike s el, NullPoint s)
   => (el -> Bool)
   -> Enumeratee s s m a
 breakE cpred = eneeCheckIfDonePass (icont . step)
@@ -383,7 +383,7 @@ take n' iter
 -- 4 elements to the outer stream
 takeUpTo :: (Monad m, Nullable s, LL.ListLike s el) => Int -> Enumeratee s s m a
 takeUpTo i iter
- | i <= 0    = return iter
+ | i <= 0    = idone iter (Chunk empty)
  | otherwise = Iteratee $ \od oc ->
     runIter iter (onDone od oc) (onCont od oc)
   where
@@ -418,7 +418,7 @@ takeUpTo i iter
 -- remaining stream will not satisfy the predicate.
 -- 
 -- The analogue of @List.takeWhile@, see also @break@ and @takeWhileE@
-takeWhile :: (LL.ListLike s el, Monad m) => (el -> Bool) -> Iteratee s m s
+takeWhile :: (LL.ListLike s el ) => (el -> Bool) -> Iteratee s m s
 takeWhile = break . (not .)
 {-# INLINEABLE takeWhile #-}
 
@@ -427,7 +427,7 @@ takeWhile = break . (not .)
 -- 
 -- This is preferred to @takeWhile@.
 takeWhileE
- :: (Monad m, LL.ListLike s el, NullPoint s)
+ :: (LL.ListLike s el, NullPoint s)
  => (el -> Bool)
  -> Enumeratee s s m a
 takeWhileE = breakE . (not .)
@@ -440,15 +440,14 @@ takeWhileE = breakE . (not .)
 -- 
 -- The analog of @List.map@
 mapStream
-  :: (Monad m
-     ,LL.ListLike (s el) el
+  :: (LL.ListLike (s el) el
      ,LL.ListLike (s el') el'
      ,NullPoint (s el)
      ,LooseMap s el el')
   => (el -> el')
   -> Enumeratee (s el) (s el') m a
 mapStream f = mapChunks (lMap f)
-{-# SPECIALIZE mapStream :: Monad m => (el -> el') -> Enumeratee [el] [el'] m a #-}
+{-# SPECIALIZE mapStream :: (el -> el') -> Enumeratee [el] [el'] m a #-}
 
 -- |Map the stream rigidly.
 -- 
@@ -456,12 +455,12 @@ mapStream f = mapChunks (lMap f)
 -- This function is necessary for @ByteString@ and similar types
 -- that cannot have 'LooseMap' instances, and may be more efficient.
 rigidMapStream
-  :: (Monad m, LL.ListLike s el, NullPoint s)
+  :: (LL.ListLike s el, NullPoint s)
   => (el -> el)
   -> Enumeratee s s m a
 rigidMapStream f = mapChunks (LL.rigidMap f)
-{-# SPECIALIZE rigidMapStream :: Monad m => (el -> el) -> Enumeratee [el] [el] m a #-}
-{-# SPECIALIZE rigidMapStream :: Monad m => (Word8 -> Word8) -> Enumeratee B.ByteString B.ByteString m a #-}
+{-# SPECIALIZE rigidMapStream :: (el -> el) -> Enumeratee [el] [el] m a #-}
+{-# SPECIALIZE rigidMapStream :: (Word8 -> Word8) -> Enumeratee B.ByteString B.ByteString m a #-}
 
 
 -- |Creates an 'enumeratee' with only elements from the stream that
@@ -689,7 +688,7 @@ mergeByChunks f f1 f2 = unfoldConvStream iter (0 :: Int)
 -- 
 -- The analogue of @List.foldl@
 foldl
-  :: (Monad m, LL.ListLike s el, FLL.FoldableLL s el)
+  :: (LL.ListLike s el, FLL.FoldableLL s el)
   => (a -> el -> a)
   -> a
   -> Iteratee s m a
@@ -707,7 +706,7 @@ foldl f i = liftI (step i)
 -- 
 -- The analogue of @List.foldl'@.
 foldl'
-  :: (Monad m, LL.ListLike s el, FLL.FoldableLL s el)
+  :: (LL.ListLike s el, FLL.FoldableLL s el)
   => (a -> el -> a)
   -> a
   -> Iteratee s m a
@@ -724,7 +723,7 @@ foldl' f i = liftI (step i)
 -- 
 -- The analogue of @List.foldl1@.
 foldl1
-  :: (Monad m, LL.ListLike s el, FLL.FoldableLL s el)
+  :: (LL.ListLike s el, FLL.FoldableLL s el)
   => (el -> el -> el)
   -> Iteratee s m el
 foldl1 f = liftI step
@@ -739,7 +738,7 @@ foldl1 f = liftI step
 
 -- | Strict variant of 'foldl1'.
 foldl1'
-  :: (Monad m, LL.ListLike s el, FLL.FoldableLL s el)
+  :: (LL.ListLike s el, FLL.FoldableLL s el)
   => (el -> el -> el)
   -> Iteratee s m el
 foldl1' f = liftI step
@@ -753,7 +752,7 @@ foldl1' f = liftI step
 
 
 -- | Sum of a stream.
-sum :: (Monad m, LL.ListLike s el, Num el) => Iteratee s m el
+sum :: (LL.ListLike s el, Num el) => Iteratee s m el
 sum = liftI (step 0)
   where
     step acc (Chunk xs)
@@ -764,7 +763,7 @@ sum = liftI (step 0)
 
 
 -- | Product of a stream.
-product :: (Monad m, LL.ListLike s el, Num el) => Iteratee s m el
+product :: (LL.ListLike s el, Num el) => Iteratee s m el
 product = liftI (step 1)
   where
     step acc (Chunk xs)

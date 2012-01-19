@@ -116,13 +116,13 @@ newtype Iteratee s m a = Iteratee{ runIter :: forall r.
 
 -- ----------------------------------------------
 
-idone :: Monad m => a -> Stream s -> Iteratee s m a
+idone :: a -> Stream s -> Iteratee s m a
 idone a s = Iteratee $ \onDone _ -> onDone a s
 
 icont :: (Stream s -> Iteratee s m a) -> Maybe SomeException -> Iteratee s m a
 icont k e = Iteratee $ \_ onCont -> onCont k e
 
-liftI :: Monad m => (Stream s -> Iteratee s m a) -> Iteratee s m a
+liftI :: (Stream s -> Iteratee s m a) -> Iteratee s m a
 liftI k = Iteratee $ \_ onCont -> onCont k Nothing
 
 -- Monadic versions, frequently used by enumerators
@@ -136,7 +136,7 @@ icontM
      -> m (Iteratee s m a)
 icontM k e = return $ Iteratee $ \_ onCont -> onCont k e
 
-instance (Functor m, Monad m) => Functor (Iteratee s m) where
+instance (Functor m) => Functor (Iteratee s m) where
   fmap f m = Iteratee $ \onDone onCont ->
     let od = onDone . f
         oc = onCont . (fmap f .)

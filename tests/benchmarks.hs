@@ -212,11 +212,11 @@ foldBenches = [foldB1, foldB2, foldB3]
 
 conv1 = idN "convStream id head chunked" (I.joinI . I.convStream idChunk $ I.head)
 conv2 = idN "convStream id length chunked" (I.joinI . I.convStream idChunk $ I.length)
-idChunk = I.liftI step
+idChunk = I.icontP step
   where
     step (I.Chunk xs)
-      | LL.null xs      = idChunk
-      | True            = idone xs (I.Chunk mempty)
+      | LL.null xs      = (idChunk, mempty)
+      | True            = (idone xs, mempty)
 convBenches = [conv1, conv2]
 
 instance NFData BS.ByteString where

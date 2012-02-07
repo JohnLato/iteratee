@@ -297,10 +297,10 @@ prop_product xs n = n > 0 ==>
   where types = (xs :: [Int])
 
 convId :: (LL.ListLike s el, Monad m) => Iteratee s m s
-convId = liftI (\str -> case str of
-  s@(Chunk xs) | LL.null xs -> convId
-  s@(Chunk xs) -> idone xs (Chunk mempty)
-  s@(EOF e)    -> idone mempty (EOF e)
+convId = icontP (\str -> case str of
+  s@(Chunk xs) | LL.null xs -> (convId, s)
+  s@(Chunk xs) -> (idone xs, Chunk mempty)
+  s@(EOF e)    -> (idone mempty, EOF e)
   )
 
 prop_convId xs = runner1 (enumPure1Chunk xs convId) == xs

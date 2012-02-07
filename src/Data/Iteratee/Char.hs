@@ -78,21 +78,21 @@ enumLines
      Enumeratee s [s] m a
 enumLines = convStream getter
   where
-    getter = icont step Nothing
+    getter = icontP step
     lChar = (== '\n') . last . LL.toString
     step (Chunk xs)
-      | LL.null xs = getter
-      | lChar xs   = idone (LL.lines xs) mempty
-      | otherwise  = icont (step' xs) Nothing
-    step _str      = getter
+      | LL.null xs = (getter, Chunk xs)
+      | lChar xs   = (idone (LL.lines xs), mempty)
+      | otherwise  = (icontP (step' xs), mempty)
+    step str       = (getter, str)
     step' xs (Chunk ys)
-      | LL.null ys = icont (step' xs) Nothing
-      | lChar ys   = idone (LL.lines . mappend xs $ ys) mempty
+      | LL.null ys = (icontP (step' xs), Chunk ys)
+      | lChar ys   = (idone (LL.lines . mappend xs $ ys), mempty)
       | otherwise  = let w' = LL.lines $ mappend xs ys
                          ws = init w'
                          ck = last w'
-                     in idone ws (Chunk ck)
-    step' xs str   = idone (LL.lines xs) str
+                     in (idone ws, (Chunk ck))
+    step' xs str   = (idone (LL.lines xs), str)
 
 -- |Convert the stream of characters to the stream of words, and
 -- apply the given iteratee to enumerate the latter.
@@ -109,21 +109,21 @@ enumWordsBS
   :: (Monad m) => Enumeratee BC.ByteString [BC.ByteString] m a 
 enumWordsBS iter = convStream getter iter
   where
-    getter = liftI step
+    getter = icontP step
     lChar = isSpace . BC.last
     step (Chunk xs)
-      | BC.null xs = getter
-      | lChar xs   = idone (BC.words xs) (Chunk BC.empty)
-      | otherwise  = icont (step' xs) Nothing
-    step str       = idone mempty str
+      | BC.null xs = (getter, mempty)
+      | lChar xs   = (idone (BC.words xs), Chunk BC.empty)
+      | otherwise  = (icontP (step' xs), mempty)
+    step str       = (idone mempty, str)
     step' xs (Chunk ys)
-      | BC.null ys = icont (step' xs) Nothing
-      | lChar ys   = idone (BC.words . BC.append xs $ ys) mempty
+      | BC.null ys = (icontP (step' xs), mempty)
+      | lChar ys   = (idone (BC.words . BC.append xs $ ys), mempty)
       | otherwise  = let w' = BC.words . BC.append xs $ ys
                          ws = init w'
                          ck = last w'
-                     in idone ws (Chunk ck)
-    step' xs str   = idone (BC.words xs) str
+                     in (idone ws, (Chunk ck))
+    step' xs str   = (idone (BC.words xs), str)
 
 {-# INLINE enumWordsBS #-}
 
@@ -133,19 +133,19 @@ enumWordsBS iter = convStream getter iter
 enumLinesBS :: (Monad m) => Enumeratee BC.ByteString [BC.ByteString] m a
 enumLinesBS = convStream getter
   where
-    getter = icont step Nothing
+    getter = icontP step
     lChar = (== '\n') . BC.last
     step (Chunk xs)
-      | BC.null xs = getter
-      | lChar xs   = idone (BC.lines xs) (Chunk BC.empty)
-      | otherwise  = icont (step' xs) Nothing
-    step str       = idone mempty str
+      | BC.null xs = (getter, Chunk xs)
+      | lChar xs   = (idone (BC.lines xs), Chunk BC.empty)
+      | otherwise  = (icontP (step' xs), mempty)
+    step str       = (idone mempty, str)
     step' xs (Chunk ys)
-      | BC.null ys = icont (step' xs) Nothing
-      | lChar ys   = idone (BC.lines . BC.append xs $ ys) mempty
+      | BC.null ys = (icontP (step' xs), mempty)
+      | lChar ys   = (idone (BC.lines . BC.append xs $ ys), mempty)
       | otherwise  = let w' = BC.lines $ BC.append xs ys
                          ws = init w'
                          ck = last w'
-                     in idone ws (Chunk ck)
-    step' xs str   = idone (BC.lines xs) str
+                     in (idone ws, Chunk ck)
+    step' xs str   = (idone (BC.lines xs), str)
 

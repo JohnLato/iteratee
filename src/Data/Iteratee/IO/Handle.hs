@@ -43,14 +43,13 @@ makeHandleCallback ::
   Ptr el
   -> Int
   -> Handle
-  -> st
-  -> m (Either SomeException ((Bool, st), s))
+  -> Callback st m s
 makeHandleCallback p bsize h st = do
   n' <- liftIO (CIO.try $ hGetBuf h p bsize :: IO (Either SomeException Int))
   case n' of
     Left e -> return $ Left e
-    Right 0 -> return $ Right ((False, st), empty)
-    Right n -> liftM (\s -> Right ((True, st), s)) $
+    Right 0 -> return $ Right ((Finished, st), empty)
+    Right n -> liftM (\s -> Right ((HasMore, st), s)) $
                  readFromPtr p (fromIntegral n)
 
 

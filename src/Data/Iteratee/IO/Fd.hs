@@ -49,14 +49,13 @@ makefdCallback ::
   Ptr el
   -> ByteCount
   -> Fd
-  -> st
-  -> m (Either SomeException ((Bool, st), s))
+  -> Callback st m s
 makefdCallback p bufsize fd st = do
   n <- liftIO $ myfdRead fd (castPtr p) bufsize
   case n of
     Left  _  -> return $ Left (error "myfdRead failed")
-    Right 0  -> liftIO yield >> return (Right ((False, st), empty))
-    Right n' -> liftM (\s -> Right ((True, st), s)) $
+    Right 0  -> liftIO yield >> return (Right ((Finished, st), empty))
+    Right n' -> liftM (\s -> Right ((HasMore, st), s)) $
                   readFromPtr p (fromIntegral n')
 
 -- |The enumerator of a POSIX File Descriptor.  This version enumerates

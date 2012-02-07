@@ -10,10 +10,12 @@
 
 module Data.Iteratee.Iteratee (
   -- * Types
-  EnumerateeHandler
+  Cont
+  ,EnumerateeHandler
   -- ** Error handling
   ,throwErr
   ,throwRecoverableErr
+  ,throwRec
   ,checkErr
   -- ** Basic Iteratees
   ,identity
@@ -29,7 +31,6 @@ module Data.Iteratee.Iteratee (
   ,mapChunksM
   ,convStream
   ,unfoldConvStream
-  ,unfoldConvStreamCheck
   ,joinI
   ,joinIM
   -- * Enumerators
@@ -48,7 +49,6 @@ module Data.Iteratee.Iteratee (
   ,(>>>)
   ,eneeCheckIfDone
   ,eneeCheckIfDoneHandle
-  ,eneeCheckIfDoneIgnore
   ,eneeCheckIfDonePass
   ,mergeEnums
   -- ** Enumeratee Combinators
@@ -56,6 +56,9 @@ module Data.Iteratee.Iteratee (
   ,(=$)
   ,(><>)
   ,(<><)
+  -- ** Enumerator creation callbacks
+  ,CBState (..)
+  ,Callback
   -- * Misc.
   ,seek
   ,FileOffset
@@ -69,7 +72,9 @@ import Prelude hiding (head, drop, dropWhile, take, break, foldl, foldl1, length
 import Data.Iteratee.IO.Base
 import Data.Iteratee.Base
 
+import Control.Arrow (first, (***))
 import Control.Exception
+import Control.Monad
 import Control.Monad.Trans.Class
 import Data.Maybe
 import Data.Typeable
@@ -86,60 +91,62 @@ excDivergent = toException DivergentException
 -- cannot be handled by 'enumFromCallbackCatch', although it can be cleared
 -- by 'checkErr'.
 throwErr :: SomeException -> Iteratee s m a
-throwErr e = icont (const (throwErr e)) (Just e)
+throwErr e = ierr (throwErr e) e
 
 -- |Report and propagate a recoverable error.  This error can be handled by
 -- both 'enumFromCallbackCatch' and 'checkErr'.
 throwRecoverableErr ::
-  SomeException
-  -> (Stream s -> Iteratee s m a)
+  (Exception e) =>
+  e
+  -> (Iteratee s m a)
   -> Iteratee s m a
-throwRecoverableErr e i = icont i (Just e)
+throwRecoverableErr e i = ierr i (toException e)
+
+-- | A shorter name for 'throwRecoverableErr'
+throwRec :: (Exception e) => e -> (Iteratee s m a) -> Iteratee s m a
+throwRec = throwRecoverableErr
 
 
 -- |Check if an iteratee produces an error.
 -- Returns @Right a@ if it completes without errors, otherwise
 -- @Left SomeException@. 'checkErr' is useful for iteratees that may not
 -- terminate, such as @Data.Iteratee.head@ with an empty stream.
-checkErr ::
- (NullPoint s) =>
-  Iteratee s m a
-  -> Iteratee s m (Either SomeException a)
-checkErr iter = Iteratee $ \onDone onCont ->
-  let od            = onDone . Right
-      oc k Nothing  = onCont (checkErr . k) Nothing
-      oc _ (Just e) = onDone (Left e) (Chunk empty)
-  in runIter iter od oc
+checkErr :: Monad m => Iteratee s m a -> Iteratee s m (Either SomeException a)
+checkErr iter = runIter iter (idone . Right) oc oe oR
+ where
+  oc k   = icont (liftM (first checkErr) . k)
+  oe _ e = idone (Left e)
+  oR mb doB = ireq mb (checkErr . doB)
 
 -- ------------------------------------------------------------------------
 -- Parser combinators
 
 -- |The identity iteratee.  Doesn't do any processing of input.
-identity :: (NullPoint s) => Iteratee s m ()
-identity = idone () (Chunk empty)
+identity :: Iteratee s m ()
+identity = idone ()
 
 -- |Get the stream status of an iteratee.
-isStreamFinished :: (Nullable s) => Iteratee s m (Maybe SomeException)
-isStreamFinished = liftI check
+isStreamFinished :: (Nullable s, Monad m) => Iteratee s m (Maybe SomeException)
+isStreamFinished = icontP check
   where
     check s@(Chunk xs)
-      | nullC xs  = isStreamFinished
-      | otherwise = idone Nothing s
-    check s@(EOF e) = idone (Just $ fromMaybe (toException EofException) e) s
+      | nullC xs  = (isStreamFinished, s)
+      | otherwise = (idone Nothing, s)
+    check s@(EOF e) = (idone (Just $ fromMaybe (toException EofException) e), s)
 {-# INLINE isStreamFinished #-}
 
 
 -- |Skip the rest of the stream
-skipToEof :: Iteratee s m ()
-skipToEof = icont check Nothing
+skipToEof :: (NullPoint s, Monad m) => Iteratee s m ()
+skipToEof = icontP check
   where
-    check (Chunk _) = skipToEof
-    check s         = idone () s
+    check (Chunk _) = (skipToEof, Chunk empty)
+    check s         = (idone (), s)
 
 
 -- |Seek to a position in the stream
 seek :: (NullPoint s) => FileOffset -> Iteratee s m ()
-seek o = throwRecoverableErr (toException $ SeekException o) (const identity)
+seek o = throwRec (SeekException o) identity
 
 -- | Map a monadic function over the chunks of the stream and ignore the
 -- result.  Useful for creating efficient monadic iteratee consumers, e.g.
@@ -148,42 +155,47 @@ seek o = throwRecoverableErr (toException $ SeekException o) (const identity)
 -- 
 -- these can be efficiently run in parallel with other iteratees via
 -- @Data.Iteratee.ListLike.zip@.
-mapChunksM_ :: (Monad m, Nullable s) => (s -> m b) -> Iteratee s m ()
-mapChunksM_ f = liftI step
+mapChunksM_ :: (Monad m, Nullable s, NullPoint s)
+  => (s -> m b)
+  -> Iteratee s m ()
+mapChunksM_ f = icont step
   where
-    step (Chunk xs)
-      | nullC xs   = liftI step
-      | otherwise  = lift (f xs) >> liftI step
-    step s@(EOF _) = idone () s
+    step s@(Chunk xs)
+      | nullC xs   = return (icont step, s)
+      | otherwise  = f xs >> return (icont step, Chunk empty)
+    step s@(EOF _) = return (idone (), s)
 {-# INLINE mapChunksM_ #-}
 
 -- | A fold over chunks
-foldChunksM :: (Monad m, Nullable s) => (a -> s -> m a) -> a -> Iteratee s m a
-foldChunksM f = liftI . go
+foldChunksM :: (Monad m, Nullable s, NullPoint s)
+  => (a -> s -> m a)
+  -> a
+  -> Iteratee s m a
+foldChunksM f = icont . go
   where
-    go a (Chunk c) = lift (f a c) >>= liftI . go
-    go a e = idone a e
+    go a (Chunk c) = f a c >>= \a' -> return (icont (go a'), Chunk empty)
+    go a e = return (idone a, e)
 {-# INLINE foldChunksM #-}
 
 -- | Get the current chunk from the stream.
-getChunk :: (Nullable s, NullPoint s) => Iteratee s m s
-getChunk = liftI step
+getChunk :: (Monad m, Nullable s, NullPoint s) => Iteratee s m s
+getChunk = icontP step
  where
-  step (Chunk xs)
-    | nullC xs  = liftI step
-    | otherwise = idone xs $ Chunk empty
-  step (EOF Nothing)  = throwErr $ toException EofException
-  step (EOF (Just e)) = throwErr e
+  step s@(Chunk xs)
+    | nullC xs  = (icontP step, s)
+    | otherwise = (idone xs, Chunk empty)
+  step s@(EOF Nothing)  = (throwRec (EofException) getChunk, s)
+  step s@(EOF (Just e)) = (throwRec e getChunk, s)
 {-# INLINE getChunk #-}
 
 -- | Get a list of all chunks from the stream.
-getChunks :: (Nullable s) => Iteratee s m [s]
-getChunks = liftI (step id)
+getChunks :: (Monad m, Nullable s, NullPoint s) => Iteratee s m [s]
+getChunks = icontP (step id)
  where
-  step acc (Chunk xs)
-    | nullC xs    = liftI (step acc)
-    | otherwise   = liftI (step $ acc . (xs:))
-  step acc stream = idone (acc []) stream
+  step acc s@(Chunk xs)
+    | nullC xs    = (icontP (step acc), s)
+    | otherwise   = (icontP (step $ acc . (xs:)), s)
+  step acc stream = (idone (acc []), stream)
 {-# INLINE getChunks #-}
 
 -- ---------------------------------------------------
@@ -204,27 +216,27 @@ type Enumeratee sFrom sTo (m :: * -> *) a =
 -- >   :: (Monad m, LL.ListLike s el, NullPoint s)
 -- >   => (el -> Bool)
 -- >   -> Enumeratee s s m a
--- > breakE cpred = eneeCheckIfDone (liftI . step)
+-- > breakE cpred = eneeCheckIfDone (icont . step)
 -- >  where
 -- >   step k (Chunk s)
--- >       | LL.null s  = liftI (step k)
+-- >       | LL.null s  = icont (step k)
 -- >       | otherwise  = case LL.break cpred s of
 -- >         (str', tail')
--- >           | LL.null tail' -> eneeCheckIfDone (liftI . step) . k $ Chunk str'
+-- >           | LL.null tail' -> eneeCheckIfDone (icont . step) . k $ Chunk str'
 -- >           | otherwise     -> idone (k $ Chunk str') (Chunk tail')
 -- >   step k stream           =  idone (k stream) stream
 -- 
 eneeCheckIfDone ::
  (Monad m, NullPoint elo) =>
-  ((Stream eli -> Iteratee eli m a) -> Iteratee elo m (Iteratee eli m a))
+  (Cont eli m a -> Iteratee elo m (Iteratee eli m a))
   -> Enumeratee elo eli m a
-eneeCheckIfDone f = eneeCheckIfDonePass f'
- where
-  f' k Nothing  = f k
-  f' k (Just e) = throwRecoverableErr e (\s -> joinIM $ enumChunk s $ eneeCheckIfDone f (liftI k))
+eneeCheckIfDone = eneeCheckIfDonePass
+
+-- | The continuation type of an incomplete iteratee
+type Cont s m a = Stream s -> m (Iteratee s m a, Stream s)
 
 type EnumerateeHandler eli elo m a =
-  (Stream eli -> Iteratee eli m a)
+  Iteratee eli m a
   -> SomeException
   -> Iteratee elo m (Iteratee eli m a)
 
@@ -234,49 +246,42 @@ type EnumerateeHandler eli elo m a =
 eneeCheckIfDoneHandle
   :: (NullPoint elo)
   => EnumerateeHandler eli elo m a
-  -> ((Stream eli -> Iteratee eli m a)
-      -> Maybe SomeException
-      -> Iteratee elo m (Iteratee eli m a)
-     )
+  -> (Cont eli m a -> (Iteratee elo m (Iteratee eli m a)))
   -> Enumeratee elo eli m a
-eneeCheckIfDoneHandle h f inner = Iteratee $ \od oc ->
-  let onDone x s = od (idone x s) (Chunk empty)
-      onCont k Nothing  = runIter (f k Nothing) od oc
-      onCont k (Just e) = runIter (h k e)       od oc
-  in runIter inner onDone onCont
+eneeCheckIfDoneHandle h fc inner = runIter inner onDone fc h onReq
+ where
+  onDone x     = idone (idone x)
+  onReq mb doB = ireq mb (eneeCheckIfDoneHandle h fc . doB)
 {-# INLINABLE eneeCheckIfDoneHandle #-}
 
+-- | Create enumeratees that pass all errors through the outer iteratee.
 eneeCheckIfDonePass
   :: (NullPoint elo)
-  => ((Stream eli -> Iteratee eli m a)
-      -> Maybe SomeException
-      -> Iteratee elo m (Iteratee eli m a)
-     )
+  => (Cont eli m a -> Iteratee elo m (Iteratee eli m a))
   -> Enumeratee elo eli m a
-eneeCheckIfDonePass f = eneeCheckIfDoneHandle (\k e -> f k (Just e)) f
+eneeCheckIfDonePass f = eneeCheckIfDoneHandle handler f
+ where
+  handler i e = ierr (eneeCheckIfDonePass f i) e
 {-# INLINABLE eneeCheckIfDonePass #-}
-
-eneeCheckIfDoneIgnore
-  :: (NullPoint elo)
-  => ((Stream eli -> Iteratee eli m a)
-      -> Maybe SomeException
-      -> Iteratee elo m (Iteratee eli m a)
-     )
-  -> Enumeratee elo eli m a
-eneeCheckIfDoneIgnore f = eneeCheckIfDoneHandle (\k _ -> f k Nothing) f
 
 -- | Convert one stream into another with the supplied mapping function.
 -- This function operates on whole chunks at a time, contrasting to
 -- @mapStream@ which operates on single elements.
 -- 
+-- 'mapChunks' is useful for creating high-performance iteratees, however
+-- the entire input chunk will be consumed even if the inner iteratee doesn't
+-- make use of all of it.
+-- 
 -- > unpacker :: Enumeratee B.ByteString [Word8] m a
 -- > unpacker = mapChunks B.unpack
 -- 
-mapChunks :: (NullPoint s) => (s -> s') -> Enumeratee s s' m a
+mapChunks :: (Monad m, NullPoint s) => (s -> s') -> Enumeratee s s' m a
 mapChunks f = eneeCheckIfDonePass (icont . step)
  where
-  step k (Chunk xs)     = eneeCheckIfDonePass (icont . step) . k . Chunk $ f xs
-  step k str@(EOF mErr) = idone (k $ EOF mErr) str
+  step k (Chunk xs) = k (Chunk (f xs)) >>= \(i',_) ->
+                        return (eneeCheckIfDonePass (icont . step) i'
+                                , Chunk empty)
+  step k (EOF mErr) = (idone *** const (EOF mErr)) `liftM` k (EOF mErr)
 {-# INLINE mapChunks #-}
 
 -- | Convert a stream of @s@ to a stream of @s'@ using the supplied function.
@@ -286,9 +291,10 @@ mapChunksM
   -> Enumeratee s s' m a
 mapChunksM f = eneeCheckIfDonePass (icont . step)
  where
-  step k (Chunk xs)     = lift (f xs) >>=
-                          eneeCheckIfDonePass (icont . step) . k . Chunk
-  step k str@(EOF mErr) = idone (k $ EOF mErr) str
+  step k (Chunk xs) = f xs >>= (\s -> k (Chunk s)) >>= \(i', str') ->
+                            return (eneeCheckIfDonePass (icont . step) i'
+                                    , Chunk empty)
+  step k (EOF mErr) = (idone *** const (EOF mErr)) `liftM` k (EOF mErr)
 {-# INLINE mapChunksM #-}
 
 -- |Convert one stream into another, not necessarily in lockstep.
@@ -299,16 +305,19 @@ mapChunksM f = eneeCheckIfDonePass (icont . step)
 -- one element of the inner stream, or the other way around.
 -- The transformation from one stream to the other is specified as
 -- Iteratee s m s'.
-convStream ::
+convStream :: forall s s' m a.
  (Monad m, Nullable s) =>
   Iteratee s m s'
   -> Enumeratee s s' m a
 convStream fi = eneeCheckIfDonePass check
   where
-    check k (Just e) = throwRecoverableErr e (const identity) >> check k Nothing
-    check k _ = isStreamFinished >>= maybe (step k) (idone (liftI k) . EOF . Just)
-    step k = fi >>= eneeCheckIfDonePass check . k . Chunk
+    check k = isStreamFinished >>= maybe (step k) (handle k)
+    handle k e = case fromException e of
+      Just EofException -> idone (icont k)
+      _                 -> ierr (step k) e
+    step k = fi >>= lift . k . Chunk >>= eneeCheckIfDonePass check . fst
 {-# INLINABLE convStream #-}
+
 
 -- |The most general stream converter.  Given a function to produce iteratee
 -- transformers and an initial state, convert the stream using iteratees
@@ -318,61 +327,38 @@ unfoldConvStream ::
   (acc -> Iteratee s m (acc, s'))
   -> acc
   -> Enumeratee s s' m a
-unfoldConvStream f acc0 = eneeCheckIfDonePass (check acc0)
+unfoldConvStream fi acc0 = eneeCheckIfDonePass (check acc0)
   where
     check acc k (Just e) = throwRecoverableErr e (const identity) >> check acc k Nothing
     check acc k _ = isStreamFinished >>=
                     maybe (step acc k) (idone (liftI k) . EOF . Just)
     step acc k = f acc >>= \(acc', s') ->
                     eneeCheckIfDonePass (check acc') . k . Chunk $ s'
-{-# INLINABLE unfoldConvStream #-}
 
-unfoldConvStreamCheck
-  :: (Monad m, Nullable elo)
-  => (((Stream eli -> Iteratee eli m a)
-        -> Maybe SomeException
-        -> Iteratee elo m (Iteratee eli m a)
-      )
-      -> Enumeratee elo eli m a
-     )
-  -> (acc -> Iteratee elo m (acc, eli))
-  -> acc
-  -> Enumeratee elo eli m a
-unfoldConvStreamCheck checkDone f acc0 = checkDone (check acc0)
-  where
-    check acc k mX = isStreamFinished >>=
-                   maybe (step acc k mX) (idone (icont k mX) . EOF . Just)
-    step acc k Nothing = f acc >>= \(acc', s') ->
-                  (checkDone (check acc') . k $ Chunk s')
-    step acc k (Just ex) = throwRecoverableErr ex $ \str' ->
-      let i = f acc >>= \(acc', s') ->
-                           (checkDone (check acc') . k $ Chunk s')
-      in joinIM $ enumChunk str' i
-{-# INLINABLE unfoldConvStreamCheck #-}
 
 -- | Collapse a nested iteratee.  The inner iteratee is terminated by @EOF@.
 --   Errors are propagated through the result.
 -- 
 --  The stream resumes from the point of the outer iteratee; any remaining
 --  input in the inner iteratee will be lost.
+-- 
 --  Differs from 'Control.Monad.join' in that the inner iteratee is terminated,
 --  and may have a different stream type than the result.
 joinI ::
  (Monad m, Nullable s) =>
   Iteratee s m (Iteratee s' m a)
   -> Iteratee s m a
-joinI = (>>=
-  \inner -> Iteratee $ \od oc ->
-  let onDone  x _        = od x (Chunk empty)
-      onCont  k Nothing  = runIter (k (EOF Nothing)) onDone onCont'
-      onCont  _ (Just e) = runIter (throwErr e) od oc
-      onCont' _ e        = runIter (throwErr (fromMaybe excDivergent e)) od oc
-  in runIter inner onDone onCont)
+joinI i = runIter i onDone onCont onErr onR
+ where
+  onDone i'   = ireq (tryRun i') (either throwErr return)
+  onCont k    = icont $ \str -> first joinI `liftM` k str
+  onErr i' e  = throwRec e (joinI i')
+  onR mb doB = lift mb >>= joinI . doB
 {-# INLINE joinI #-}
 
 -- | Lift an iteratee inside a monad to an iteratee.
 joinIM :: (Monad m) => m (Iteratee s m a) -> Iteratee s m a
-joinIM mIter = Iteratee $ \od oc -> mIter >>= \iter -> runIter iter od oc
+joinIM mIter = ireq mIter id
 
 
 -- ------------------------------------------------------------------------
@@ -398,24 +384,25 @@ enumChunk (EOF (Just e)) = enumErr e
 -- stream. The result is the iteratee in the Done state.  It is an error
 -- if the iteratee does not terminate on EOF.
 enumEof :: (Monad m) => Enumerator s m a
-enumEof iter = runIter iter onDone onCont
+enumEof iter = runIter iter idoneM onC ierrM onR
   where
-    onDone  x _str    = return $ idone x (EOF Nothing)
-    onCont  k Nothing = runIter (k (EOF Nothing)) onDone onCont'
-    onCont  k e       = return $ icont k e
-    onCont' _ Nothing = return $ throwErr excDivergent
-    onCont' k e       = return $ icont k e
+    onC  k      = k (EOF Nothing) >>= \(i,_) -> runIter i idoneM onC' ierrM onR
+    onC' k      = return $ throwErr excDivergent
+    onR mb doB = mb >>= enumEof . doB
 
 -- |Another primitive enumerator: tell the Iteratee the stream terminated
 -- with an error.
+-- 
+-- If the iteratee is already in an error state, the previous error is
+-- preserved.
 enumErr :: (Exception e, Monad m) => e -> Enumerator s m a
-enumErr e iter = runIter iter onDone onCont
+enumErr e iter = runIter iter idoneM onCont ierrM onR
   where
-    onDone  x _       = return $ idone x (EOF . Just $ toException e)
-    onCont  k Nothing = runIter (k (EOF (Just (toException e)))) onDone onCont'
-    onCont  k e'      = return $ icont k e'
-    onCont' _ Nothing = return $ throwErr excDivergent
-    onCont' k e'      = return $ icont k e'
+    onCont  k  = do
+      (i',_) <- k . EOF . Just $ toException e 
+      runIter i' idoneM onCont' ierrM onR
+    onCont' _  = return $ throwErr excDivergent
+    onR mb doB = mb >>= enumErr e . doB
 
 
 -- |The composition of two enumerators: essentially the functional composition
@@ -491,22 +478,23 @@ mergeEnums e1 e2 etee i = e1 $ e2 (joinI . etee $ ilift lift i) >>= run
 -- It passes a given list of elements to the iteratee in one chunk
 -- This enumerator does no IO and is useful for testing of base parsing
 enumPure1Chunk :: (Monad m) => s -> Enumerator s m a
-enumPure1Chunk str iter = runIter iter idoneM onCont
+enumPure1Chunk str iter = runIter iter idoneM onC ierrM onR
   where
-    onCont k Nothing = return $ k $ Chunk str
-    onCont k e       = return $ icont k e
+    onC k      = fst `liftM` k (Chunk str)
+    onR mb doB = mb >>= enumPure1Chunk str . doB
 
 -- | Enumerate chunks from a list
 -- 
 enumList :: (Monad m) => [s] -> Enumerator s m a
 enumList chunks = go chunks
  where
-  go [] i = return i
-  go xs' i = runIter i idoneM (onCont xs')
+  go [] i  = return i
+  go xs' i = runIter i idoneM (onCont xs') onErr (onReq xs')
    where
-    onCont (x:xs) k Nothing = go xs . k $ Chunk x
-    onCont _ _ (Just e) = return $ throwErr e
-    onCont _ k Nothing  = return $ icont k Nothing
+    onCont (x:xs) k = k (Chunk x) >>= go xs . fst
+    onCont []     k = return $ icont k
+    onErr i e       = return $ throwRec e i
+    onReq xs mb doB = mb >>= go xs . doB
 {-# INLINABLE enumList #-}
 
 -- | Checks if an iteratee has finished.
@@ -514,17 +502,19 @@ enumList chunks = go chunks
 -- This enumerator runs the iteratee, performing any monadic actions.
 -- If the result is True, the returned iteratee is done.
 enumCheckIfDone :: (Monad m) => Iteratee s m a -> m (Bool, Iteratee s m a)
-enumCheckIfDone iter = runIter iter onDone onCont
+enumCheckIfDone iter = runIter iter onDone onCont onErr onReq
   where
-    onDone x str = return (True, idone x str)
-    onCont k e   = return (False, icont k e)
+    onDone x  = return (True, idone x)
+    onCont k  = return (False, icont k)
+    onErr i e = return (False, ierr i e)
+    onReq mb doB = mb >>= enumCheckIfDone . doB
 {-# INLINE enumCheckIfDone #-}
 
 
 -- |Create an enumerator from a callback function
 enumFromCallback ::
  (Monad m, NullPoint s) =>
-  (st -> m (Either SomeException ((Bool, st), s)))
+  Callback st m s
   -> st
   -> Enumerator s m a
 enumFromCallback c st =
@@ -539,26 +529,35 @@ data NotAnException = NotAnException
 instance Exception NotAnException where
 instance IException NotAnException where
 
+-- | Indicate if a callback should be called again to produce more data.
+data CBState = HasMore | Finished deriving (Eq, Show, Ord, Enum)
+
+-- | The type of callback functions to create enumerators.
+type Callback st m s = st -> m (Either SomeException ((CBState, st), s))
+
 -- |Create an enumerator from a callback function with an exception handler.
 -- The exception handler is called if an iteratee reports an exception.
 enumFromCallbackCatch
-  :: (IException e, Monad m, NullPoint s)
-  => (st -> m (Either SomeException ((Bool, st), s)))
+  :: forall e m s st a. (IException e, Monad m, NullPoint s)
+  => Callback st m s
   -> (e -> m (Maybe EnumException))
   -> st
   -> Enumerator s m a
 enumFromCallbackCatch c handler = loop
   where
-    loop st iter = runIter iter idoneM (onCont st)
-    check k (True,  st') = loop st' . k . Chunk
-    check k (False,_st') = return . k . Chunk
-    onCont st k Nothing  = c st >>=
-        either (return . k . EOF . Just) (uncurry (check k))
-    onCont st k j@(Just e) = case fromException e of
+    loop st iter = runIter iter idoneM (onCont st) (onErr st) (onReq st)
+    onCont st k  = c st >>= either (liftM fst . k . EOF . Just) (check k)
+    onErr st i e = case fromException e of
       Just e' -> handler e' >>=
-                   maybe (loop st . k $ Chunk empty)
-                         (return . icont k . Just) . fmap toException
-      Nothing -> return (icont k j)
+                   maybe (loop st i)
+                         (return . ierr i) . fmap toException
+      Nothing -> return (ierr i e)
+    onReq :: st -> m x -> (x -> Iteratee s m a) -> m (Iteratee s m a)
+    onReq st mb doB = mb >>= loop st . doB
+      
+    check :: (Stream s -> m (Iteratee s m a, Stream s))
+             -> ((CBState, st), s)
+             -> m (Iteratee s m a)
+    check k ((HasMore,  st'), s) = k (Chunk s) >>= loop st' . fst
+    check k ((Finished,_st'), s) = fst `liftM` k (Chunk s)
 {-# INLINE enumFromCallbackCatch #-}
-
-

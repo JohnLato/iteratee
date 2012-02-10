@@ -116,19 +116,24 @@ newtype Iteratee s m a = Iteratee{ runIter :: forall r.
 
 idone :: a -> Iteratee s m a
 idone a = Iteratee $ \onDone _ _ _ -> onDone a
+{-# INLINE idone #-}
 
 icont :: (Stream s -> m (Iteratee s m a, Stream s)) -> Iteratee s m a
 icont k = Iteratee $ \_ onCont _ _ -> onCont k
+{-# INLINE icont #-}
 
 icontP :: Monad m => (Stream s -> (Iteratee s m a, Stream s)) -> Iteratee s m a
 icontP k = Iteratee $ \_ onCont _ _ -> onCont (return . k)
+{-# INLINE icontP #-}
 
 -- | identical to icont, left in for compatibility-ish reasons
 liftI :: Monad m => (Stream s -> (Iteratee s m a, Stream s)) -> Iteratee s m a
 liftI = icontP
+{-# INLINE liftI #-}
 
 ierr :: Iteratee s m a -> SomeException -> Iteratee s m a
 ierr i e = Iteratee $ \_ _ onErr _ -> onErr i e
+{-# INLINE ierr #-}
 
 ireq :: m b -> (b -> Iteratee s m a) -> Iteratee s m a
 ireq mb bf = Iteratee $ \_ _ _ onReq -> onReq mb bf
@@ -151,6 +156,7 @@ instance forall s m. (Functor m) => Functor (Iteratee s m) where
 
 instance (Functor m, Monad m) => Applicative (Iteratee s m) where
     pure x  = idone x
+    {-# INLINE (<*>) #-}
     m <*> a = m >>= flip fmap a
 
 instance (Monad m) => Monad (Iteratee s m) where
@@ -258,6 +264,7 @@ run iter = runIter iter onDone onCont onErr onReq
    onErr _ e     = E.throw e
    onReq :: m x -> (x -> Iteratee s m a) -> m a
    onReq mb doB  = mb >>= run . doB
+{-# INLINE run #-}
 
 -- |Run an iteratee, returning either the result or the iteratee exception.
 -- Note that only internal iteratee exceptions will be returned; exceptions

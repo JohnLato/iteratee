@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP, FlexibleContexts #-}
 
 -- |Random and Binary IO with generic Iteratees.
 
@@ -37,7 +37,8 @@ import qualified Data.Iteratee.IO.Handle as H
 import qualified Data.Iteratee.IO.Fd as FD
 #endif
 
-import Control.Monad.CatchIO
+import Control.Monad.Trans.Control
+import Control.Monad.IO.Class
 
 -- | The default buffer size.
 defaultBufSize :: Int
@@ -47,14 +48,14 @@ defaultBufSize = 1024
 #if defined(USE_POSIX)
 
 enumFile
-  :: (MonadCatchIO m, NullPoint s, ReadableChunk s el) =>
+  :: (MonadIO m, MonadBaseControl IO  m, NullPoint s, ReadableChunk s el) =>
      Int
      -> FilePath
      -> Enumerator s m a
 enumFile = FD.enumFile
 
 enumFileRandom
-  :: (MonadCatchIO m, NullPoint s, ReadableChunk s el) =>
+  :: (MonadIO m, MonadBaseControl IO  m, NullPoint s, ReadableChunk s el) =>
      Int
      -> FilePath
      -> Enumerator s m a
@@ -63,7 +64,7 @@ enumFileRandom = FD.enumFileRandom
 -- |Process a file using the given Iteratee.  This function wraps
 -- enumFd as a convenience.
 fileDriver
-  :: (MonadCatchIO m, NullPoint s, ReadableChunk s el) =>
+  :: (MonadIO m, MonadBaseControl IO  m, NullPoint s, ReadableChunk s el) =>
      Iteratee s m a
      -> FilePath
      -> m a
@@ -71,7 +72,7 @@ fileDriver = FD.fileDriverFd defaultBufSize
 
 -- |A version of fileDriver with a user-specified buffer size (in elements).
 fileDriverVBuf
-  :: (MonadCatchIO m, NullPoint s, ReadableChunk s el) =>
+  :: (MonadIO m, MonadBaseControl IO  m, NullPoint s, ReadableChunk s el) =>
      Int
      -> Iteratee s m a
      -> FilePath
@@ -81,14 +82,14 @@ fileDriverVBuf = FD.fileDriverFd
 -- |Process a file using the given Iteratee.  This function wraps
 -- enumFdRandom as a convenience.
 fileDriverRandom
-  :: (MonadCatchIO m, NullPoint s, ReadableChunk s el) =>
+  :: (MonadIO m, MonadBaseControl IO  m, NullPoint s, ReadableChunk s el) =>
      Iteratee s m a
      -> FilePath
      -> m a
 fileDriverRandom = FD.fileDriverRandomFd defaultBufSize
 
 fileDriverRandomVBuf
-  :: (MonadCatchIO m, NullPoint s, ReadableChunk s el) =>
+  :: (MonadIO m, MonadBaseControl IO  m, NullPoint s, ReadableChunk s el) =>
      Int
      -> Iteratee s m a
      -> FilePath
@@ -103,7 +104,7 @@ fileDriverRandomVBuf = FD.fileDriverRandomFd
 -- |Process a file using the given Iteratee.  This function wraps
 -- @enumHandle@ as a convenience.
 fileDriver ::
- (MonadCatchIO m, NullPoint s, ReadableChunk s el) =>
+ (MonadIO m, MonadBaseControl IO  m, NullPoint s, ReadableChunk s el) =>
   Iteratee s m a
   -> FilePath
   -> m a
@@ -111,7 +112,7 @@ fileDriver = H.fileDriverHandle defaultBufSize
 
 -- |A version of fileDriver with a user-specified buffer size (in elements).
 fileDriverVBuf ::
- (MonadCatchIO m, NullPoint s, ReadableChunk s el) =>
+ (MonadIO m, MonadBaseControl IO  m, NullPoint s, ReadableChunk s el) =>
   Int
   -> Iteratee s m a
   -> FilePath
@@ -121,14 +122,14 @@ fileDriverVBuf = H.fileDriverHandle
 -- |Process a file using the given Iteratee.  This function wraps
 -- @enumRandomHandle@ as a convenience.
 fileDriverRandom
-  :: (MonadCatchIO m, NullPoint s, ReadableChunk s el) =>
+  :: (MonadIO m, MonadBaseControl IO  m, NullPoint s, ReadableChunk s el) =>
      Iteratee s m a
      -> FilePath
      -> m a
 fileDriverRandom = H.fileDriverRandomHandle defaultBufSize
 
 fileDriverRandomVBuf
-  :: (MonadCatchIO m, NullPoint s, ReadableChunk s el) =>
+  :: (MonadIO m, MonadBaseControl IO  m, NullPoint s, ReadableChunk s el) =>
      Int
      -> Iteratee s m a
      -> FilePath
@@ -136,14 +137,14 @@ fileDriverRandomVBuf
 fileDriverRandomVBuf = H.fileDriverRandomHandle
 
 enumFile
-  :: (MonadCatchIO m, NullPoint s, ReadableChunk s el) =>
+  :: (MonadIO m, MonadBaseControl IO  m, NullPoint s, ReadableChunk s el) =>
      Int
      -> FilePath
      -> Enumerator s m a
 enumFile = H.enumFile
 
 enumFileRandom
-  :: (MonadCatchIO m, NullPoint s, ReadableChunk s el) =>
+  :: (MonadIO m, MonadBaseControl IO  m, NullPoint s, ReadableChunk s el) =>
      Int
      -> FilePath
      -> Enumerator s m a

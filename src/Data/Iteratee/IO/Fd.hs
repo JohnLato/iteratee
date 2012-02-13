@@ -59,6 +59,7 @@ makefdCallback p bufsize fd st = do
     Right 0   -> liftIO yield >> return (Right ((Finished, st), empty))
     Right n'  -> liftM (\s -> Right ((HasMore, st), s)) $
                    readFromPtr p (fromIntegral n')
+{-# INLINE makefdCallback #-}
 
 -- |The enumerator of a POSIX File Descriptor.  This version enumerates
 -- over the entire contents of a file, in order, unless stopped by
@@ -73,6 +74,7 @@ enumFd bs fd iter =
   in bracket (liftIO $ mallocBytes bufsize)
              (liftIO . free)
              (\p -> enumFromCallback (makefdCallback p (fromIntegral bufsize) fd) () iter)
+{-# INLINE enumFd #-}
 
 -- |A variant of enumFd that catches exceptions raised by the @Iteratee@.
 enumFdCatch
@@ -86,6 +88,7 @@ enumFdCatch bs fd handler iter =
   in bracket (liftIO $ mallocBytes bufsize)
              (liftIO . free)
              (\p -> enumFromCallbackCatch (makefdCallback p (fromIntegral bufsize) fd) handler () iter)
+{-# INLINE enumFdCatch #-}
 
 
 -- |The enumerator of a POSIX File Descriptor: a variation of @enumFd@ that
@@ -102,6 +105,7 @@ enumFdRandom bs fd iter = enumFdCatch bs fd handler iter
              (const . Just $ enStrExc "Error seeking within file descriptor")
              (const Nothing))
             . liftIO . tryFdSeek fd AbsoluteSeek $ fromIntegral off
+{-# INLINE enumFdRandom #-}
 
 fileDriver
   :: (MonadIO m, MonadBaseControl IO m, ReadableChunk s el) =>
@@ -114,6 +118,7 @@ fileDriver enumf bufsize iter filepath = bracket
   (liftIO $ openFd filepath ReadOnly Nothing defaultFileFlags)
   (liftIO . closeFd)
   (run <=< flip (enumf bufsize) iter)
+{-# INLINE fileDriver #-}
 
 -- |Process a file using the given @Iteratee@.
 fileDriverFd
@@ -123,6 +128,7 @@ fileDriverFd
      -> FilePath
      -> m a
 fileDriverFd = fileDriver enumFd
+{-# INLINE fileDriverFd #-}
 
 -- |A version of fileDriverFd that supports seeking.
 fileDriverRandomFd
@@ -132,6 +138,7 @@ fileDriverRandomFd
      -> FilePath
      -> m a
 fileDriverRandomFd = fileDriver enumFdRandom
+{-# INLINE fileDriverRandomFd #-}
 
 enumFile' :: (NullPoint s, MonadIO m, MonadBaseControl IO m, ReadableChunk s el) =>
   (Int -> Fd -> Enumerator s m a)
@@ -142,6 +149,7 @@ enumFile' enumf bufsize filepath iter = bracket
   (liftIO $ openFd filepath ReadOnly Nothing defaultFileFlags)
   (liftIO . closeFd)
   (flip (enumf bufsize) iter)
+{-# INLINE enumFile' #-}
 
 enumFile ::
   (NullPoint s, MonadIO m, MonadBaseControl IO m, ReadableChunk s el)
@@ -149,6 +157,7 @@ enumFile ::
   -> FilePath
   -> Enumerator s m a
 enumFile = enumFile' enumFd
+{-# INLINE enumFile #-}
 
 enumFileRandom ::
   (NullPoint s, MonadIO m, MonadBaseControl IO m, ReadableChunk s el)
@@ -156,6 +165,7 @@ enumFileRandom ::
   -> FilePath
   -> Enumerator s m a
 enumFileRandom = enumFile' enumFdRandom
+{-# INLINE enumFileRandom #-}
 
 
 #endif

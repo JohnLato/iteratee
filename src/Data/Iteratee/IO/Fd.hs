@@ -33,6 +33,7 @@ import Control.Monad.Trans.Control
 import Control.Exception.Lifted
 import Control.Monad.IO.Class
 
+import Foreign.C.Error
 import Foreign.Ptr
 import Foreign.Storable
 import Foreign.Marshal.Alloc
@@ -40,6 +41,7 @@ import Foreign.Marshal.Alloc
 import System.IO (SeekMode(..))
 
 import System.Posix hiding (FileOffset)
+import System.Posix.IO.ByteString
 
 -- ------------------------------------------------------------------------
 -- Binary Random IO enumerators
@@ -51,12 +53,12 @@ makefdCallback ::
   -> Fd
   -> Callback st m s
 makefdCallback p bufsize fd st = do
-  n <- liftIO $ myfdRead fd (castPtr p) bufsize
+  n <- liftIO $ tryFdReadBuf fd (castPtr p) bufsize
   case n of
-    Left  _  -> return $ Left (error "myfdRead failed")
-    Right 0  -> liftIO yield >> return (Right ((Finished, st), empty))
-    Right n' -> liftM (\s -> Right ((HasMore, st), s)) $
-                  readFromPtr p (fromIntegral n')
+    Left  (Errno err) -> return $ Left (error $ "read failed: " ++ show err)
+    Right 0   -> liftIO yield >> return (Right ((Finished, st), empty))
+    Right n'  -> liftM (\s -> Right ((HasMore, st), s)) $
+                   readFromPtr p (fromIntegral n')
 
 -- |The enumerator of a POSIX File Descriptor.  This version enumerates
 -- over the entire contents of a file, in order, unless stopped by
@@ -99,7 +101,7 @@ enumFdRandom bs fd iter = enumFdCatch bs fd handler iter
       liftM (either
              (const . Just $ enStrExc "Error seeking within file descriptor")
              (const Nothing))
-            . liftIO . myfdSeek fd AbsoluteSeek $ fromIntegral off
+            . liftIO . tryFdSeek fd AbsoluteSeek $ fromIntegral off
 
 fileDriver
   :: (MonadIO m, MonadBaseControl IO m, ReadableChunk s el) =>

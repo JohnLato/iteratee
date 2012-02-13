@@ -41,10 +41,10 @@ library
   else
     cpp-options: -DUSE_POSIX
     exposed-modules:
-      Data.Iteratee.IO.Posix
       Data.Iteratee.IO.Fd
     build-depends:
-      unix >= 2 && < 3
+      unix                    >= 2 && < 3,
+      unix-bytestring         >= 0.3.5 && < 0.4
 
   build-depends:
     base                      >= 3       && < 6,

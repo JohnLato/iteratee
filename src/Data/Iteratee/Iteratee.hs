@@ -353,7 +353,7 @@ joinI i = runIter i onDone onCont onErr onR
   onDone i'   = ireq (tryRun i') (either throwErr return)
   onCont k    = icont $ \str -> first joinI `liftM` k str
   onErr i' e  = throwRec e (joinI i')
-  onR mb doB = lift mb >>= joinI . doB
+  onR mb doB  = lift mb >>= joinI . doB
 {-# INLINE joinI #-}
 
 -- | Lift an iteratee inside a monad to an iteratee.

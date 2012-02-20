@@ -329,7 +329,7 @@ breakE cpred = eneeCheckIfDonePass (icont . step)
         (str', tail')
           | LL.null tail' -> eneeCheckIfDonePass (icont . step) . k $ Chunk str'
           | otherwise     -> idone (k $ Chunk str') (Chunk tail')
-  step k stream           =  idone (k stream) stream
+  step k stream           =  idone (liftI k) stream
 {-# INLINE breakE #-}
 
 -- |Read n elements from a stream and apply the given iteratee to the
@@ -354,7 +354,7 @@ take n' iter
       | LL.length str <= n = take (n - LL.length str) $ k (Chunk str)
       | otherwise          = idone (k (Chunk s1)) (Chunk s2)
       where (s1, s2) = LL.splitAt n str
-    step _n k stream       = idone (k stream) stream
+    step _n k stream       = idone (liftI k) stream
 {-# INLINE take #-}
 
 -- |Read n elements from a stream and apply the given iteratee to the
@@ -408,7 +408,7 @@ takeUpTo i iter
                                           (Chunk $ s1' `LL.append` s2)
                 Left  (a,s')       -> od' (idone a s') (Chunk s2)
                 Right (k',e)       -> od' (icont k' e) (Chunk s2)
-    step _ k stream       = idone (k stream) stream
+    step _ k stream       = idone (liftI k) stream
 {-# INLINE takeUpTo #-}
 
 -- | Takes an element predicate and returns the (possibly empty)

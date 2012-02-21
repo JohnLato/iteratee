@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -O #-}
-{-# LANGUAGE NoMonomorphismRestriction, ViewPatterns #-}
+{-# LANGUAGE NoMonomorphismRestriction, ViewPatterns, TupleSections #-}
 
 import Prelude as P
 
@@ -22,6 +22,7 @@ import qualified Data.ListLike as LL
 
 import           Control.Monad as CM
 import           Control.Monad.Writer
+import           Control.Exception (SomeException)
 
 instance Show (a -> b) where
   show _ = "<<function>>"
@@ -430,6 +431,47 @@ test_sequence_ =
     y <- Iter.head
     lift $ tell [y]
 
+-- ---------------------------------------------
+-- Data.Iteratee.PTerm
+
+mk_prop_pt_id etee p_etee i xs n = n > 0 ==>
+  runner1 (enumSpecial xs n $ joinI (p_etee i))
+  == runner1 (enumSpecial xs n $ joinI (etee i))
+ where types = (etee, p_etee, i, xs) :: (Etee, Etee, Itee, [Int])
+
+instance Eq SomeException where
+  l == r = show l == show r
+
+type Etee = Enumeratee [Int] [Int] Identity [Int]
+type Itee = Iteratee [Int] Identity [Int]
+
+prop_mapChunksPT f i = mk_prop_pt_id (mapChunks f) (mapChunksPT f)
+ where types = (i :: Itee)
+
+prop_mapChunksMPT f i =
+  mk_prop_pt_id (mapChunksM (return . f)) (mapChunksMPT (return . f))
+ where types = (i :: Itee)
+
+-- would like to test with arbitrary iteratees, but we need to guarantee
+-- that they will return a value from the stream, which isn't always true
+-- for the arbitrary instance.
+-- could use a newtype to make it work...
+prop_convStreamPT = mk_prop_pt_id (convStream getChunk) (convStreamPT getChunk)
+
+prop_unfoldConvStreamPT f =
+  mk_prop_pt_id (unfoldConvStream f' (0 :: Int)) (unfoldConvStreamPT f' 0)
+ where f' x = fmap (f x,) getChunk
+
+prop_breakEPT i = mk_prop_pt_id (breakE i) (breakEPT i)
+prop_takePT i = mk_prop_pt_id (Iter.take i) (takePT i)
+prop_takeUpToPT i = mk_prop_pt_id (Iter.takeUpTo i) (takeUpToPT i)
+prop_takeWhileEPT i = mk_prop_pt_id (Iter.takeWhileE i) (takeWhileEPT i)
+
+prop_mapStreamPT i = mk_prop_pt_id (Iter.mapStream i) (mapStreamPT i)
+prop_rigidMapStreamPT i =
+  mk_prop_pt_id (Iter.rigidMapStream i) (rigidMapStreamPT i)
+prop_filterPT i = mk_prop_pt_id (Iter.filter i) (filterPT i)
+
 
 -- ---------------------------------------------
 -- Data.Iteratee.Char
@@ -535,6 +577,19 @@ tests = [
    ]
   ,testGroup "Data.Iteratee.Char" [
     --testProperty "line" prop_line
+    ]
+  ,testGroup "PT variants" [
+     testProperty "mapChunksPT" prop_mapChunksPT
+    ,testProperty "mapChunksMPT" prop_mapChunksMPT
+    ,testProperty "convStreamPT" prop_convStreamPT
+    ,testProperty "unfoldConvStreamPT" prop_unfoldConvStreamPT
+    ,testProperty "breakEPT" prop_breakEPT
+    ,testProperty "takePT" prop_takePT
+    ,testProperty "takeUpToPT" prop_takeUpToPT
+    ,testProperty "takeWhileEPT" prop_takeWhileEPT
+    ,testProperty "mapStreamPT" prop_mapStreamPT
+    ,testProperty "rigidMapStreamPT" prop_rigidMapStreamPT
+    ,testProperty "filterPT" prop_filterPT
     ]
   ,testGroup "Monadic functions" [
     testProperty "mapM_" prop_mapM_

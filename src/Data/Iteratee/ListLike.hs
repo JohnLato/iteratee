@@ -71,14 +71,13 @@ import Prelude hiding (mapM_, null, head, last, drop, dropWhile, take, takeWhile
 
 import qualified Prelude as Prelude
 
-import Data.List (partition)
 import qualified Data.ListLike as LL
 import qualified Data.ListLike.FoldableLL as FLL
 import Data.Iteratee.Iteratee
 import Data.Monoid
 import Control.Applicative ((<$>), (<*>), (<*))
 import Control.Arrow (first, (***))
-import Control.Monad (liftM, liftM2, mplus, (<=<))
+import Control.Monad (liftM, mplus)
 import qualified Control.Monad as CM
 import Control.Monad.Trans.Class
 import Data.Word (Word8)
@@ -1018,7 +1017,7 @@ greedy iter = step1 [] iter
         where
           onDone a = idone . mconcat $ reverse (a:acc)
           onCont k = icont $ step2 acc k
-          onErr i e = ierr (step1 acc i) e
+          onErr iRes e = ierr (step1 acc iRes) e
           onReq mb doB = ireq mb (step1 acc . doB)
   step2 acc k = undefined 
 {-

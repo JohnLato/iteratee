@@ -311,8 +311,9 @@ convStream :: forall s s' m a.
   -> Enumeratee s s' m a
 convStream fi = go
   where
-    check k = isStreamFinished >>= maybe (step k) (handle k)
-    handle k e = case fromException e of
+    go = eneeCheckIfDonePass check
+    check k = isStreamFinished >>= maybe (step k) (hndl k)
+    hndl k e = case fromException e of
       Just EofException -> idone (icont k)
       _                 -> ierr (step k) e
     step k = fi >>= lift . k . Chunk >>= go . fst
@@ -386,8 +387,8 @@ enumChunk (EOF (Just e)) = enumErr e
 enumEof :: (Monad m) => Enumerator s m a
 enumEof iter = runIter iter idoneM onC ierrM onR
   where
-    onC  k      = k (EOF Nothing) >>= \(i,_) -> runIter i idoneM onC' ierrM onR
-    onC' k      = return $ throwErr excDivergent
+    onC  k     = k (EOF Nothing) >>= \(i,_) -> runIter i idoneM onC' ierrM onR
+    onC' _k    = return $ throwErr excDivergent
     onR mb doB = mb >>= enumEof . doB
 
 -- |Another primitive enumerator: tell the Iteratee the stream terminated
@@ -493,7 +494,7 @@ enumList chunks = go chunks
    where
     onCont (x:xs) k = k (Chunk x) >>= go xs . fst
     onCont []     k = return $ icont k
-    onErr i e       = return $ throwRec e i
+    onErr iRes e    = return $ throwRec e iRes
     onReq xs mb doB = mb >>= go xs . doB
 {-# INLINABLE enumList #-}
 

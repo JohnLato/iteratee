@@ -54,8 +54,8 @@ import Control.Monad (liftM, join)
 import Control.Monad.Base
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
-import Control.Monad.CatchIO (MonadCatchIO (..), Exception (..),
-  catch, block, toException, fromException)
+import Control.Monad.CatchIO (MonadCatchIO (..),
+  catch, block)
 import Control.Monad.Trans.Control
 import Control.Applicative hiding (empty)
 import Control.Exception (SomeException)
@@ -152,7 +152,7 @@ instance forall s m. (Functor m) => Functor (Iteratee s m) where
       onCont k      = icont $ fmap (first (fmap f)) . k
       onErr i e     = ierr (fmap f i) e
       onReq :: (a -> b) -> m x -> (x -> Iteratee s m a) -> Iteratee s m b
-      onReq f mb doB = ireq mb (fmap f . doB)
+      onReq ff mb doB = ireq mb (fmap ff . doB)
 
 instance (Functor m, Monad m) => Applicative (Iteratee s m) where
     pure x  = idone x
@@ -180,7 +180,7 @@ bindIter m f = runIter m f onCont onErr onReq
     onCont k  = icont $ \str -> do
                   (i', strRem) <- k str
                   let oD a  = push (f a) strRem
-                      oC k' = return (i' `bindIter` f, strRem)
+                      oC _k = return (i' `bindIter` f, strRem)
                       oE iResume e = return (ierr (bindIter iResume f) e
                                              ,EOF (Just e))
                       oR :: m x -> (x -> Iteratee s m a) -> m (Iteratee s m b, Stream s)

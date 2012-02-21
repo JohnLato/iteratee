@@ -40,7 +40,6 @@ import Foreign.Marshal.Alloc
 
 import System.IO (SeekMode(..))
 
-import System.Posix hiding (FileOffset)
 import System.Posix.IO.ByteString
 
 -- ------------------------------------------------------------------------

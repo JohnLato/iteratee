@@ -69,7 +69,6 @@ import           Data.Iteratee.ListLike (drop)
 import qualified Data.ListLike as LL
 
 import           Control.Arrow ((***), first)
-import           Control.Exception
 import           Control.Monad.Trans.Class
 import           Control.Monad
 

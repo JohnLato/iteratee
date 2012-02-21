@@ -44,18 +44,12 @@ Many more functions are provided, and there are many other useful ways to combin
 -}
 
 module Data.Iteratee (
-  module Data.Iteratee.Binary,
-  module Data.Iteratee.ListLike,
-  module Data.Iteratee.PTerm,
-  fileDriver,
-  fileDriverVBuf,
-  fileDriverRandom,
-  fileDriverRandomVBuf
+  module I
 )
 
 where
 
-import Data.Iteratee.Binary
-import Data.Iteratee.IO
-import Data.Iteratee.ListLike
-import Data.Iteratee.PTerm
+import Data.Iteratee.Binary   as I
+import Data.Iteratee.IO       as I
+import Data.Iteratee.ListLike as I
+import Data.Iteratee.PTerm    as I

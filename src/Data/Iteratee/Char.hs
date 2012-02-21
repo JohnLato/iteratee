@@ -91,7 +91,7 @@ enumLines = convStream getter
       | otherwise  = let w' = LL.lines $ mappend xs ys
                          ws = init w'
                          ck = last w'
-                     in (idone ws, (Chunk ck))
+                     in (idone ws, Chunk ck)
     step' xs str   = (idone (LL.lines xs), str)
 
 -- |Convert the stream of characters to the stream of words, and
@@ -122,7 +122,7 @@ enumWordsBS iter = convStream getter iter
       | otherwise  = let w' = BC.words . BC.append xs $ ys
                          ws = init w'
                          ck = last w'
-                     in (idone ws, (Chunk ck))
+                     in (idone ws, Chunk ck)
     step' xs str   = (idone (BC.words xs), str)
 
 {-# INLINE enumWordsBS #-}

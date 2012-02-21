@@ -2,7 +2,6 @@
             ,RankNTypes
             ,FlexibleContexts
             ,ScopedTypeVariables
-            ,BangPatterns
             ,DeriveDataTypeable #-}
 
 -- |Monadic and General Iteratees:
@@ -95,15 +94,11 @@ throwErr e = ierr (throwErr e) e
 
 -- |Report and propagate a recoverable error.  This error can be handled by
 -- both 'enumFromCallbackCatch' and 'checkErr'.
-throwRecoverableErr ::
-  (Exception e) =>
-  e
-  -> (Iteratee s m a)
-  -> Iteratee s m a
+throwRecoverableErr :: (Exception e) => e -> Iteratee s m a -> Iteratee s m a
 throwRecoverableErr e i = ierr i (toException e)
 
 -- | A shorter name for 'throwRecoverableErr'
-throwRec :: (Exception e) => e -> (Iteratee s m a) -> Iteratee s m a
+throwRec :: (Exception e) => e -> Iteratee s m a -> Iteratee s m a
 throwRec = throwRecoverableErr
 
 
@@ -184,7 +179,7 @@ getChunk = icontP step
   step s@(Chunk xs)
     | nullC xs  = (icontP step, s)
     | otherwise = (idone xs, Chunk empty)
-  step s@(EOF Nothing)  = (throwRec (EofException) getChunk, s)
+  step s@(EOF Nothing)  = (throwRec EofException getChunk, s)
   step s@(EOF (Just e)) = (throwRec e getChunk, s)
 {-# INLINE getChunk #-}
 
@@ -246,7 +241,7 @@ type EnumerateeHandler eli elo m a =
 eneeCheckIfDoneHandle
   :: (NullPoint elo)
   => EnumerateeHandler eli elo m a
-  -> (Cont eli m a -> (Iteratee elo m (Iteratee eli m a)))
+  -> (Cont eli m a -> Iteratee elo m (Iteratee eli m a))
   -> Enumeratee elo eli m a
 eneeCheckIfDoneHandle h fc inner = runIter inner onDone fc h onReq
  where
@@ -261,7 +256,7 @@ eneeCheckIfDonePass
   -> Enumeratee elo eli m a
 eneeCheckIfDonePass f = eneeCheckIfDoneHandle handler f
  where
-  handler i e = ierr (eneeCheckIfDonePass f i) e
+  handler i = ierr (eneeCheckIfDonePass f i)
 {-# INLINABLE eneeCheckIfDonePass #-}
 
 -- | Convert one stream into another with the supplied mapping function.
@@ -292,7 +287,7 @@ mapChunksM
 mapChunksM f = go
  where
   go = eneeCheckIfDonePass (icont . step)
-  step k (Chunk xs) = f xs >>= (\s -> k (Chunk s)) >>= \(i', _str) ->
+  step k (Chunk xs) = f xs >>= k . Chunk >>= \(i', _str) ->
                             return (go i', Chunk empty)
   step k (EOF mErr) = (idone *** const (EOF mErr)) `liftM` k (EOF mErr)
 {-# INLINE mapChunksM #-}
@@ -518,8 +513,8 @@ enumFromCallback ::
   Callback st m s
   -> st
   -> Enumerator s m a
-enumFromCallback c st =
-  enumFromCallbackCatch c (\NotAnException -> return Nothing) st
+enumFromCallback c =
+  enumFromCallbackCatch c (\NotAnException -> return Nothing)
 
 -- Dummy exception to catch in enumFromCallback
 -- This never gets thrown, but it lets us

@@ -134,7 +134,7 @@ break cpred = icontP (step mempty)
       | otherwise         =  case LL.break cpred str of
         (str', tail')
           | LL.null tail' -> (icontP (step (bfr `mappend` str)), Chunk tail')
-          | otherwise     -> (idone (bfr `mappend` str'), (Chunk tail'))
+          | otherwise     -> (idone (bfr `mappend` str'), Chunk tail')
     step bfr stream       =  (idone bfr, stream)
 {-# INLINE break #-}
 
@@ -148,7 +148,7 @@ head = icontP step
   where
   step c@(Chunk vec)
     | LL.null vec  = (icontP step, c)
-    | otherwise    = (idone (LL.head vec), (Chunk $ LL.tail vec))
+    | otherwise    = (idone (LL.head vec), Chunk $ LL.tail vec)
   step stream      = (ierr (icontP step) (setEOF stream), stream)
 {-# INLINE head #-}
 
@@ -355,7 +355,7 @@ take n' iter
   onDone x = drop n' >> idone (idone x)
   onCont k = if n' == 0 then idone (icont k)
                 else icont (step n' k)
-  onErr i e = ierr (take n' i) e
+  onErr i  = ierr (take n' i)
   onReq mb doB = ireq mb (take n' . doB)
 
   step n k c@(Chunk str)
@@ -399,7 +399,7 @@ takeUpTo i iter
     onDone x = idone (idone x)
     onCont k = if i == 0 then idone (icont k)
                          else icont (step i k)
-    onErr i' e = ierr (takeUpTo i i') e
+    onErr i' = ierr (takeUpTo i i')
     onReq mb doB = ireq mb (takeUpTo i . doB)
 
     step n k c@(Chunk str)
@@ -625,7 +625,7 @@ groupBy same iinit = icont $ go iinit (const True, id)
                                       in ( gdone, (same (LL.head glast), (glast :)) )
     llGroupBy eq l -- Copied from Data.ListLike, avoid spurious (Eq el) constraint
       | LL.null l = []
-      | otherwise = (LL.cons x ys):(llGroupBy eq zs)
+      | otherwise = LL.cons x ys : llGroupBy eq zs
         where (ys, zs) = LL.span (eq x) xs
               x = LL.head l
               xs = LL.tail l
@@ -812,12 +812,12 @@ zip x0 y0 = runIter x0 (odx y0) (ocx y0) (oex y0) (orx y0)
   odx yIter a      = (a, ) `liftM` yIter
   ocx yIter k      = runIter yIter (ody k) (ocy k) (oey k) (ory k)
   oex yIter i' e   = throwRec e (zip i' yIter)
-  orx yIter ma doA = ireq ma $ (\xIter -> zip xIter yIter) . doA
+  orx yIter ma doA = ireq ma $ (`zip` yIter) . doA
 
   ody x_k b        = (,b) `liftM` icont x_k
   ocy xK yK        = icont (step xK yK)
   oey xK i' e      = throwRec e (zip (icont xK) i')
-  ory xK mb doB    = ireq mb $ (zip (icont xK) . doB)
+  ory xK mb doB    = ireq mb (zip (icont xK) . doB)
 
   step xK yK (Chunk xs) | nullC xs = return (icont (step xK yK), Chunk xs)
   step xK yK str   = do
@@ -877,12 +877,12 @@ enumWith x0 y0 = runIter x0 (odx y0) (ocx y0) (oex y0) (orx y0)
   odx yIter a      = (a,) `liftM` joinIM (enumEof yIter)
   ocx yIter k      = runIter yIter (ody k) (ocy k) (oey k) (ory k)
   oex yIter i' e   = throwRec e (enumWith i' yIter)
-  orx yIter ma doA = ireq ma $ (\xIter -> enumWith xIter yIter) . doA
+  orx yIter ma doA = ireq ma $ (`enumWith` yIter) . doA
 
   ody x_k b        = (,b) `liftM` icont x_k
   ocy xK yK        = icont (step xK yK)
   oey xK i' e      = throwRec e (enumWith (icont xK) i')
-  ory xK mb doB    = ireq mb $ (enumWith (icont xK) . doB)
+  ory xK mb doB    = ireq mb (enumWith (icont xK) . doB)
 
   step xK yK (Chunk xs) | nullC xs = return (icont (step xK yK), Chunk xs)
   step xK yK str = do
@@ -947,7 +947,7 @@ countConsumed :: forall a s el m n.
 countConsumed = check 0
   where
     newLen :: n -> s -> s -> n
-    newLen n c c' = n + fromIntegral ((LL.length c) - (LL.length c'))
+    newLen n c c' = n + fromIntegral (LL.length c - LL.length c')
     check :: n -> Iteratee s m a -> Iteratee s m (a,n)
     check !n iter = runIter iter (onDone n)
                                  (onCont n)
@@ -1017,7 +1017,7 @@ greedy iter = step1 [] iter
         where
           onDone a = idone . mconcat $ reverse (a:acc)
           onCont k = icont $ step2 acc k
-          onErr iRes e = ierr (step1 acc iRes) e
+          onErr iR = ierr (step1 acc iR)
           onReq mb doB = ireq mb (step1 acc . doB)
   step2 acc k = undefined 
 {-

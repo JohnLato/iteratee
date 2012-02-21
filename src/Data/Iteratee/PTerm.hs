@@ -1,9 +1,6 @@
-{-# LANGUAGE KindSignatures
-            ,RankNTypes
+{-# LANGUAGE RankNTypes
             ,FlexibleContexts
-            ,ScopedTypeVariables
-            ,BangPatterns
-            ,DeriveDataTypeable #-}
+            ,ScopedTypeVariables #-}
 
 -- | Enumeratees - pass terminals variant.
 -- 
@@ -206,7 +203,7 @@ takePT n' iter
   onDone x = drop n' >> idone (idone x)
   onCont k = if n' == 0 then idone (icont k)
                 else icont (step n' k)
-  onErr i e = ierr (takePT n' i) e
+  onErr i  = ierr (takePT n' i)
   onReq mb doB = ireq mb (takePT n' . doB)
 
   step n k c@(Chunk str)
@@ -227,7 +224,7 @@ takeUpToPT i iter
     onDone x = idone (idone x)
     onCont k = if i == 0 then idone (icont k)
                          else icont (step i k)
-    onErr i' e = ierr (takeUpToPT i i') e
+    onErr i' = ierr (takeUpToPT i i')
     onReq mb doB = ireq mb (takeUpToPT i . doB)
 
     step n k c@(Chunk str)

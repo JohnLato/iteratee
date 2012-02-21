@@ -73,6 +73,7 @@ library
     Data.Iteratee.Iteratee
     Data.Iteratee.ListLike
     Data.Iteratee.Parallel
+    Data.Iteratee.PTerm
 
   other-modules:
     Data.Iteratee.IO.Base

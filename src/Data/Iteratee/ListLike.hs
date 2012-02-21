@@ -329,9 +329,16 @@ breakE cpred = eneeCheckIfDonePass (icont . step)
       | LL.null s  = return (icont (step k), mempty)
       | otherwise  = case LL.break cpred s of
         (str', tail')
-          | LL.null tail' -> eneeCheckIfDonePass (icont . step) . k $ Chunk str'
-          | otherwise     -> idone (k $ Chunk str') (Chunk tail')
-  step k stream           =  idone (k stream) stream
+          | LL.null tail' -> do
+              (i', _) <- k (Chunk str')
+              return (eneeCheckIfDonePass (icont . step) i'
+                        <* dropWhile (not . cpred)
+                      , Chunk tail')
+                               -- if the inner iteratee completes before
+                               -- the predicate is met, elements still
+                               -- need to be dropped.
+          | otherwise -> (idone *** const (Chunk tail')) `liftM` k (Chunk str')
+  step k stream       =  return (idone (icont k), stream)
 {-# INLINE breakE #-}
 
 -- |Read n elements from a stream and apply the given iteratee to the
@@ -359,7 +366,7 @@ take n' iter
                              `liftM` k (Chunk str)
       | otherwise          = (idone *** const (Chunk s2)) `liftM` k (Chunk s1)
       where (s1, s2) = LL.splitAt n str
-    step _n k stream       = idone (k stream) stream
+  step _n k stream       = return (idone (icont k), stream)
 {-# INLINE take #-}
 
 -- |Read n elements from a stream and apply the given iteratee to the
@@ -407,15 +414,16 @@ takeUpTo i iter
          -- the outer iteratee is always complete at this stage, although
          -- the inner may not be.
          let (s1, s2) = LL.splitAt n str
-         in Iteratee $ \od' _ -> do
-              res <- runIter (k (Chunk s1)) (\a s  -> return $ Left  (a, s))
-                                            (\k' e -> return $ Right (k',e))
-              case res of
-                Left (a,Chunk s1') -> od' (return a)
-                                          (Chunk $ s1' `LL.append` s2)
-                Left  (a,s')       -> od' (idone a s') (Chunk s2)
-                Right (k',e)       -> od' (icont k' e) (Chunk s2)
-    step _ k stream       = idone (k stream) stream
+         (iter', preStr) <- k (Chunk s1)
+         case preStr of
+              (Chunk preC)
+                | LL.null preC -> return (idone iter', Chunk s2)
+                | otherwise    -> return (idone iter'
+                                     , Chunk $ preC `LL.append` s2)
+              -- this case shouldn't ever happen, except possibly
+              -- with broken iteratees
+              _                -> return (idone iter', preStr)
+    step _ k stream       = return (idone (icont k), stream)
 {-# INLINE takeUpTo #-}
 
 -- | Takes an element predicate and returns the (possibly empty)

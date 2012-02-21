@@ -276,11 +276,11 @@ eneeCheckIfDonePass f = eneeCheckIfDoneHandle handler f
 -- > unpacker = mapChunks B.unpack
 -- 
 mapChunks :: (Monad m, NullPoint s) => (s -> s') -> Enumeratee s s' m a
-mapChunks f = eneeCheckIfDonePass (icont . step)
+mapChunks f = go
  where
+  go = eneeCheckIfDonePass (icont . step)
   step k (Chunk xs) = k (Chunk (f xs)) >>= \(i',_) ->
-                        return (eneeCheckIfDonePass (icont . step) i'
-                                , Chunk empty)
+                        return (go i', Chunk empty)
   step k (EOF mErr) = (idone *** const (EOF mErr)) `liftM` k (EOF mErr)
 {-# INLINE mapChunks #-}
 
@@ -289,11 +289,11 @@ mapChunksM
   :: (Monad m, NullPoint s, Nullable s)
   => (s -> m s')
   -> Enumeratee s s' m a
-mapChunksM f = eneeCheckIfDonePass (icont . step)
+mapChunksM f = go
  where
-  step k (Chunk xs) = f xs >>= (\s -> k (Chunk s)) >>= \(i', str') ->
-                            return (eneeCheckIfDonePass (icont . step) i'
-                                    , Chunk empty)
+  go = eneeCheckIfDonePass (icont . step)
+  step k (Chunk xs) = f xs >>= (\s -> k (Chunk s)) >>= \(i', _str) ->
+                            return (go i', Chunk empty)
   step k (EOF mErr) = (idone *** const (EOF mErr)) `liftM` k (EOF mErr)
 {-# INLINE mapChunksM #-}
 
@@ -309,13 +309,13 @@ convStream :: forall s s' m a.
  (Monad m, Nullable s) =>
   Iteratee s m s'
   -> Enumeratee s s' m a
-convStream fi = eneeCheckIfDonePass check
+convStream fi = go
   where
     check k = isStreamFinished >>= maybe (step k) (handle k)
     handle k e = case fromException e of
       Just EofException -> idone (icont k)
       _                 -> ierr (step k) e
-    step k = fi >>= lift . k . Chunk >>= eneeCheckIfDonePass check . fst
+    step k = fi >>= lift . k . Chunk >>= go . fst
 {-# INLINABLE convStream #-}
 
 
@@ -327,7 +327,7 @@ unfoldConvStream ::
   (acc -> Iteratee s m (acc, s'))
   -> acc
   -> Enumeratee s s' m a
-unfoldConvStream fi acc0 = eneeCheckIfDonePass (check acc0)
+unfoldConvStream fi acc0 = go acc0
   where
     check acc k (Just e) = throwRecoverableErr e (const identity) >> check acc k Nothing
     check acc k _ = isStreamFinished >>=

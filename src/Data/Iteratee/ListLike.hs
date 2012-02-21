@@ -323,17 +323,16 @@ breakE
   :: (LL.ListLike s el, NullPoint s, Monad m, Functor m)
   => (el -> Bool)
   -> Enumeratee s s m a
-breakE cpred = eneeCheckIfDonePass (icont . step)
+breakE cpred = go
  where
+  go = eneeCheckIfDonePass (icont . step)
   step k (Chunk s)
       | LL.null s  = return (icont (step k), mempty)
       | otherwise  = case LL.break cpred s of
         (str', tail')
           | LL.null tail' -> do
               (i', _) <- k (Chunk str')
-              return (eneeCheckIfDonePass (icont . step) i'
-                        <* dropWhile (not . cpred)
-                      , Chunk tail')
+              return (go i' <* dropWhile (not . cpred), Chunk tail')
                                -- if the inner iteratee completes before
                                -- the predicate is met, elements still
                                -- need to be dropped.

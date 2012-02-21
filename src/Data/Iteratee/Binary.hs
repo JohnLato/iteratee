@@ -14,16 +14,6 @@ module Data.Iteratee.Binary (
   ,endianRead3i
   ,endianRead4
   ,endianRead8
-  -- ** bytestring specializations
-  -- | In current versions of @iteratee@ there is no difference between the
-  -- bytestring specializations and polymorphic functions.  They exist
-  -- for compatibility.
-  ,readWord16be_bs
-  ,readWord16le_bs
-  ,readWord32be_bs
-  ,readWord32le_bs
-  ,readWord64be_bs
-  ,readWord64le_bs
 )
 where
 
@@ -130,30 +120,6 @@ endianReadN LSB n0 cnct = liftI (step n0 [])
 -- I have found, so these just call out.  They may be improved in the
 -- future, or possibly deprecated.
 -- JWL, 2012-01-16
-
-readWord16be_bs :: Monad m => Iteratee B.ByteString m Word16
-readWord16be_bs = endianRead2 MSB
-{-# INLINE readWord16be_bs  #-}
-
-readWord16le_bs :: Monad m => Iteratee B.ByteString m Word16
-readWord16le_bs = endianRead2 LSB
-{-# INLINE readWord16le_bs  #-}
-
-readWord32be_bs :: Monad m => Iteratee B.ByteString m Word32
-readWord32be_bs = endianRead4 MSB
-{-# INLINE readWord32be_bs  #-}
-
-readWord32le_bs :: Monad m => Iteratee B.ByteString m Word32
-readWord32le_bs = endianRead4 LSB
-{-# INLINE readWord32le_bs  #-}
-
-readWord64be_bs :: Monad m => Iteratee B.ByteString m Word64
-readWord64be_bs = endianRead8 MSB
-{-# INLINE readWord64be_bs  #-}
-
-readWord64le_bs :: Monad m => Iteratee B.ByteString m Word64
-readWord64le_bs = endianRead8 LSB
-{-# INLINE readWord64le_bs  #-}
 
 word16' :: [Word8] -> Word16
 word16' [c1,c2] = word16 c1 c2

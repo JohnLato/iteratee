@@ -49,6 +49,7 @@ module Data.Iteratee.Iteratee (
   ,eneeCheckIfDone
   ,eneeCheckIfDoneHandle
   ,eneeCheckIfDonePass
+  ,eneeCheckIfDoneIgnore
   ,mergeEnums
   -- ** Enumeratee Combinators
   ,($=)
@@ -259,6 +260,17 @@ eneeCheckIfDonePass f = eneeCheckIfDoneHandle handler f
   handler i = ierr (eneeCheckIfDonePass f i)
 {-# INLINABLE eneeCheckIfDonePass #-}
 
+-- | Create an enumeratee that ignores all errors from the inner iteratee
+eneeCheckIfDoneIgnore
+  :: (NullPoint elo)
+  => (Cont eli m a -> Iteratee elo m (Iteratee eli m a))
+  -> Enumeratee elo eli m a
+eneeCheckIfDoneIgnore f = eneeCheckIfDoneHandle handler f
+ where
+  handler i e = eneeCheckIfDoneIgnore f i
+{-# INLINABLE eneeCheckIfDoneIgnore #-}
+
+
 -- | Convert one stream into another with the supplied mapping function.
 -- This function operates on whole chunks at a time, contrasting to
 -- @mapStream@ which operates on single elements.
@@ -331,6 +343,26 @@ unfoldConvStream fi acc0 = go acc0
     step acc k = f acc >>= \(acc', s') ->
                     eneeCheckIfDonePass (check acc') . k . Chunk $ s'
 
+unfoldConvStreamCheck
+  :: (Monad m, Nullable elo)
+  => ((Cont eli m a -> Iteratee elo m (Iteratee eli m a))
+      -> Enumeratee elo eli m a
+     )
+  -> (acc -> Iteratee elo m (acc, eli))
+  -> acc
+  -> Enumeratee elo eli m a
+unfoldConvStreamCheck checkDone f acc0 = go acc0
+  where
+    go acc = checkDone (check acc)
+    check acc k  = isStreamFinished >>= maybe (step acc k) (hndl acc k)
+    hndl acc k e = case fromException e of
+      Just EofException -> idone (icont k)
+      _                 -> ierr (step acc k) e
+    step acc k = do
+      (acc', s') <- f acc
+      (i', _)    <- lift . k $ Chunk s'
+      go acc' i'
+{-# INLINABLE unfoldConvStreamCheck #-}
 
 -- | Collapse a nested iteratee.  The inner iteratee is terminated by @EOF@.
 --   Errors are propagated through the result.

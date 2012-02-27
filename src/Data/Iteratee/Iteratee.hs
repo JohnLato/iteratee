@@ -335,17 +335,7 @@ unfoldConvStream ::
   (acc -> Iteratee s m (acc, s'))
   -> acc
   -> Enumeratee s s' m a
-unfoldConvStream fi acc0 = go acc0
-  where
-    go acc = eneeCheckIfDonePass (check acc)
-    check acc k  = isStreamFinished >>= maybe (step acc k) (hndl acc k)
-    hndl acc k e = case fromException e of
-      Just EofException -> idone (icont k)
-      _                 -> ierr (step acc k) e
-    step acc k = do
-      (acc', s') <- fi acc
-      (i', _)    <- lift . k $ Chunk s'
-      go acc' i'
+unfoldConvStream fi acc0 = unfoldConvStreamCheck eneeCheckIfDonePass fi acc0
 {-# INLINABLE unfoldConvStream #-}
 
 unfoldConvStreamCheck

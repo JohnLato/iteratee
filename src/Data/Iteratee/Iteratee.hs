@@ -337,11 +337,16 @@ unfoldConvStream ::
   -> Enumeratee s s' m a
 unfoldConvStream fi acc0 = go acc0
   where
-    check acc k (Just e) = throwRecoverableErr e (const identity) >> check acc k Nothing
-    check acc k _ = isStreamFinished >>=
-                    maybe (step acc k) (idone (liftI k) . EOF . Just)
-    step acc k = f acc >>= \(acc', s') ->
-                    eneeCheckIfDonePass (check acc') . k . Chunk $ s'
+    go acc = eneeCheckIfDonePass (check acc)
+    check acc k  = isStreamFinished >>= maybe (step acc k) (hndl acc k)
+    hndl acc k e = case fromException e of
+      Just EofException -> idone (icont k)
+      _                 -> ierr (step acc k) e
+    step acc k = do
+      (acc', s') <- fi acc
+      (i', _)    <- lift . k $ Chunk s'
+      go acc' i'
+{-# INLINABLE unfoldConvStream #-}
 
 unfoldConvStreamCheck
   :: (Monad m, Nullable elo)

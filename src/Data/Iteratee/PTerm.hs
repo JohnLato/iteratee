@@ -64,7 +64,6 @@ where
 
 import Prelude hiding (head, drop, dropWhile, take, break, foldl, foldl1, length, filter, sum, product)
 
-import           Data.Iteratee.IO.Base
 import           Data.Iteratee.Iteratee
 import           Data.Iteratee.ListLike (drop)
 
@@ -75,7 +74,6 @@ import           Control.Exception
 import           Control.Monad.Trans.Class
 
 import qualified Data.ByteString as B
-import           Data.Maybe
 import           Data.Monoid
 import           Data.Word (Word8)
 
@@ -90,8 +88,8 @@ import           Data.Word (Word8)
 mapChunksPT :: (NullPoint s) => (s -> s') -> Enumeratee s s' m a
 mapChunksPT f = eneeCheckIfDonePass (icont . step)
  where
-  step k (Chunk xs)     = eneeCheckIfDonePass (icont . step) . k . Chunk $ f xs
-  step k str@(EOF mErr) = eneeCheckIfDonePass (icont . step) . k $ EOF mErr
+  step k (Chunk xs) = eneeCheckIfDonePass (icont . step) . k . Chunk $ f xs
+  step k (EOF mErr) = eneeCheckIfDonePass (icont . step) . k $ EOF mErr
 {-# INLINE mapChunksPT #-}
 
 -- | Convert a stream of @s@ to a stream of @s'@ using the supplied function.
@@ -103,9 +101,9 @@ mapChunksMPT
   -> Enumeratee s s' m a
 mapChunksMPT f = eneeCheckIfDonePass (icont . step)
  where
-  step k (Chunk xs)     = lift (f xs) >>=
-                          eneeCheckIfDonePass (icont . step) . k . Chunk
-  step k str@(EOF mErr) = eneeCheckIfDonePass (icont . step) . k $ EOF mErr
+  step k (Chunk xs) = lift (f xs) >>=
+                        eneeCheckIfDonePass (icont . step) . k . Chunk
+  step k (EOF mErr) = eneeCheckIfDonePass (icont . step) . k $ EOF mErr
 {-# INLINE mapChunksMPT #-}
 
 -- |Convert one stream into another, not necessarily in lockstep.

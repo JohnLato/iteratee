@@ -109,22 +109,23 @@ endianReadN MSB n0 cnct = liftI (step n0 [])
   step !n acc (Chunk c)
     | LL.null c        = liftI (step n acc)
     | LL.length c >= n = let (this,next) = LL.splitAt n c
-                         in idone (cnct $ acc ++ LL.toList this) (Chunk next)
+                             !result     = cnct $ acc ++ LL.toList this
+                         in idone result (Chunk next)
     | otherwise        = liftI (step (n - LL.length c) (acc ++ LL.toList c))
-  step n acc (EOF Nothing)  = icont (step n acc) (Just $ toException EofException)
-  step n acc (EOF (Just e)) = icont (step n acc) (Just e)
+  step !n acc (EOF Nothing)  = icont (step n acc) (Just $ toException EofException)
+  step !n acc (EOF (Just e)) = icont (step n acc) (Just e)
 endianReadN LSB n0 cnct = liftI (step n0 [])
  where
   step !n acc (Chunk c)
     | LL.null c        = liftI (step n acc)
     | LL.length c >= n = let (this,next) = LL.splitAt n c
-                         in idone (cnct $ reverse (LL.toList this) ++ acc)
-                                  (Chunk next)
+                             !result = cnct $ reverse (LL.toList this) ++ acc
+                         in idone result (Chunk next)
     | otherwise        = liftI (step (n - LL.length c)
                                      (reverse (LL.toList c) ++ acc))
-  step n acc (EOF Nothing)  = icont (step n acc)
+  step !n acc (EOF Nothing)  = icont (step n acc)
                                     (Just $ toException EofException)
-  step n acc (EOF (Just e)) = icont (step n acc) (Just e)
+  step !n acc (EOF (Just e)) = icont (step n acc) (Just e)
 {-# INLINE endianReadN #-}
 
 -- As of now, the polymorphic code is as fast as the best specializations
@@ -179,6 +180,7 @@ word32 c1 c2 c3 c4 =
 word64' :: [Word8] -> Word64
 word64' [c1,c2,c3,c4,c5,c6,c7,c8] = word64 c1 c2 c3 c4 c5 c6 c7 c8
 word64' _ = error "iteratee: internal error in word64'"
+{-# INLINE word64' #-}
 
 word64
   :: Word8 -> Word8 -> Word8 -> Word8 

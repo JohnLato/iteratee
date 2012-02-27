@@ -142,34 +142,30 @@ unfoldConvStreamPT f acc0 = go acc0
     step acc k = f acc
                    >>= \(acc',s') -> lift (k (Chunk s'))
                      >>= go acc' . fst
+{-# INLINABLE unfoldConvStreamPT #-}
 
-{-
 -- | A version of 'unfoldConvStreamCheck' that sends 'EOF's
 -- to the inner iteratee.
 unfoldConvStreamCheckPT
   :: (Monad m, Nullable elo)
-  => (((Stream eli -> Iteratee eli m a)
-        -> Maybe SomeException
-        -> Iteratee elo m (Iteratee eli m a)
-      )
+  => ((Cont eli m a -> Iteratee elo m (Iteratee eli m a))
       -> Enumeratee elo eli m a
      )
   -> (acc -> Iteratee elo m (acc, eli))
   -> acc
   -> Enumeratee elo eli m a
-unfoldConvStreamCheckPT checkDone f acc0 = checkDone (check acc0)
+unfoldConvStreamCheckPT checkDone f acc0 = go acc0
   where
-    check acc k = isStreamFinished >>= maybe (step acc k) (handle acc k)
+    go acc = checkDone (check acc)
+    check acc k = isStreamFinished >>= maybe (step acc k)
+                      (\e -> case fromException e of
+                        Just EofException -> lift (k (EOF Nothing))
+                                              >>= go acc . fst
+                        Nothing -> lift (k (EOF (Just e))) >>= go acc . fst )
     step acc k = do
-      (acc', s') <- f acc
-      (i', _)    <- lift . k $ Chunk s'
-                  (checkDone (check acc') . k $ Chunk s')
-    step acc k (Just ex) = throwRecoverableErr ex $ \str' ->
-      let i = f acc >>= \(acc', s') ->
-                           (checkDone (check acc') . k $ Chunk s')
-      in joinIM $ enumChunk str' i
+      (acc',s') <- f acc
+      lift (k (Chunk s')) >>= go acc' . fst
 {-# INLINABLE unfoldConvStreamCheckPT #-}
--}
 
 -- -------------------------------------
 -- ListLike variants

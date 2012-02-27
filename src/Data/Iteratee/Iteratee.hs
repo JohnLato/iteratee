@@ -325,6 +325,7 @@ unfoldConvStream f acc0 = eneeCheckIfDonePass (check acc0)
                     maybe (step acc k) (idone (liftI k) . EOF . Just)
     step acc k = f acc >>= \(acc', s') ->
                     eneeCheckIfDonePass (check acc') . k . Chunk $ s'
+{-# INLINABLE unfoldConvStream #-}
 
 unfoldConvStreamCheck
   :: (Monad m, Nullable elo)

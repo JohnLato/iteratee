@@ -98,22 +98,26 @@ endianReadN MSB n0 cnct = icontP (step n0 [])
   step !n acc (Chunk c)
     | LL.null c        = (icontP (step n acc), Chunk c)
     | LL.length c >= n = let (this,next) = LL.splitAt n c
-                         in idone (cnct $ acc ++ LL.toList this) (Chunk next)
-    | otherwise        = liftI (step (n - LL.length c) (acc ++ LL.toList c))
-  step n acc (EOF Nothing)  = icont (step n acc) (Just $ toException EofException)
-  step n acc (EOF (Just e)) = icont (step n acc) (Just e)
-endianReadN LSB n0 cnct = liftI (step n0 [])
+                             !result     = cnct $ acc ++ LL.toList this
+                         in (idone result, Chunk next)
+    | otherwise        = (icontP (step (n - LL.length c) (acc ++ LL.toList c))
+                          , Chunk empty)
+  step !n acc (EOF Nothing  )  = (icontP (step n acc)
+                                 , EOF . Just $ toException EofException)
+  step !n acc s@(EOF (Just _)) = (icontP (step n acc), s)
+endianReadN LSB n0 cnct = icontP (step n0 [])
  where
   step !n acc (Chunk c)
     | LL.null c        = (icontP (step n acc), Chunk c)
     | LL.length c >= n = let (this,next) = LL.splitAt n c
-                         in idone (cnct $ reverse (LL.toList this) ++ acc)
-                                  (Chunk next)
-    | otherwise        = liftI (step (n - LL.length c)
-                                     (reverse (LL.toList c) ++ acc))
-  step n acc (EOF Nothing)  = icont (step n acc)
-                                    (Just $ toException EofException)
-  step n acc (EOF (Just e)) = icont (step n acc) (Just e)
+                             !result = cnct $ reverse (LL.toList this) ++ acc
+                         in (idone result, Chunk next)
+    | otherwise        = (icontP (step (n - LL.length c)
+                                       (reverse (LL.toList c) ++ acc))
+                          , Chunk empty)
+  step !n acc (EOF Nothing) = (icontP (step n acc)
+                               , EOF . Just $ toException EofException)
+  step !n acc str           = (icontP (step n acc), str)
 {-# INLINE endianReadN #-}
 
 -- As of now, the polymorphic code is as fast as the best specializations

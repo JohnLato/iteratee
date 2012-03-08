@@ -147,6 +147,7 @@ ierrM :: Monad m => Iteratee s m a -> SomeException -> m (Iteratee s m a)
 ierrM i e = return $ ierr i e
 
 instance forall s m. (Functor m) => Functor (Iteratee s m) where
+  {-# INLINE fmap #-}
   fmap f m = runIter m (idone . f) onCont onErr (onReq f)
     where
       onCont k      = icont $ fmap (first (fmap f)) . k

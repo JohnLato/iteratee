@@ -144,6 +144,7 @@ instance (Functor m) => Functor (Iteratee s m) where
 
 instance (Functor m, Monad m, Nullable s) => Applicative (Iteratee s m) where
     pure x  = idone x (Chunk empty)
+    {-# INLINE (<*>) #-}
     m <*> a = m >>= flip fmap a
 
 instance (Monad m, Nullable s) => Monad (Iteratee s m) where

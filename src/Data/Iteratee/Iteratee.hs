@@ -240,14 +240,18 @@ type EnumerateeHandler eli elo m a =
 -- a handler which is used
 -- to process any exceptions in a separate method.
 eneeCheckIfDoneHandle
-  :: (NullPoint elo)
+  :: forall m eli elo a. (NullPoint elo)
   => EnumerateeHandler eli elo m a
   -> (Cont eli m a -> Iteratee elo m (Iteratee eli m a))
   -> Enumeratee elo eli m a
-eneeCheckIfDoneHandle h fc inner = runIter inner onDone fc h onReq
+eneeCheckIfDoneHandle h fc inner = worker inner
  where
+  worker i     = runIter i onDone fc h onReq
   onDone x     = idone (idone x)
-  onReq mb doB = ireq mb (eneeCheckIfDoneHandle h fc . doB)
+  onReq :: forall b. m b
+                     -> (b -> Iteratee eli m a)
+                     -> Iteratee elo m (Iteratee eli m a)
+  onReq mb doB = ireq mb (worker . doB)
 {-# INLINABLE eneeCheckIfDoneHandle #-}
 
 -- | Create enumeratees that pass all errors through the outer iteratee.
@@ -255,9 +259,10 @@ eneeCheckIfDonePass
   :: (NullPoint elo)
   => (Cont eli m a -> Iteratee elo m (Iteratee eli m a))
   -> Enumeratee elo eli m a
-eneeCheckIfDonePass f = eneeCheckIfDoneHandle handler f
+eneeCheckIfDonePass f = worker
  where
-  handler i = ierr (eneeCheckIfDonePass f i)
+  worker = eneeCheckIfDoneHandle handler f
+  handler i = ierr (worker i)
 {-# INLINABLE eneeCheckIfDonePass #-}
 
 -- | Create an enumeratee that ignores all errors from the inner iteratee
@@ -265,9 +270,10 @@ eneeCheckIfDoneIgnore
   :: (NullPoint elo)
   => (Cont eli m a -> Iteratee elo m (Iteratee eli m a))
   -> Enumeratee elo eli m a
-eneeCheckIfDoneIgnore f = eneeCheckIfDoneHandle handler f
+eneeCheckIfDoneIgnore f = worker
  where
-  handler i e = eneeCheckIfDoneIgnore f i
+  worker = eneeCheckIfDoneHandle handler f
+  handler i e = worker i
 {-# INLINABLE eneeCheckIfDoneIgnore #-}
 
 

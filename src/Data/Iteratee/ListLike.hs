@@ -58,7 +58,6 @@ module Data.Iteratee.ListLike (
   ,zip5
   ,sequence_
   ,countConsumed
-  ,greedy
   -- ** Monadic functions
   ,mapM_
   ,foldM
@@ -985,68 +984,6 @@ enumPureNChunk str n iter
                            onReq mb doB = mb >>= enum' str' . doB
                        in runIter iter' idoneM onCont onErr onReq
 {-# INLINE enumPureNChunk #-}
-
--- | Convert an iteratee to a \"greedy\" version.
---
--- When a chunk is received, repeatedly run the input iteratee
--- until the entire chunk is consumed, then the outputs
--- are combined (via 'mconcat').
---
--- > > let l = [1..5::Int]
--- > > run =<< enumPure1Chunk l (joinI (take 2 stream2list))
--- > [1,2]
--- > > run =<< enumPure1Chunk l (greedy $ joinI (I.take 2 stream2list))
--- > [1,2,3,4,5]
---
--- Note that a greedy iteratee will consume the entire input chunk and force
--- the next chunk before returning a value.  A portion of the second chunk may
--- be consumed.
--- 
--- 'greedy' may be useful on the first parameter of 'convStream', e.g.
--- 
--- > convStream (greedy someIter)
---
--- to create more efficient converters.
-greedy ::
- (Monad m, Functor m, LL.ListLike s el', Monoid a) =>
-  Iteratee s m a
-  -> Iteratee s m a
-greedy iter = step1 [] iter
- where
-  step1 acc i = runIter i onDone onCont onErr onReq
-        where
-          onDone a = idone . mconcat $ reverse (a:acc)
-          onCont k = icont $ step2 acc k
-          onErr iR = ierr (step1 acc iR)
-          onReq mb doB = ireq mb (step1 acc . doB)
-  step2 acc k = undefined 
-{-
-    -- no input was consumed
-    | lastLen == LL.length str =
-        case runIter iter (Left) (Right) (
-    -- some input was consumed, and data was left over.
-    -- the iteratee should never be in a Cont state here...
-    | otherwise = case runIter iter Left undefined undefined undefined of
-        Left a -> step (a:acc)  iter 
-
-
-    | otherwise   = joinIM $ do
-      i2 <- enumPure1Chunk str iter
-      result <- runIter i2 (\a -> return $ Left a)
-                           (\k -> return $ Right (icont k))
-                           (\i' e -> undefined)
-                           (\mb doB -> undefined)
-      case result of
-        Left (a, Chunk resS)
-          | LL.null resS
-              || LL.length resS == LL.length str -> return $
-                         idone (mconcat $ reverse (a:acc)) (Chunk resS)
-        Left (a, stream) -> return $ step (a:acc) iter stream
-        Right i -> return $ fmap (mconcat . reverse . (:acc)) i
-  step acc iter stream = joinIM $
-    enumChunk stream (fmap (mconcat . reverse . (:acc)) iter)
--}
-{-# INLINE greedy #-}
 
 -- ------------------------------------------------------------------------
 -- Monadic functions

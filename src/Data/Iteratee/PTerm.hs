@@ -47,6 +47,7 @@ module Data.Iteratee.PTerm (
   ,mapChunksMPT
   ,convStreamPT
   ,unfoldConvStreamPT
+  ,unfoldConvStreamCheckPT
   -- * ListLike analog functions
   ,breakEPT
   ,takePT

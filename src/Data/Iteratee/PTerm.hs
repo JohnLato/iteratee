@@ -87,8 +87,11 @@ import           Data.Word (Word8)
 mapChunksPT :: (NullPoint s, Monad m) => (s -> s') -> Enumeratee s s' m a
 mapChunksPT f = go
  where
-  step k (Chunk xs)     = eneeCheckIfDonePass (icont . step) . k . Chunk $ f xs
-  step k str@(EOF mErr) = eneeCheckIfDonePass (icont . step) . k $ EOF mErr
+  go = eneeCheckIfDonePass (icont . step)
+  step k (Chunk xs) = k (Chunk (f xs)) >>= \(i',_) ->
+                          return (go i', Chunk empty)
+  step k (EOF mErr) = k (EOF mErr) >>= (\(i',_) ->
+                          return (go i' , EOF mErr))
 {-# INLINE mapChunksPT #-}
 
 -- | Convert a stream of @s@ to a stream of @s'@ using the supplied function.
@@ -100,9 +103,11 @@ mapChunksMPT
   -> Enumeratee s s' m a
 mapChunksMPT f = go
  where
-  step k (Chunk xs)     = lift (f xs) >>=
-                          eneeCheckIfDonePass (icont . step) . k . Chunk
-  step k str@(EOF mErr) = eneeCheckIfDonePass (icont . step) . k $ EOF mErr
+  go = eneeCheckIfDonePass (icont . step)
+  step k (Chunk xs) = f xs >>= k . Chunk >>= \(i', _str) ->
+                          return (go i', Chunk empty)
+  step k (EOF mErr) = k (EOF mErr) >>= \(i',_) ->
+                          return (go i', EOF mErr)
 {-# INLINE mapChunksMPT #-}
 
 -- |Convert one stream into another, not necessarily in lockstep.

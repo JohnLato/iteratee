@@ -273,7 +273,7 @@ eneeCheckIfDoneIgnore
 eneeCheckIfDoneIgnore f = worker
  where
   worker = eneeCheckIfDoneHandle handler f
-  handler i e = worker i
+  handler i _e = worker i
 {-# INLINABLE eneeCheckIfDoneIgnore #-}
 
 

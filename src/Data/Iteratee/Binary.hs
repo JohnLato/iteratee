@@ -20,7 +20,6 @@ where
 import Data.Iteratee.Base
 import qualified Data.Iteratee.ListLike as I
 import qualified Data.ListLike as LL
-import qualified Data.ByteString as B
 import Data.Word
 import Data.Bits
 import Data.Int

@@ -1,4 +1,7 @@
-{-# LANGUAGE CPP, ScopedTypeVariables, FlexibleContexts #-}
+{-# LANGUAGE  CPP
+            , PackageImports
+            , ScopedTypeVariables
+            , FlexibleContexts #-}
 
 -- |Random and Binary IO with generic Iteratees, using File Descriptors for IO.
 -- when available, these are the preferred functions for performing IO as they
@@ -40,7 +43,7 @@ import Foreign.Marshal.Alloc
 
 import System.IO (SeekMode(..))
 
-import System.Posix.IO.ByteString
+import "unix-bytestring" System.Posix.IO.ByteString
 
 -- ------------------------------------------------------------------------
 -- Binary Random IO enumerators

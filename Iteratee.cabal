@@ -96,7 +96,7 @@ executable testIteratee
       HUnit                      == 1.2.* ,
       mtl                        >= 2   && < 3,
       QuickCheck                 >= 2   && < 3,
-      test-framework             >= 0.3 && < 0.5,
+      test-framework             >= 0.3 && < 0.7,
       test-framework-quickcheck2 >= 0.2 && < 0.3,
       test-framework-hunit       >= 0.2 && < 0.3
   else

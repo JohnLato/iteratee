@@ -559,6 +559,10 @@ instance Exception NotAnException where
 instance IException NotAnException where
 
 -- | Indicate if a callback should be called again to produce more data.
+--
+-- In iteratee < 0.9, callbacks used Bool equivalent to
+-- HasMore : True
+-- Finished : False
 data CBState = HasMore | Finished deriving (Eq, Show, Ord, Enum)
 
 -- | The type of callback functions to create enumerators.

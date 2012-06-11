@@ -60,7 +60,6 @@ library
 
   exposed-modules:
     Data.Nullable
-    Data.NullPoint
     Data.Iteratee
     Data.Iteratee.Base
     Data.Iteratee.Base.ReadableChunk

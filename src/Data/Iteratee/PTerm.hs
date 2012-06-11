@@ -85,12 +85,14 @@ import           Data.Word (Word8)
 -- 
 -- A version of 'mapChunks' that sends 'EOF's to the inner iteratee.
 -- 
-mapChunksPT :: (NullPoint s, Monad m) => (s -> s') -> Enumeratee s s' m a
+mapChunksPT :: (Monad m) => (s -> s') -> Enumeratee s s' m a
 mapChunksPT f = go
  where
   go = eneeCheckIfDonePass (icont . step)
   step k (Chunk xs) = k (Chunk (f xs)) >>= \(i',_) ->
-                          return (go i', Chunk empty)
+                          return (go i', NoData)
+  step k NoData     = k NoData >>= \(i',_) ->
+                          return (go i', NoData)
   step k (EOF mErr) = k (EOF mErr) >>= (\(i',_) ->
                           return (go i' , EOF mErr))
 {-# INLINE mapChunksPT #-}
@@ -99,14 +101,16 @@ mapChunksPT f = go
 -- 
 -- A version of 'mapChunksM' that sends 'EOF's to the inner iteratee.
 mapChunksMPT
-  :: (Monad m, NullPoint s, Nullable s)
+  :: (Monad m, Nullable s)
   => (s -> m s')
   -> Enumeratee s s' m a
 mapChunksMPT f = go
  where
   go = eneeCheckIfDonePass (icont . step)
   step k (Chunk xs) = f xs >>= k . Chunk >>= \(i', _str) ->
-                          return (go i', Chunk empty)
+                          return (go i', NoData)
+  step k NoData     = k NoData >>= \(i', _str) ->
+                          return (go i', NoData)
   step k (EOF mErr) = k (EOF mErr) >>= \(i',_) ->
                           return (go i', EOF mErr)
 {-# INLINE mapChunksMPT #-}
@@ -115,7 +119,7 @@ mapChunksMPT f = go
 -- 
 -- A version of 'convStream' that sends 'EOF's to the inner iteratee.
 convStreamPT
-  :: (Monad m, Nullable s, NullPoint s')
+  :: (Monad m, Nullable s)
   =>  Iteratee s m s'
   -> Enumeratee s s' m a
 convStreamPT fi = go
@@ -132,7 +136,7 @@ convStreamPT fi = go
 -- 
 -- A version of 'unfoldConvStream' that sends 'EOF's to the inner iteratee.
 unfoldConvStreamPT ::
- (Monad m, Nullable s, NullPoint s') =>
+ (Monad m, Nullable s) =>
   (acc -> Iteratee s m (acc, s'))
   -> acc
   -> Enumeratee s s' m a
@@ -178,7 +182,7 @@ unfoldConvStreamCheckPT checkDone f acc0 = go acc0
 
 -- | A variant of 'Data.Iteratee.ListLike.breakE' that passes 'EOF's.
 breakEPT
-  :: (LL.ListLike s el, NullPoint s, Monad m)
+  :: (LL.ListLike s el, Monad m)
   => (el -> Bool)
   -> Enumeratee s s m a
 breakEPT cpred = go
@@ -253,7 +257,7 @@ takeUpToPT i iter
 
 -- | A variant of 'Data.Iteratee.ListLike.takeWhileE' that passes 'EOF's.
 takeWhileEPT
- :: (LL.ListLike s el, NullPoint s, Monad m)
+ :: (LL.ListLike s el, Monad m)
  => (el -> Bool)
  -> Enumeratee s s m a
 takeWhileEPT = breakEPT . (not .)
@@ -263,7 +267,6 @@ takeWhileEPT = breakEPT . (not .)
 mapStreamPT
   :: (LL.ListLike (s el) el
      ,LL.ListLike (s el') el'
-     ,NullPoint (s el)
      ,Monad m
      ,LooseMap s el el')
   => (el -> el')
@@ -273,7 +276,7 @@ mapStreamPT f = mapChunksPT (lMap f)
 
 -- | A variant of 'Data.Iteratee.ListLike.rigidMapStream' that passes 'EOF's.
 rigidMapStreamPT
-  :: (LL.ListLike s el, Monad m, NullPoint s)
+  :: (LL.ListLike s el, Monad m)
   => (el -> el)
   -> Enumeratee s s m a
 rigidMapStreamPT f = mapChunksPT (LL.rigidMap f)

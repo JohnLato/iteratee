@@ -40,7 +40,7 @@ import System.IO
 -- Binary Random IO enumerators
 
 makeHandleCallback :: forall st m s el.
-  (MonadBaseControl IO m, MonadIO m, NullPoint s, ReadableChunk s el) =>
+  (MonadBaseControl IO m, MonadIO m, ReadableChunk s el) =>
   Ptr el
   -> Int
   -> Handle
@@ -60,7 +60,7 @@ makeHandleCallback p bsize h st = do
 -- Data is read into a buffer of the specified size.
 enumHandle
  :: forall s el m a.
-    (NullPoint s, ReadableChunk s el, MonadBaseControl IO m, MonadIO m)
+    (ReadableChunk s el, MonadBaseControl IO m, MonadIO m)
   => Int -- ^Buffer size (number of elements per read)
   -> Handle
   -> Enumerator s m a
@@ -74,7 +74,6 @@ enumHandle bs h i =
 -- the Iteratee.
 enumHandleCatch
  :: forall e s el m a.(IException e,
-                    NullPoint s,
                     ReadableChunk s el,
                     MonadBaseControl IO m,
                     MonadIO m)
@@ -93,8 +92,7 @@ enumHandleCatch bs h handler i =
 -- supports RandomIO (seek requests).
 -- Data is read into a buffer of the specified size.
 enumHandleRandom
- :: forall s el m a. (NullPoint s
-                     ,ReadableChunk s el
+ :: forall s el m a. (ReadableChunk s el
                      ,MonadBaseControl IO m
                      ,MonadIO m)
   => Int -- ^ Buffer size (number of elements per read)
@@ -112,7 +110,7 @@ enumHandleRandom bs h i = enumHandleCatch bs h handler i
 -- File Driver wrapper functions.
 
 enumFile'
-  :: (NullPoint s, MonadBaseControl IO m, ReadableChunk s el, MonadIO m)
+  :: (MonadBaseControl IO m, ReadableChunk s el, MonadIO m)
   => (Int -> Handle -> Enumerator s m a)
   -> Int -- ^Buffer size
   -> FilePath
@@ -123,14 +121,14 @@ enumFile' enumf bufsize filepath iter = bracket
   (flip (enumf bufsize) iter)
 
 enumFile
-  :: (NullPoint s, MonadBaseControl IO m, ReadableChunk s el, MonadIO m)
+  :: (MonadBaseControl IO m, ReadableChunk s el, MonadIO m)
   => Int                 -- ^Buffer size
   -> FilePath
   -> Enumerator s m a
 enumFile = enumFile' enumHandle
 
 enumFileRandom
-  :: (NullPoint s, MonadBaseControl IO m, ReadableChunk s el, MonadIO m)
+  :: (MonadBaseControl IO m, ReadableChunk s el, MonadIO m)
   => Int                 -- ^Buffer size
   -> FilePath
   -> Enumerator s m a
@@ -139,7 +137,7 @@ enumFileRandom = enumFile' enumHandleRandom
 -- |Process a file using the given @Iteratee@.  This function wraps
 -- @enumHandle@ as a convenience.
 fileDriverHandle
-  :: (NullPoint s, MonadBaseControl IO m, ReadableChunk s el, MonadIO m)
+  :: (MonadBaseControl IO m, ReadableChunk s el, MonadIO m)
   => Int                      -- ^Buffer size (number of elements)
   -> Iteratee s m a
   -> FilePath
@@ -149,7 +147,7 @@ fileDriverHandle bufsize iter filepath =
 
 -- |A version of @fileDriverHandle@ that supports seeking.
 fileDriverRandomHandle
-  :: (NullPoint s, MonadBaseControl IO m, ReadableChunk s el, MonadIO m)
+  :: (MonadBaseControl IO m, ReadableChunk s el, MonadIO m)
   => Int                      -- ^ Buffer size (number of elements)
   -> Iteratee s m a
   -> FilePath

@@ -126,22 +126,23 @@ isStreamFinished :: (Nullable s, Monad m) => Iteratee s m (Maybe SomeException)
 isStreamFinished = icontP check
   where
     check s@(Chunk xs)
-      | nullC xs  = (isStreamFinished, s)
+      | nullC xs  = (isStreamFinished, NoData)
       | otherwise = (idone Nothing, s)
+    check NoData = (isStreamFinished, NoData)
     check s@(EOF e) = (idone (Just $ fromMaybe (toException EofException) e), s)
 {-# INLINE isStreamFinished #-}
 
 
 -- |Skip the rest of the stream
-skipToEof :: (NullPoint s, Monad m) => Iteratee s m ()
+skipToEof :: (Monad m) => Iteratee s m ()
 skipToEof = icontP check
   where
-    check (Chunk _) = (skipToEof, Chunk empty)
+    check (Chunk _) = (skipToEof, NoData)
     check s         = (idone (), s)
 
 
 -- |Seek to a position in the stream
-seek :: (NullPoint s) => FileOffset -> Iteratee s m ()
+seek :: FileOffset -> Iteratee s m ()
 seek o = throwRec (SeekException o) identity
 
 -- | Map a monadic function over the chunks of the stream and ignore the
@@ -151,46 +152,49 @@ seek o = throwRec (SeekException o) identity
 -- 
 -- these can be efficiently run in parallel with other iteratees via
 -- @Data.Iteratee.ListLike.zip@.
-mapChunksM_ :: (Monad m, Nullable s, NullPoint s)
+mapChunksM_ :: (Monad m, Nullable s)
   => (s -> m b)
   -> Iteratee s m ()
 mapChunksM_ f = icont step
   where
-    step s@(Chunk xs)
-      | nullC xs   = return (icont step, s)
-      | otherwise  = f xs >> return (icont step, Chunk empty)
-    step s@(EOF _) = return (idone (), s)
+    step (Chunk xs) =  f xs >> return (icont step, NoData)
+    step NoData     = return (icont step, NoData)
+    step s@(EOF _)  = return (idone (), s)
 {-# INLINE mapChunksM_ #-}
 
 -- | A fold over chunks
-foldChunksM :: (Monad m, Nullable s, NullPoint s)
+foldChunksM :: (Monad m, Nullable s)
   => (a -> s -> m a)
   -> a
   -> Iteratee s m a
 foldChunksM f = icont . go
   where
-    go a (Chunk c) = f a c >>= \a' -> return (icont (go a'), Chunk empty)
+    go a (Chunk c) = f a c >>= \a' -> return (icont (go a'), NoData)
     go a e = return (idone a, e)
 {-# INLINE foldChunksM #-}
 
 -- | Get the current chunk from the stream.
-getChunk :: (Monad m, Nullable s, NullPoint s) => Iteratee s m s
+--   The stream will be executed far enough to get a non-empty chunk.
+getChunk :: (Monad m, Nullable s) => Iteratee s m s
 getChunk = icontP step
  where
-  step s@(Chunk xs)
-    | nullC xs  = (icontP step, s)
-    | otherwise = (idone xs, Chunk empty)
+  step (Chunk xs)
+    | nullC xs  = (icontP step, NoData)
+    | otherwise = (idone xs, NoData)
+  step NoData = (icontP step, NoData)
   step s@(EOF Nothing)  = (throwRec EofException getChunk, s)
   step s@(EOF (Just e)) = (throwRec e getChunk, s)
 {-# INLINE getChunk #-}
 
 -- | Get a list of all chunks from the stream.
-getChunks :: (Monad m, Nullable s, NullPoint s) => Iteratee s m [s]
+--   Empty chunks (if any exist) will be filtered out.
+getChunks :: (Monad m, Nullable s) => Iteratee s m [s]
 getChunks = icontP (step id)
  where
   step acc s@(Chunk xs)
-    | nullC xs    = (icontP (step acc), s)
+    | nullC xs    = emptyKP (step acc)
     | otherwise   = (icontP (step $ acc . (xs:)), s)
+  step acc NoData = emptyKP (step acc)
   step acc stream = (idone (acc []), stream)
 {-# INLINE getChunks #-}
 
@@ -209,21 +213,27 @@ type Enumeratee sFrom sTo (m :: * -> *) a =
 -- by the @breakE@ definition.
 -- 
 -- > breakE
--- >   :: (Monad m, LL.ListLike s el, NullPoint s)
+-- >   :: (Monad m, LL.ListLike s el)
 -- >   => (el -> Bool)
 -- >   -> Enumeratee s s m a
 -- > breakE cpred = eneeCheckIfDone (icont . step)
 -- >  where
--- >   step k (Chunk s)
--- >       | LL.null s  = icont (step k)
--- >       | otherwise  = case LL.break cpred s of
+-- >  step k (Chunk s)
+-- >    | LL.null s = return (emptyK (step k))
+-- >    | otherwise = case LL.break cpred s of
 -- >         (str', tail')
--- >           | LL.null tail' -> eneeCheckIfDone (icont . step) . k $ Chunk str'
--- >           | otherwise     -> idone (k $ Chunk str') (Chunk tail')
--- >   step k stream           =  idone (k stream) stream
+-- >           | LL.null tail' -> do
+-- >               (i', _) <- k (Chunk str')
+-- >               return (go i' <* dropWhile (not . cpred), Chunk tail')
+-- >                                -- if the inner iteratee completes before
+-- >                                -- the predicate is met, elements still
+-- >                                -- need to be dropped.
+-- >           | otherwise -> (idone *** const (Chunk tail')) `liftM` k (Chunk str')
+-- >   step k NoData       =  return (emptyK (step k))
+-- >   step k stream       =  return (idone (icont k), stream)
 -- 
 eneeCheckIfDone ::
- (Monad m, NullPoint elo) =>
+ (Monad m) =>
   (Cont eli m a -> Iteratee elo m (Iteratee eli m a))
   -> Enumeratee elo eli m a
 eneeCheckIfDone = eneeCheckIfDonePass
@@ -240,8 +250,8 @@ type EnumerateeHandler eli elo m a =
 -- a handler which is used
 -- to process any exceptions in a separate method.
 eneeCheckIfDoneHandle
-  :: forall m eli elo a. (NullPoint elo)
-  => EnumerateeHandler eli elo m a
+  :: forall m eli elo a.
+     EnumerateeHandler eli elo m a
   -> (Cont eli m a -> Iteratee elo m (Iteratee eli m a))
   -> Enumeratee elo eli m a
 eneeCheckIfDoneHandle h fc inner = worker inner
@@ -256,8 +266,8 @@ eneeCheckIfDoneHandle h fc inner = worker inner
 
 -- | Create enumeratees that pass all errors through the outer iteratee.
 eneeCheckIfDonePass
-  :: (NullPoint elo)
-  => (Cont eli m a -> Iteratee elo m (Iteratee eli m a))
+  ::
+     (Cont eli m a -> Iteratee elo m (Iteratee eli m a))
   -> Enumeratee elo eli m a
 eneeCheckIfDonePass f = worker
  where
@@ -267,8 +277,8 @@ eneeCheckIfDonePass f = worker
 
 -- | Create an enumeratee that ignores all errors from the inner iteratee
 eneeCheckIfDoneIgnore
-  :: (NullPoint elo)
-  => (Cont eli m a -> Iteratee elo m (Iteratee eli m a))
+  ::
+     (Cont eli m a -> Iteratee elo m (Iteratee eli m a))
   -> Enumeratee elo eli m a
 eneeCheckIfDoneIgnore f = worker
  where
@@ -288,25 +298,32 @@ eneeCheckIfDoneIgnore f = worker
 -- > unpacker :: Enumeratee B.ByteString [Word8] m a
 -- > unpacker = mapChunks B.unpack
 -- 
-mapChunks :: (Monad m, NullPoint s) => (s -> s') -> Enumeratee s s' m a
+mapChunks :: (Monad m) => (s -> s') -> Enumeratee s s' m a
 mapChunks f = go
  where
   go = eneeCheckIfDonePass (icont . step)
+
+  -- After running the inner iteratee continuation 'k', if the result is
+  -- done, the rest of the output won't be used and can therefore be
+  -- dropped here.  If the result isn't done, there shouldn't be any
+  -- returned output, so again it can be dropped.
   step k (Chunk xs) = k (Chunk (f xs)) >>= \(i',_) ->
-                        return (go i', Chunk empty)
+                        return (go i', NoData)
+  step k NoData     = k NoData >>= \(i',_) -> return (go i', NoData)
   step k (EOF mErr) = (idone *** const (EOF mErr)) `liftM` k (EOF mErr)
 {-# INLINE mapChunks #-}
 
 -- | Convert a stream of @s@ to a stream of @s'@ using the supplied function.
 mapChunksM
-  :: (Monad m, NullPoint s, Nullable s)
+  :: (Monad m, Nullable s)
   => (s -> m s')
   -> Enumeratee s s' m a
 mapChunksM f = go
  where
   go = eneeCheckIfDonePass (icont . step)
   step k (Chunk xs) = f xs >>= k . Chunk >>= \(i', _str) ->
-                            return (go i', Chunk empty)
+                            return (go i', NoData)
+  step k NoData     = k NoData >>= \(i', _str) -> return (go i', NoData)
   step k (EOF mErr) = (idone *** const (EOF mErr)) `liftM` k (EOF mErr)
 {-# INLINE mapChunksM #-}
 
@@ -406,6 +423,7 @@ type Enumerator s m a = Iteratee s m a -> m (Iteratee s m a)
 -- based upon 'Stream'.
 enumChunk :: (Monad m) => Stream s -> Enumerator s m a
 enumChunk (Chunk xs)     = enumPure1Chunk xs
+enumChunk NoData         = return
 enumChunk (EOF Nothing)  = enumEof
 enumChunk (EOF (Just e)) = enumErr e
 
@@ -542,7 +560,7 @@ enumCheckIfDone iter = runIter iter onDone onCont onErr onReq
 
 -- |Create an enumerator from a callback function
 enumFromCallback ::
- (Monad m, NullPoint s) =>
+ (Monad m) =>
   Callback st m s
   -> st
   -> Enumerator s m a
@@ -571,7 +589,7 @@ type Callback st m s = st -> m (Either SomeException ((CBState, st), s))
 -- |Create an enumerator from a callback function with an exception handler.
 -- The exception handler is called if an iteratee reports an exception.
 enumFromCallbackCatch
-  :: forall e m s st a. (IException e, Monad m, NullPoint s)
+  :: forall e m s st a. (IException e, Monad m)
   => Callback st m s
   -> (e -> m (Maybe EnumException))
   -> st

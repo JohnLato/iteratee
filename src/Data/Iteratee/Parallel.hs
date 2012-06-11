@@ -118,14 +118,16 @@ mapReduce ::
 mapReduce bufsize f = icontP (step (0, []))
  where
   step a@(!buf,acc) (Chunk xs)
-    | nullC xs = (icontP (step a), Chunk xs)
+    | nullC xs = (icontP (step a), NoData)
     | buf >= bufsize =
         let acc'  = mconcat acc
             b'    = f xs
-        in b' `par` acc' `pseq` (icontP (step (0,[b' `mappend` acc'])), Chunk empty)
+        in b' `par` acc' `pseq` (icontP (step (0,[b' `mappend` acc'])), NoData)
     | otherwise     =
         let b' = f xs
-        in b' `par` (icontP (step (succ buf,b':acc)), Chunk empty)
+        in b' `par` (icontP (step (succ buf,b':acc)), NoData)
+  step a NoData =
+    emptyKP (step a)
   step (_,acc) s@(EOF Nothing) =
     (idone (mconcat acc), s)
   step acc     s@(EOF (Just err))  =

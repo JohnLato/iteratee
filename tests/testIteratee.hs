@@ -35,8 +35,6 @@ type ST = Stream [Int]
 prop_eq str = str == str
   where types = str :: ST
 
-prop_mempty = mempty == (Chunk [] :: Stream [Int])
-
 prop_mappend str1 str2 | isChunk str1 && isChunk str2 =
   str1 `mappend` str2 == Chunk (chunkData str1 ++ chunkData str2)
 prop_mappend str1 str2 = isEOF $ str1 `mappend` str2
@@ -491,16 +489,15 @@ prop_line xs = P.length xs > 0 ==>
 -- ---------------------------------------------
 tests = [
   testGroup "Elementary" [
-    testProperty "list" prop_list
+     testProperty "list" prop_list
     ,testProperty "chunkList" prop_clist]
   ,testGroup "Stream tests" [
-    testProperty "mempty" prop_mempty
-    ,testProperty "mappend" prop_mappend
+     testProperty "mappend" prop_mappend
     ,testProperty "mappend associates" prop_mappend2
     ,testProperty "eq" prop_eq
   ]
   ,testGroup "Simple Iteratees" [
-    testProperty "break" prop_break
+     testProperty "break" prop_break
     ,testProperty "break remainder" prop_break2
     ,testProperty "head" prop_head
     ,testProperty "head remainder" prop_head2

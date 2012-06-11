@@ -33,6 +33,10 @@ module Data.Iteratee.Base (
   ,liftI
   ,idoneM
   ,ierrM
+  -- ** Returning from continuations
+  ,idoneT
+  ,emptyK
+  ,emptyKP
   -- ** Stream Functions
   ,setEOF
   -- * Classes
@@ -44,7 +48,6 @@ import Prelude hiding (null, catch)
 import Data.Iteratee.Exception
 import Data.Iteratee.Base.LooseMap as X
 import Data.Nullable               as X
-import Data.NullPoint              as X
 
 import Data.Maybe
 import Data.Monoid
@@ -74,24 +77,29 @@ import Data.Data
 
 data Stream c =
   EOF (Maybe SomeException)
+  | NoData
   | Chunk c
   deriving (Show, Typeable)
 
 instance (Eq c) => Eq (Stream c) where
   (Chunk c1) == (Chunk c2)           = c1 == c2
+  NoData     == NoData               = True
   (EOF Nothing) == (EOF Nothing)     = True
   (EOF (Just e1)) == (EOF (Just e2)) = typeOf e1 == typeOf e2
   _ == _                             = False
 
 instance Monoid c => Monoid (Stream c) where
-  mempty = Chunk mempty
+  mempty = NoData
   mappend (EOF mErr) _ = EOF mErr
   mappend _ (EOF mErr) = EOF mErr
+  mappend NoData     b = b
+  mappend a     NoData = a
   mappend (Chunk s1) (Chunk s2) = Chunk (s1 `mappend` s2)
 
 -- |Map a function over a stream.
 instance Functor Stream where
   fmap f (Chunk xs) = Chunk $ f xs
+  fmap _ NoData     = NoData
   fmap _ (EOF mErr) = EOF mErr
 
 -- ----------------------------------------------
@@ -125,6 +133,10 @@ idone :: a -> Iteratee s m a
 idone a = Iteratee $ \onDone _ _ _ -> onDone a
 {-# INLINE idone #-}
 
+idoneT :: a -> Stream s -> (Iteratee s m a, Stream s)
+idoneT a s = (idone a, s)
+{-# INLINE idoneT #-}
+
 icont :: (Stream s -> m (Iteratee s m a, Stream s)) -> Iteratee s m a
 icont k = Iteratee $ \_ onCont _ _ -> onCont k
 {-# INLINE icont #-}
@@ -132,6 +144,18 @@ icont k = Iteratee $ \_ onCont _ _ -> onCont k
 icontP :: Monad m => (Stream s -> (Iteratee s m a, Stream s)) -> Iteratee s m a
 icontP k = Iteratee $ \_ onCont _ _ -> onCont (return . k)
 {-# INLINE icontP #-}
+
+-- | Create a continuation return value with an empty chunk
+emptyK
+  :: Monad m
+  => (Stream s -> m (Iteratee s m a, Stream s))
+  -> (Iteratee s m a, Stream b)
+emptyK k = (icont k, NoData)
+{-# INLINE emptyK #-}
+
+emptyKP :: Monad m => (Stream s -> (Iteratee s m a, Stream s)) -> (Iteratee s m a, Stream b)
+emptyKP k = (icontP k, NoData)
+{-# INLINE emptyKP #-}
 
 -- | identical to icont, left in for compatibility-ish reasons
 liftI :: Monad m => (Stream s -> (Iteratee s m a, Stream s)) -> Iteratee s m a
@@ -223,7 +247,7 @@ instance forall s m. (MonadCatchIO m) =>
 catchOR :: (Exception e, MonadCatchIO m) => Iteratee s m a -> (e -> Iteratee s m a) -> m b -> (b -> Iteratee s m a) -> Iteratee s m a
 catchOR _ f mb doB = ireq ((doB `liftM` mb) `catch` (\e -> return (f e) )) id
 
-instance forall s. (NullPoint s, Nullable s) => MonadTransControl (Iteratee s) where
+instance forall s. (Nullable s) => MonadTransControl (Iteratee s) where
   newtype StT (Iteratee s) x =
     StIter { unStIter :: Either x (Maybe SomeException) }
   liftWith f = lift $ f $ \t -> liftM StIter (runIter t

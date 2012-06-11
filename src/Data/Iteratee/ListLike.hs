@@ -91,6 +91,7 @@ isFinished = icontP check
   check c@(Chunk xs)
     | nullC xs    = (icontP check, c)
     | otherwise   = (idone False, c)
+  check NoData    = (icontP check, NoData)
   check s@(EOF _) = (idone True, s)
 {-# INLINE isFinished #-}
 
@@ -128,13 +129,12 @@ stream2stream = liftM mconcat getChunks
 break :: (Monad m, LL.ListLike s el) => (el -> Bool) -> Iteratee s m s
 break cpred = icontP (step mempty)
   where
-    step bfr c@(Chunk str)
-      | LL.null str       =  (icontP (step bfr), c)
-      | otherwise         =  case LL.break cpred str of
+    step bfr (Chunk str)  =  case LL.break cpred str of
         (str', tail')
-          | LL.null tail' -> (icontP (step (bfr `mappend` str)), Chunk tail')
-          | otherwise     -> (idone (bfr `mappend` str'), Chunk tail')
-    step bfr stream       =  (idone bfr, stream)
+          | LL.null tail' -> emptyKP (step (bfr `mappend` str))
+          | otherwise     -> idoneT (bfr `mappend` str') $ Chunk tail'
+    step bfr NoData       =  emptyKP (step bfr)
+    step bfr stream       =  idoneT bfr stream
 {-# INLINE break #-}
 
 
@@ -145,9 +145,10 @@ break cpred = icontP (step mempty)
 head :: (Monad m, LL.ListLike s el) => Iteratee s m el
 head = icontP step
   where
-  step c@(Chunk vec)
-    | LL.null vec  = (icontP step, c)
-    | otherwise    = (idone (LL.head vec), Chunk $ LL.tail vec)
+  step (Chunk vec)
+    | LL.null vec  = emptyKP step
+    | otherwise    = idoneT (LL.head vec) $ Chunk $ LL.tail vec
+  step NoData      = emptyKP step
   step stream      = (ierr (icontP step) (setEOF stream), stream)
 {-# INLINE head #-}
 
@@ -156,9 +157,10 @@ head = icontP step
 tryHead :: (Monad m, LL.ListLike s el) => Iteratee s m (Maybe el)
 tryHead = icontP step
   where
-  step c@(Chunk vec)
-    | LL.null vec  = (icontP step, c)
-    | otherwise    = (idone (Just $ LL.head vec), Chunk $ LL.tail vec)
+  step (Chunk vec)
+    | LL.null vec  = emptyKP step
+    | otherwise    = idoneT (Just $ LL.head vec) $ Chunk $ LL.tail vec
+  step NoData      = emptyKP step
   step stream      = (idone Nothing, stream)
 {-# INLINE tryHead #-}
 
@@ -169,9 +171,10 @@ tryHead = icontP step
 last :: (Monad m, LL.ListLike s el, Nullable s) => Iteratee s m el
 last = icontP (step Nothing)
   where
-  step l c@(Chunk xs)
-    | nullC xs     = (icontP (step l), c)
+  step l (Chunk xs)
+    | nullC xs     = (icontP (step l), NoData)
     | otherwise    = (icontP $ step (Just $ LL.last xs), Chunk LL.empty)
+  step l NoData    = (icontP (step l), NoData)
   step l s@(EOF _) = case l of
     Nothing -> (ierr (icontP (step l)) (setEOF s), s)
     Just x  -> (idone x, s)
@@ -193,7 +196,8 @@ heads st = loop 0 st
   loop cnt xs
     | nullC xs  = return cnt
     | otherwise = icontP (step cnt xs)
-  step cnt str (Chunk xs) | nullC xs  = (icontP (step cnt str), Chunk xs)
+  step cnt str (Chunk xs) | nullC xs  = emptyKP (step cnt str)
+  step cnt str NoData                 = emptyKP (step cnt str)
   step cnt str stream     | nullC str = (idone cnt, stream)
   step cnt str s@(Chunk xs) =
     if LL.head str == LL.head xs
@@ -213,6 +217,7 @@ peek = icontP step
     step s@(Chunk vec)
       | LL.null vec = (icontP step, s)
       | otherwise   = (idone (Just $ LL.head vec), s)
+    step NoData     = emptyKP step
     step stream     = (idone Nothing, stream)
 {-# INLINE peek #-}
 
@@ -232,8 +237,9 @@ roll t d | t > d  = icontP step
       | LL.length vec >= t =
           (idone (LL.singleton $ LL.take t vec) <* drop (d-LL.length vec)
            ,mempty)
-      | LL.null vec        = (icontP step, mempty)
-      | otherwise          = (icontP (step' vec), mempty)
+      | LL.null vec        = emptyKP step
+      | otherwise          = emptyKP (step' vec)
+    step NoData            = emptyKP step
     step stream            = (idone LL.empty, stream)
     step' v1 (Chunk vec)   = step . Chunk $ v1 `mappend` vec
     step' v1 stream        = (idone (LL.singleton v1), stream)
@@ -250,7 +256,7 @@ drop 0  = idone ()
 drop n' = icontP (step n')
   where
     step n (Chunk str)
-      | LL.length str < n = (icontP (step (n - LL.length str)), mempty)
+      | LL.length str < n = emptyKP (step (n - LL.length str))
       | otherwise         = (idone (), Chunk (LL.drop n str))
     step _ stream         = (idone (), stream)
 {-# INLINE drop #-}
@@ -262,10 +268,11 @@ dropWhile :: (Monad m, LL.ListLike s el) => (el -> Bool) -> Iteratee s m ()
 dropWhile p = icontP step
   where
     step (Chunk str)
-      | LL.null left = (icontP step, mempty)
+      | LL.null left = emptyKP step
       | otherwise    = (idone (), Chunk left)
       where
         left = LL.dropWhile p str
+    step NoData      = emptyKP step
     step stream      = (idone (), stream)
 {-# INLINE dropWhile #-}
 
@@ -279,7 +286,7 @@ length :: (Monad m, Num a, LL.ListLike s el) => Iteratee s m a
 length = icontP (step 0)
   where
     step !i (Chunk xs) = let newL = i + fromIntegral (LL.length xs)
-                         in newL `seq` (icontP (step newL), mempty)
+                         in newL `seq` emptyKP (step newL)
     step !i stream     = (idone i, stream)
 {-# INLINE length #-}
 
@@ -299,11 +306,11 @@ takeFromChunk ::
   (Monad m, Nullable s, LL.ListLike s el)
   => Int
   -> Iteratee s m s
-takeFromChunk n | n <= 0 = idone empty
+takeFromChunk n | n <= 0 = idone LL.empty
 takeFromChunk n = icontP step
  where
   step (Chunk xs) = let (h,t) = LL.splitAt n xs in (idone h, Chunk t)
-  step stream     = (idone empty, stream)
+  step stream     = (idone LL.empty, stream)
 {-# INLINE takeFromChunk #-}
 
 -- ---------------------------------------------------
@@ -318,15 +325,15 @@ takeFromChunk n = icontP step
 -- 
 -- @breakE@ should be used in preference to @break@ whenever possible.
 breakE
-  :: (LL.ListLike s el, NullPoint s, Monad m, Functor m)
+  :: (LL.ListLike s el, Monad m, Functor m)
   => (el -> Bool)
   -> Enumeratee s s m a
 breakE cpred = go
  where
   go = eneeCheckIfDonePass (icont . step)
   step k (Chunk s)
-      | LL.null s  = return (icont (step k), mempty)
-      | otherwise  = case LL.break cpred s of
+    | LL.null s = return (emptyK (step k))
+    | otherwise = case LL.break cpred s of
         (str', tail')
           | LL.null tail' -> do
               (i', _) <- k (Chunk str')
@@ -335,6 +342,7 @@ breakE cpred = go
                                -- the predicate is met, elements still
                                -- need to be dropped.
           | otherwise -> (idone *** const (Chunk tail')) `liftM` k (Chunk str')
+  step k NoData       =  return (emptyK (step k))
   step k stream       =  return (idone (icont k), stream)
 {-# INLINE breakE #-}
 
@@ -357,12 +365,13 @@ take n' iter
   onErr i  = ierr (take n' i)
   onReq mb doB = ireq mb (take n' . doB)
 
-  step n k c@(Chunk str)
-      | LL.null str        = return (icont (step n k), c)
+  step n k (Chunk str)
+      | LL.null str        = return (emptyK (step n k))
       | LL.length str <= n = (take (n - LL.length str) *** const mempty)
                              `liftM` k (Chunk str)
       | otherwise          = (idone *** const (Chunk s2)) `liftM` k (Chunk s1)
       where (s1, s2) = LL.splitAt n str
+  step n k NoData          = return (emptyK (step n k))
   step _n k stream       = return (idone (icont k), stream)
 {-# INLINE take #-}
 
@@ -401,8 +410,8 @@ takeUpTo i iter
     onErr i' = ierr (takeUpTo i i')
     onReq mb doB = ireq mb (takeUpTo i . doB)
 
-    step n k c@(Chunk str)
-      | LL.null str       = return (icont (step n k), c)
+    step n k (Chunk str)
+      | LL.null str       = return (emptyK (step n k))
       | LL.length str < n = first (takeUpTo (n - LL.length str))
                             `liftM` k (Chunk str)
       | otherwise         = do
@@ -417,9 +426,11 @@ takeUpTo i iter
                 | LL.null preC -> return (idone iter', Chunk s2)
                 | otherwise    -> return (idone iter'
                                      , Chunk $ preC `LL.append` s2)
+              NoData           -> return (idone iter', Chunk s2)
               -- this case shouldn't ever happen, except possibly
               -- with broken iteratees
               _                -> return (idone iter', preStr)
+    step n k NoData       = return (emptyK (step n k))
     step _ k stream       = return (idone (icont k), stream)
 {-# INLINE takeUpTo #-}
 
@@ -439,7 +450,7 @@ takeWhile = break . (not .)
 -- 
 -- This is preferred to @takeWhile@.
 takeWhileE
- :: (LL.ListLike s el, NullPoint s, Monad m, Functor m)
+ :: (LL.ListLike s el, Monad m, Functor m)
  => (el -> Bool)
  -> Enumeratee s s m a
 takeWhileE = breakE . (not .)
@@ -455,7 +466,6 @@ mapStream
   :: (Monad m
      ,LL.ListLike (s el) el
      ,LL.ListLike (s el') el'
-     ,NullPoint (s el)
      ,LooseMap s el el')
   => (el -> el')
   -> Enumeratee (s el) (s el') m a
@@ -468,7 +478,7 @@ mapStream f = mapChunks (lMap f)
 -- This function is necessary for @ByteString@ and similar types
 -- that cannot have 'LooseMap' instances, and may be more efficient.
 rigidMapStream
-  :: (Monad m, LL.ListLike s el, NullPoint s)
+  :: (Monad m, LL.ListLike s el)
   => (el -> el)
   -> Enumeratee s s m a
 rigidMapStream f = mapChunks (LL.rigidMap f)
@@ -508,7 +518,7 @@ group cksz iinit = icont (step 0 id iinit)
   --
   -- not using eneeCheckIfDone because that loses final chunks at EOF
   step sz pfxd icur (Chunk s)
-    | LL.null s               = return (icont (step sz pfxd icur), Chunk s)
+    | LL.null s               = return (emptyK (step sz pfxd icur))
     | LL.length s + sz < cksz = return (icont (step (sz+LL.length s)
                                              (pfxd . (s:)) icur)
                                         , mempty)
@@ -526,6 +536,7 @@ group cksz iinit = icont (step 0 id iinit)
             onReq mb doB = mb >>= \b ->
                            step (LL.length rest) pfxd' (doB b) (Chunk rest)
         in  runIter icur onDone onCont onErr onReq
+  step sz pfxd icur NoData = return (emptyK (step sz pfxd icur))
   step _ pfxd icur mErr = case pfxd [] of
                          []   -> return (idone icur, mErr)
                          rest -> ((, mErr) . idone) `liftM`
@@ -561,8 +572,9 @@ groupBy same iinit = icont $ go iinit (const True, id)
     -- At the end, "finish" the accumulator and handle the last chunk,
     -- unless the stream was entirely empty and there is no
     -- accumulator.
+    go icurr pfx NoData    = return (emptyK $ go icurr pfx)
     go icurr pfx (Chunk s) = case gsplit pfx s of
-      ([], partial)   -> return (icont $ go icurr partial, mempty)
+      ([], partial)   -> return (emptyK $ go icurr partial)
       (full, partial) ->
         -- if the inner iteratee is done, the outer iteratee needs to be
         -- notified to terminate.
@@ -572,6 +584,7 @@ groupBy same iinit = icont $ go iinit (const True, id)
                          case str' of
                            Chunk rest -> return (icont $ go inext partial
                                            , Chunk $ mconcat rest)
+                           NoData  -> return (emptyK $ go inext partial)
                            EOF mex -> return (icont $ go inext partial, EOF mex)
             onErr inext e = return (ierr (icont (go inext partial)) e
                                     , EOF (Just e))
@@ -677,7 +690,6 @@ merge f = convStream $ f <$> lift head <*> head
 -- between calls.
 mergeByChunks ::
   (Nullable c2, Nullable c1
-  ,NullPoint c2, NullPoint c1
   ,LL.ListLike c1 el1, LL.ListLike c2 el2
   ,Functor m, Monad m)
   => (c1 -> c2 -> c3)  -- ^ merge function
@@ -714,9 +726,10 @@ foldl
   -> Iteratee s m a
 foldl f i = icontP (step i)
   where
-    step acc c@(Chunk xs)
-      | LL.null xs  = (icontP (step acc), c)
-      | otherwise   = (icontP (step $ FLL.foldl f acc xs), mempty)
+    step acc (Chunk xs)
+      | LL.null xs  = emptyKP (step acc)
+      | otherwise   = emptyKP (step $ FLL.foldl f acc xs)
+    step acc NoData = emptyKP (step acc)
     step acc stream = (idone acc, stream)
 {-# INLINE foldl #-}
 
@@ -732,9 +745,10 @@ foldl'
   -> Iteratee s m a
 foldl' f i = icontP (step i)
   where
-    step acc c@(Chunk xs)
-      | LL.null xs  = (icontP (step acc), c)
-      | otherwise   = (icontP (step $! FLL.foldl' f acc xs), mempty)
+    step acc (Chunk xs)
+      | LL.null xs  = emptyKP (step acc)
+      | otherwise   = emptyKP (step $! FLL.foldl' f acc xs)
+    step acc NoData = emptyKP (step acc)
     step acc stream = (idone acc, stream)
 {-# INLINE foldl' #-}
 
@@ -748,10 +762,11 @@ foldl1
   -> Iteratee s m el
 foldl1 f = icontP step
   where
-    step c@(Chunk xs)
+    step (Chunk xs)
     -- After the first chunk, just use regular foldl.
-      | LL.null xs = (icontP step, c)
+      | LL.null xs = emptyKP step
       | otherwise  = (foldl f $ FLL.foldl1 f xs, mempty)
+    step NoData    = emptyKP step
     step stream    = (ierr (icontP step) $ toException EofException
                       , stream)
 {-# INLINE foldl1 #-}
@@ -764,10 +779,11 @@ foldl1'
   -> Iteratee s m el
 foldl1' f = icontP step
   where
-    step c@(Chunk xs)
+    step (Chunk xs)
     -- After the first chunk, just use regular foldl'.
-      | LL.null xs = (icontP step, c)
+      | LL.null xs = emptyKP step
       | otherwise  = (foldl' f $ FLL.foldl1 f xs, mempty)
+    step NoData    = emptyKP step
     step stream    = (ierr (icontP step) $ toException EofException
                       , stream)
 {-# INLINE foldl1' #-}
@@ -777,10 +793,9 @@ foldl1' f = icontP step
 sum :: (Monad m, LL.ListLike s el, Num el) => Iteratee s m el
 sum = icontP (step 0)
   where
-    step acc c@(Chunk xs)
-      | LL.null xs = (icontP (step acc), c)
-      | otherwise  = (icontP (step $! acc + LL.sum xs), mempty)
-    step acc str   = (idone acc, str)
+    step acc (Chunk xs) = emptyKP (step $! acc + LL.sum xs)
+    step acc NoData     = emptyKP (step acc)
+    step acc str        = (idone acc, str)
 {-# INLINE sum #-}
 
 
@@ -788,10 +803,9 @@ sum = icontP (step 0)
 product :: (Monad m, LL.ListLike s el, Num el) => Iteratee s m el
 product = icontP (step 1)
   where
-    step acc c@(Chunk xs)
-      | LL.null xs = (icontP (step acc), c)
-      | otherwise  = (icontP (step $! acc * LL.product xs), mempty)
-    step acc str   = (idone acc, str)
+    step acc (Chunk xs) = emptyKP (step $! acc * LL.product xs)
+    step acc NoData     = emptyKP (step acc)
+    step acc str        = (idone acc, str)
 {-# INLINE product #-}
 
 
@@ -818,7 +832,7 @@ zip x0 y0 = runIter x0 (odx y0) (ocx y0) (oex y0) (orx y0)
   oey xK i' e      = throwRec e (zip (icont xK) i')
   ory xK mb doB    = ireq mb (zip (icont xK) . doB)
 
-  step xK yK (Chunk xs) | nullC xs = return (icont (step xK yK), Chunk xs)
+  step xK yK (Chunk xs) | nullC xs = return (emptyK (step xK yK))
   step xK yK str   = do
     (x,xLeft) <- xK str
     (y,yLeft) <- yK str
@@ -829,6 +843,7 @@ zip x0 y0 = runIter x0 (odx y0) (ocx y0) (oex y0) (orx y0)
     | otherwise                   = c2
   shorter e@(EOF _)  _         = e
   shorter _          e@(EOF _) = e
+  shorter _          _         = NoData
   
 {-# INLINE zip #-}
 
@@ -883,7 +898,7 @@ enumWith x0 y0 = runIter x0 (odx y0) (ocx y0) (oex y0) (orx y0)
   oey xK i' e      = throwRec e (enumWith (icont xK) i')
   ory xK mb doB    = ireq mb (enumWith (icont xK) . doB)
 
-  step xK yK (Chunk xs) | nullC xs = return (icont (step xK yK), Chunk xs)
+  step xK yK (Chunk xs) | nullC xs = return (emptyK (step xK yK))
   step xK yK str = do
     (x, xLeft) <- xK str
     (y,_yLeft) <- yK str
@@ -936,6 +951,7 @@ sequence_ = check []
     shorter (EOF e1 ) (EOF e2 ) = EOF (e1 `mplus` e2)
     shorter e@(EOF _) _         = e
     shorter _         e@(EOF _) = e
+    shorter _         _         = NoData
 
 -- |Transform an iteratee into one that keeps track of how much data it
 -- consumes.
@@ -956,8 +972,14 @@ countConsumed = check 0
       (i, Chunk c')            -> (check (newLen n c c') i, Chunk c')
       (i, str'@(EOF (Just e))) -> (throwRec e (check (newLen n c mempty) i)
                                    , str')
+      (i, NoData)              -> (check (newLen n c LL.empty) i, NoData)
       (i, str')                -> (throwRec EofException
                                             (check (newLen n c mempty) i), str')
+    step !n k NoData = k NoData >>= \res -> return $ case res of
+      (_, Chunk _)             -> error "iteratee: invariant violation - got data from NoData.  Bad Continuation!"
+      (i, NoData)              -> (check n i, NoData)
+      (i, str'@(EOF (Just e))) -> (throwRec e (check n i), str')
+      (i, str')                -> (throwRec EofException (check n i), str')
     step n k str = first (liftM (,n)) `liftM` k str
     onDone n a  = idone (a,n)
     onCont n k  = icont (step n k)
@@ -996,8 +1018,8 @@ mapM_
   -> Iteratee s m ()
 mapM_ f = icont step
   where
-    step c@(Chunk xs) | LL.null xs = return (icont step, c)
-    step (Chunk xs) = LL.mapM_ f xs >> return (icont step, mempty)
+    step NoData     = return (emptyK step)
+    step (Chunk xs) = LL.mapM_ f xs >> return (emptyK step)
     step s@(EOF _)  = return (idone (), s)
 {-# INLINE mapM_ #-}
 
@@ -1009,8 +1031,8 @@ foldM
   -> Iteratee s m a
 foldM f e = icont (step e)
   where
-    step acc c@(Chunk xs) | LL.null xs = return (icont (step acc), c)
     step acc (Chunk xs) = CM.foldM f acc (LL.toList xs) >>= \acc' ->
-                            return (icont (step acc'), mempty)
-    step acc stream     = return (idone acc, stream)
+                            return . emptyK $ step acc'
+    step acc NoData     = return . emptyK $ step acc
+    step acc stream     = return $ idoneT acc stream
 {-# INLINE foldM #-}

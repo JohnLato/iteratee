@@ -7,14 +7,13 @@ module Data.Nullable (
 )
 where
 
-import Data.NullPoint
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as L
 
 
 -- ----------------------------------------------
 -- |Nullable container class
-class NullPoint c => Nullable c where
+class Nullable c where
   nullC :: c -> Bool
 
 instance Nullable [a] where

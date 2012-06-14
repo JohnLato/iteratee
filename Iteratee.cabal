@@ -12,7 +12,7 @@ maintainer:    John W. Lato <jwlato@gmail.com>
 license:       BSD3
 license-file:  LICENSE
 homepage:      http://www.tiresiaspress.us/haskell/iteratee
-tested-with:   GHC == 7.0.4, GHC == 7.2.1
+tested-with:   GHC == 7.2.1, GHC == 7.4.2
 stability:     experimental
 
 cabal-version: >= 1.6

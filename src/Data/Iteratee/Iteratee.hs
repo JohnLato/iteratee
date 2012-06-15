@@ -539,15 +539,6 @@ data NotAnException = NotAnException
 instance Exception NotAnException where
 instance IException NotAnException where
 
--- | Indicate if a callback should be called again to produce more data.
---
--- In iteratee < 0.9, callbacks used Bool equivalent to
--- HasMore : True
--- Finished : False
-data CBState = HasMore | Finished deriving (Eq, Show, Ord, Enum)
-
--- | The type of callback functions to create enumerators.
-type Callback st m s = st -> m (Either SomeException ((CBState, st), s))
 -- |Create an enumerator from a callback function with an exception handler.
 -- The exception handler is called if an iteratee reports an exception.
 enumFromCallbackCatch

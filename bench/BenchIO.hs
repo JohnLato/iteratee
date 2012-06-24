@@ -56,18 +56,21 @@ testFdFold = fileDriverFd bufSize sum file >> return ()
   sum :: Iteratee ByteString IO Word8
   sum = foldl' (+) 0
 
-main = defaultMain allIOBenches
+main = defaultMain (stringIO ++ ioBenches)
 
-allIOBenches =
-  [
-   bgroup "String" [
-     bench "Fd" testFdString
+stringIO =
+  [ bgroup "String"
+    [bench "Fd" testFdString
     ,bench "Hd with String" testHdString
-   ]
-  ,bgroup "ByteString" [
+    ]
+  ]
+
+ioBenches =
+  [bgroup "ByteString" [
      bench "Fd" testFdByte
     ,bench "Hd" testHdByte
    ]
+
   ,bgroup "folds" [
      bench "Fd/fold" testFdFold
     ,bench "Fd/mapReduce 2" $ testFdMapReduce 2

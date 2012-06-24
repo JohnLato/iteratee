@@ -25,10 +25,7 @@ extra-source-files:
   Examples/*.lhs
   Examples/*.txt
   tests/*.hs
-
-flag buildTests
-  description: Build test executables.
-  default:     False
+  bench/*.hs
 
 library
   hs-source-dirs:
@@ -82,18 +79,22 @@ library
   if impl(ghc >= 6.8)
     ghc-options: -fwarn-tabs
 
-executable testIteratee
-  hs-source-dirs:
-    src
-    tests
 
+Test-Suite testIteratee
+  type: exitcode-stdio-1.0
   main-is: testIteratee.hs
+  hs-source-dirs: tests src
+  ghc-options:    -fhpc -hpcdir dist/hpc/mix/iteratee-0.8.9.1
 
-  other-modules:
-    QCUtils
-
-  if flag(buildTests)
+  if os(windows)
+    cpp-options: -DUSE_WINDOWS
+  else
+    cpp-options: -DUSE_POSIX
     build-depends:
+      unix                    >= 2 && < 3,
+      unix-bytestring         >= 0.3.5 && < 0.4
+
+  build-depends:
       base                       >= 3   && < 6,
       HUnit                      == 1.2.* ,
       mtl                        >= 2   && < 3,
@@ -101,8 +102,27 @@ executable testIteratee
       test-framework             >= 0.3 && < 0.7,
       test-framework-quickcheck2 >= 0.2 && < 0.3,
       test-framework-hunit       >= 0.2 && < 0.3
+
+benchmark bench-all
+  type: exitcode-stdio-1.0
+  hs-source-dirs: src bench
+  main-is:        BenchAll.hs
+
+  if os(windows)
+    cpp-options: -DUSE_WINDOWS
   else
-    buildable:  False
+    cpp-options: -DUSE_POSIX
+    build-depends:
+      unix                    >= 2 && < 3,
+      unix-bytestring         >= 0.3.5 && < 0.4
+
+  build-depends:
+      base       >= 3   && < 6,
+      criterion  >= 0.6 && < 0.7,
+      deepseq    >= 1.2 && < 2,
+      mtl        >= 2   && < 3
+  ghc-options: -O2
+
 
 source-repository head
   type:     darcs

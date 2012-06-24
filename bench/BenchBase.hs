@@ -2,7 +2,7 @@
 
 -- some basic benchmarking of iteratee
 
-module Main where
+module BenchBase where
 
 import Data.Iteratee
 import qualified Data.Iteratee.ListLike as I

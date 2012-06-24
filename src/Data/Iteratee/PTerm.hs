@@ -91,8 +91,7 @@ mapChunksPT f = go
   go = eneeCheckIfDonePass (icont . step)
   step k (Chunk xs) = k (Chunk (f xs)) >>= \(i',_) ->
                           return (go i', NoData)
-  step k NoData     = k NoData >>= \(i',_) ->
-                          return (go i', NoData)
+  step k NoData     = return $ first go (emptyK k)
   step k (EOF mErr) = k (EOF mErr) >>= (\(i',_) ->
                           return (go i' , EOF mErr))
 {-# INLINE mapChunksPT #-}
@@ -109,8 +108,7 @@ mapChunksMPT f = go
   go = eneeCheckIfDonePass (icont . step)
   step k (Chunk xs) = f xs >>= k . Chunk >>= \(i', _str) ->
                           return (go i', NoData)
-  step k NoData     = k NoData >>= \(i', _str) ->
-                          return (go i', NoData)
+  step k NoData     = return $ first go (emptyK k)
   step k (EOF mErr) = k (EOF mErr) >>= \(i',_) ->
                           return (go i', EOF mErr)
 {-# INLINE mapChunksMPT #-}
@@ -194,7 +192,8 @@ breakEPT cpred = go
         (str', tail')
           | LL.null tail' -> (go *** const mempty) <$> k (Chunk str')
           | otherwise     -> (idone *** const (Chunk tail')) <$> k (Chunk str')
-  step k stream           =  (idone *** const stream) <$> k stream
+  step k NoData         =  return (emptyK (step k))
+  step k stream@(EOF{}) =  (idone *** const stream) <$> k stream
 {-# INLINE breakEPT #-}
 
 -- | A variant of 'Data.Iteratee.ListLike.take' that passes 'EOF's.
@@ -212,13 +211,14 @@ takePT n' iter
   onErr i  = ierr (takePT n' i)
   onReq mb doB = ireq mb (takePT n' . doB)
 
-  step n k c@(Chunk str)
-      | LL.null str        = return (icont (step n k), c)
+  step n k (Chunk str)
+      | LL.null str        = return $ emptyK (step n k)
       | LL.length str <= n = (takePT (n - LL.length str) *** const mempty)
                              <$> k (Chunk str)
       | otherwise          = (idone *** const (Chunk s2)) <$> k (Chunk s1)
       where (s1, s2) = LL.splitAt n str
-  step _n k stream       = (idone *** const stream) <$> k stream
+  step  n k NoData         = return (emptyK (step n k))
+  step _n k stream@(EOF{}) = (idone *** const stream) <$> k stream
 {-# INLINE takePT #-}
 
 -- | A variant of 'Data.Iteratee.ListLike.takeUpTo' that passes 'EOF's.
@@ -233,8 +233,8 @@ takeUpToPT i iter
     onErr i' = ierr (takeUpToPT i i')
     onReq mb doB = ireq mb (takeUpToPT i . doB)
 
-    step n k c@(Chunk str)
-      | LL.null str       = return (icont (step n k), c)
+    step n k (Chunk str)
+      | LL.null str       = return $ emptyK (step n k)
       | LL.length str < n = first (takeUpToPT (n - LL.length str))
                             <$> k (Chunk str)
       | otherwise         = do
@@ -249,10 +249,12 @@ takeUpToPT i iter
                 | LL.null preC -> return (idone iter', Chunk s2)
                 | otherwise    -> return (idone iter'
                                      , Chunk $ preC `LL.append` s2)
+              NoData           -> return (idone iter', Chunk s2)
               -- this case shouldn't ever happen, except possibly
               -- with broken iteratees
               _                -> return (idone iter', preStr)
-    step _ k stream       = (idone *** const stream) <$> k stream
+    step  n k NoData         = return (emptyK (step n k))
+    step _n k stream@(EOF{}) = (idone *** const stream) <$> k stream
 {-# INLINE takeUpToPT #-}
 
 -- | A variant of 'Data.Iteratee.ListLike.takeWhileE' that passes 'EOF's.

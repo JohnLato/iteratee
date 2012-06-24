@@ -35,27 +35,49 @@ type ST = Stream [Int]
 prop_eq str = str == str
   where types = str :: ST
 
-prop_mappend str1 str2 | isChunk str1 && isChunk str2 =
-  str1 `mappend` str2 == Chunk (chunkData str1 ++ chunkData str2)
-prop_mappend str1 str2 = isEOF $ str1 `mappend` str2
+prop_mappend str1 str2
+  | isEOF str1 || isEOF str2       = isEOF $ str1 `mappend` str2
+  | isNoData str1 && isNoData str2 = isNoData $ str1 `mappend` str2
+  | otherwise =
+       str1 `mappend` str2 == Chunk (chunkData str1 ++ chunkData str2)
   where types = (str1 :: ST, str2 :: ST)
 
 prop_mappend2 str = str `mappend` mempty == mempty `mappend` str
   where types = str :: ST
 
-isChunk (Chunk _) = True
-isChunk (EOF _)   = False
-
 chunkData (Chunk xs) = xs
+chunkData NoData     = mempty
+
+isChunk (Chunk _) = True
+isChunk _         = False
+
+isNoData NoData   = True
+isNoData _        = False
 
 isEOF (EOF _)   = True
-isEOF (Chunk _) = False
+isEOF _         = False
+
+-- ---------------------------------------------
+-- for testing only
+-- real enumerators shouldn't ever feed NoData to an iteratee.
+-- They can receive it via (>>=) though, so we test it this way
+
+enumNoData :: Monad m => Enumerator s m a
+enumNoData iter = runIter iter idoneM onC ierrM onR
+  where
+    onC k = fst `liftM` k NoData
+    onR mb doB = mb >>= enumNoData . doB
 
 -- ---------------------------------------------
 -- Iteratee instances
 
 runner1 = runIdentity . Iter.run . runIdentity
-enumSpecial xs n = enumPure1Chunk LL.empty >=> enumPureNChunk xs n
+
+enumSpecial xs n
+  | LL.null xs = enumPure1Chunk LL.empty >=> enumPureNChunk xs n
+  | otherwise  = enumPure1Chunk LL.empty >=> enumPure1Chunk (LL.take 1 xs)
+                       >=> enumNoData
+                       >=> enumPureNChunk (LL.tail xs) n
 
 prop_iterFmap xs f a = runner1 (enumPure1Chunk xs (fmap f $ return a))
                      == runner1 (enumPure1Chunk xs (return $ f a))

@@ -256,9 +256,11 @@ drop 0  = idone ()
 drop n' = icontP (step n')
   where
     step n (Chunk str)
+      | LL.null   str     = emptyKP (step n)
       | LL.length str < n = emptyKP (step (n - LL.length str))
       | otherwise         = (idone (), Chunk (LL.drop n str))
-    step _ stream         = (idone (), stream)
+    step n NoData         = emptyKP (step n)
+    step _ stream@EOF{}   = (idone (), stream)
 {-# INLINE drop #-}
 
 -- |Skip all elements while the predicate is true.
@@ -268,12 +270,12 @@ dropWhile :: (Monad m, LL.ListLike s el) => (el -> Bool) -> Iteratee s m ()
 dropWhile p = icontP step
   where
     step (Chunk str)
-      | LL.null left = emptyKP step
-      | otherwise    = (idone (), Chunk left)
+      | LL.null left  = emptyKP step
+      | otherwise     = (idone (), Chunk left)
       where
         left = LL.dropWhile p str
-    step NoData      = emptyKP step
-    step stream      = (idone (), stream)
+    step NoData       = emptyKP step
+    step stream@EOF{} = (idone (), stream)
 {-# INLINE dropWhile #-}
 
 
@@ -285,19 +287,21 @@ dropWhile p = icontP step
 length :: (Monad m, Num a, LL.ListLike s el) => Iteratee s m a
 length = icontP (step 0)
   where
-    step !i (Chunk xs) = let newL = i + fromIntegral (LL.length xs)
-                         in newL `seq` emptyKP (step newL)
-    step !i stream     = (idone i, stream)
+    step !i (Chunk xs)   = let newL = i + fromIntegral (LL.length xs)
+                           in newL `seq` emptyKP (step newL)
+    step !i NoData       = emptyKP (step i)
+    step !i stream@EOF{} = (idone i, stream)
 {-# INLINE length #-}
 
--- | Get the length of the current chunk, or @Nothing@ if 'EOF'.
+-- | Get the length of the current chunk ('Just 0', or @Nothing@ if 'EOF'.
 -- 
 -- This function consumes no input.
 chunkLength :: (Monad m, LL.ListLike s el) => Iteratee s m (Maybe Int)
 chunkLength = icontP step
  where
   step s@(Chunk xs) = (idone (Just $ LL.length xs), s)
-  step stream       = (idone Nothing, stream)
+  step NoData       = idoneT (Just 0) NoData
+  step stream@EOF{} = (idone Nothing, stream)
 {-# INLINE chunkLength #-}
 
 -- | Take @n@ elements from the current chunk, or the whole chunk if
@@ -309,8 +313,9 @@ takeFromChunk ::
 takeFromChunk n | n <= 0 = idone LL.empty
 takeFromChunk n = icontP step
  where
-  step (Chunk xs) = let (h,t) = LL.splitAt n xs in (idone h, Chunk t)
-  step stream     = (idone LL.empty, stream)
+  step (Chunk xs)   = let (h,t) = LL.splitAt n xs in (idone h, Chunk t)
+  step NoData       = (idone LL.empty, NoData)
+  step stream@EOF{} = (idone LL.empty, stream)
 {-# INLINE takeFromChunk #-}
 
 -- ---------------------------------------------------
@@ -372,7 +377,7 @@ take n' iter
       | otherwise          = (idone *** const (Chunk s2)) `liftM` k (Chunk s1)
       where (s1, s2) = LL.splitAt n str
   step n k NoData          = return (emptyK (step n k))
-  step _n k stream       = return (idone (icont k), stream)
+  step _n k stream         = return (idone (icont k), stream)
 {-# INLINE take #-}
 
 -- |Read n elements from a stream and apply the given iteratee to the
@@ -726,11 +731,9 @@ foldl
   -> Iteratee s m a
 foldl f i = icontP (step i)
   where
-    step acc (Chunk xs)
-      | LL.null xs  = emptyKP (step acc)
-      | otherwise   = emptyKP (step $ FLL.foldl f acc xs)
-    step acc NoData = emptyKP (step acc)
-    step acc stream = (idone acc, stream)
+    step acc (Chunk xs) = emptyKP (step $ FLL.foldl f acc xs)
+    step acc NoData     = emptyKP (step acc)
+    step acc s@EOF{}    = (idone acc, s)
 {-# INLINE foldl #-}
 
 
@@ -745,11 +748,9 @@ foldl'
   -> Iteratee s m a
 foldl' f i = icontP (step i)
   where
-    step acc (Chunk xs)
-      | LL.null xs  = emptyKP (step acc)
-      | otherwise   = emptyKP (step $! FLL.foldl' f acc xs)
-    step acc NoData = emptyKP (step acc)
-    step acc stream = (idone acc, stream)
+    step acc (Chunk xs) = emptyKP (step $! FLL.foldl' f acc xs)
+    step acc NoData     = emptyKP (step acc)
+    step acc s@EOF{}    = (idone acc, s)
 {-# INLINE foldl' #-}
 
 -- | Variant of foldl with no base case.  Requires at least one element
@@ -763,12 +764,12 @@ foldl1
 foldl1 f = icontP step
   where
     step (Chunk xs)
-    -- After the first chunk, just use regular foldl.
+      -- if the input is null, we need to toss it and wait for a full chunk
       | LL.null xs = emptyKP step
       | otherwise  = (foldl f $ FLL.foldl1 f xs, mempty)
-    step NoData    = emptyKP step
-    step stream    = (ierr (icontP step) $ toException EofException
-                      , stream)
+    -- After the first chunk, just use regular foldl.
+    step NoData     = emptyKP step
+    step str@EOF{}    = (ierr (icontP step) $ toException EofException, str)
 {-# INLINE foldl1 #-}
 
 
@@ -780,12 +781,12 @@ foldl1'
 foldl1' f = icontP step
   where
     step (Chunk xs)
-    -- After the first chunk, just use regular foldl'.
+      -- if the input is null, we need to toss it and wait for a full chunk
       | LL.null xs = emptyKP step
       | otherwise  = (foldl' f $ FLL.foldl1 f xs, mempty)
-    step NoData    = emptyKP step
-    step stream    = (ierr (icontP step) $ toException EofException
-                      , stream)
+    -- After the first chunk, just use regular foldl'.
+    step NoData     = emptyKP step
+    step str@EOF{}    = (ierr (icontP step) $ toException EofException, str)
 {-# INLINE foldl1' #-}
 
 
@@ -795,7 +796,7 @@ sum = icontP (step 0)
   where
     step acc (Chunk xs) = emptyKP (step $! acc + LL.sum xs)
     step acc NoData     = emptyKP (step acc)
-    step acc str        = (idone acc, str)
+    step acc str@EOF{}  = (idone acc, str)
 {-# INLINE sum #-}
 
 
@@ -805,7 +806,7 @@ product = icontP (step 1)
   where
     step acc (Chunk xs) = emptyKP (step $! acc * LL.product xs)
     step acc NoData     = emptyKP (step acc)
-    step acc str        = (idone acc, str)
+    step acc str@EOF{}  = (idone acc, str)
 {-# INLINE product #-}
 
 

@@ -25,7 +25,7 @@ instance Arbitrary c => Arbitrary (Stream c) where
   arbitrary = do
     err <- arbitrary
     xs <- arbitrary
-    elements [EOF err, Chunk xs]
+    elements [EOF err, Chunk xs, NoData]
 
 tE :: Exception e => e -> SomeException
 tE = toException

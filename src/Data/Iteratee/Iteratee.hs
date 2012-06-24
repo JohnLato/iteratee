@@ -171,7 +171,8 @@ foldChunksM :: (Monad m, Nullable s)
 foldChunksM f = icont . go
   where
     go a (Chunk c) = f a c >>= \a' -> return (icont (go a'), NoData)
-    go a e = return (idone a, e)
+    go a NoData    = return . emptyK $ go a
+    go a e@(EOF{}) = return (idoneT a e)
 {-# INLINE foldChunksM #-}
 
 -- | Get the current chunk from the stream.
@@ -193,10 +194,10 @@ getChunks :: (Monad m, Nullable s) => Iteratee s m [s]
 getChunks = icontP (step id)
  where
   step acc s@(Chunk xs)
-    | nullC xs    = emptyKP (step acc)
-    | otherwise   = (icontP (step $ acc . (xs:)), s)
-  step acc NoData = emptyKP (step acc)
-  step acc stream = (idone (acc []), stream)
+    | nullC xs       = emptyKP (step acc)
+    | otherwise      = (icontP (step $ acc . (xs:)), s)
+  step acc NoData    = emptyKP (step acc)
+  step acc s@(EOF{}) = (idone (acc []), s)
 {-# INLINE getChunks #-}
 
 -- ---------------------------------------------------

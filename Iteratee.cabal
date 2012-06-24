@@ -82,18 +82,13 @@ library
   if impl(ghc >= 6.8)
     ghc-options: -fwarn-tabs
 
-executable testIteratee
-  hs-source-dirs:
-    src
-    tests
 
+Test-Suite testIteratee
+  type: exitcode-stdio-1.0
   main-is: testIteratee.hs
-
-  other-modules:
-    QCUtils
-
-  if flag(buildTests)
-    build-depends:
+  hs-source-dirs: tests src
+  ghc-options:    -fhpc -hpcdir dist/hpc
+  build-depends:
       base                       >= 3   && < 6,
       HUnit                      == 1.2.* ,
       mtl                        >= 2   && < 3,
@@ -101,8 +96,7 @@ executable testIteratee
       test-framework             >= 0.3 && < 0.7,
       test-framework-quickcheck2 >= 0.2 && < 0.3,
       test-framework-hunit       >= 0.2 && < 0.3
-  else
-    buildable:  False
+
 
 source-repository head
   type:     darcs

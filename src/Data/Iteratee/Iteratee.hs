@@ -40,6 +40,7 @@ module Data.Iteratee.Iteratee (
   ,enumEof
   ,enumErr
   ,enumPure1Chunk
+  ,enumChunkRemaining
   ,enumList
   ,enumCheckIfDone
   ,enumFromCallback
@@ -403,6 +404,8 @@ joinI i = runIter i onDone onCont onErr onR
 {-# INLINE joinI #-}
 
 -- | Lift an iteratee inside a monad to an iteratee.
+--
+-- > joinIM === Control.Monad.join . lift
 joinIM :: (Monad m) => m (Iteratee s m a) -> Iteratee s m a
 joinIM mIter = ireq mIter id
 
@@ -523,12 +526,33 @@ mergeEnums e1 e2 etee i = e1 $ e2 (joinI . etee $ ilift lift i) >>= run
 -- | The pure 1-chunk enumerator
 -- 
 -- It passes a given list of elements to the iteratee in one chunk
--- This enumerator does no IO and is useful for testing of base parsing
+-- The enumerator performs no monadic action, but monadic effects embedded in
+-- the iteratee can be performed.
 enumPure1Chunk :: (Monad m) => s -> Enumerator s m a
 enumPure1Chunk str iter = runIter iter idoneM onC ierrM onR
   where
     onC k      = fst `liftM` k (Chunk str)
     onR mb doB = mb >>= enumPure1Chunk str . doB
+
+
+-- | A 1-chunk enumerator
+--
+-- It passes a given list of elements to the iteratee in one chunk
+-- The enumerator performs no monadic action, but monadic effects embedded in
+-- the iteratee can be performed.
+--
+-- Like @enumPure1Chunk@, but any leftover stream data is also returned.
+enumChunkRemaining
+  :: (Monad m)
+  => s
+  -> Iteratee s m a
+  -> m (Iteratee s m a, Stream s)
+enumChunkRemaining str iter = runIter iter onD onC onE onR
+  where
+    onD a      = return (idone a, Chunk str)
+    onC k      = k (Chunk str)
+    onE i err  = return (ierr i err, Chunk str)
+    onR mb doB = mb >>= enumChunkRemaining str . doB
 
 -- | Enumerate chunks from a list
 -- 

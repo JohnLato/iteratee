@@ -2,6 +2,6 @@ module Main where
 
 import Criterion.Main
 import BenchBase (allByteStringBenches)
-import BenchIO   (allIOBenches)
+import BenchIO   (ioBenches)
 
-main = defaultMain [allByteStringBenches, bgroup "IO" allIOBenches]
+main = defaultMain (allByteStringBenches: ioBenches)

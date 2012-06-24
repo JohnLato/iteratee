@@ -1,6 +1,6 @@
 {-# LANGUAGE BangPatterns #-}
 
-module Main where
+module BenchIO where
 
 import Prelude hiding (null, length)
 import Data.ByteString (ByteString)
@@ -56,7 +56,9 @@ testFdFold = fileDriverFd bufSize sum file >> return ()
   sum :: Iteratee ByteString IO Word8
   sum = foldl' (+) 0
 
-main = defaultMain
+main = defaultMain allIOBenches
+
+allIOBenches =
   [
    bgroup "String" [
      bench "Fd" testFdString

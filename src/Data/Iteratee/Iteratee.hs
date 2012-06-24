@@ -310,7 +310,7 @@ mapChunks f = go
   -- returned output, so again it can be dropped.
   step k (Chunk xs) = k (Chunk (f xs)) >>= \(i',_) ->
                         return (go i', NoData)
-  step k NoData     = k NoData >>= \(i',_) -> return (go i', NoData)
+  step k NoData     = return $ first go (emptyK k)
   step k (EOF mErr) = (idone *** const (EOF mErr)) `liftM` k (EOF mErr)
 {-# INLINE mapChunks #-}
 
@@ -324,7 +324,7 @@ mapChunksM f = go
   go = eneeCheckIfDonePass (icont . step)
   step k (Chunk xs) = f xs >>= k . Chunk >>= \(i', _str) ->
                             return (go i', NoData)
-  step k NoData     = k NoData >>= \(i', _str) -> return (go i', NoData)
+  step k NoData     = return $ first go (emptyK k)
   step k (EOF mErr) = (idone *** const (EOF mErr)) `liftM` k (EOF mErr)
 {-# INLINE mapChunksM #-}
 

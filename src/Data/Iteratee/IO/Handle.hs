@@ -46,11 +46,10 @@ makeHandleCallback :: forall st m s el.
   -> Handle
   -> Callback st m s
 makeHandleCallback p bsize h st = do
-  n' <- (try $ liftBase $ hGetBuf h p bsize) :: m (Either SomeException Int)
+  n' <- (liftBase $ hGetBuf h p bsize)
   case n' of
-    Left e -> return $ Left e
-    Right 0 -> return $ Right ((Finished, st), empty)
-    Right n -> liftBase $ (\s -> Right ((HasMore, st), s)) <$>
+    0 -> return $ ((Finished, st), empty)
+    n -> liftBase $ (\s -> ((HasMore, st), s)) <$>
                  readFromPtr p (fromIntegral n)
 
 

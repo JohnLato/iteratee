@@ -89,73 +89,69 @@ mapChunksPT :: (Monad m) => (s -> s') -> Enumeratee s s' m a
 mapChunksPT f = go
  where
   go = eneeCheckIfDonePass (icont . step)
-  step k (Chunk xs) = k (Chunk (f xs)) >>= \(i',_) ->
-                          return (go i', NoData)
-  step k NoData     = return $ first go (emptyK k)
-  step k (EOF mErr) = k (EOF mErr) >>= (\(i',_) ->
-                          return (go i' , EOF mErr))
+  step k (Chunk xs)   = doContEtee go k (f xs)
+  step k NoData       = contMoreM (go (icont k))
+  step k s@(EOF mErr) = k (EOF mErr) >>= \ret -> contDoneM (wrapCont ret) s
 {-# INLINE mapChunksPT #-}
+  {-
+  step k (Chunk xs) = k (Chunk (f xs)) >>= \ret -> return $ case ret of
+                        ContMore i       -> ContMore (go i)
+                        ContErr  i e     -> ContErr (go i) e
+                        ContDone a _str' -> ContDone (idone a) NoData
+  step k NoData     = contMoreM (go (icont k))
+
+  step k s@EOF{}    = contDoneM (icont k) s
+  -}
 
 -- | Convert a stream of @s@ to a stream of @s'@ using the supplied function.
 -- 
 -- A version of 'mapChunksM' that sends 'EOF's to the inner iteratee.
 mapChunksMPT
-  :: (Monad m, Nullable s)
+  :: (Monad m)
   => (s -> m s')
   -> Enumeratee s s' m a
 mapChunksMPT f = go
  where
   go = eneeCheckIfDonePass (icont . step)
-  step k (Chunk xs) = f xs >>= k . Chunk >>= \(i', _str) ->
-                          return (go i', NoData)
-  step k NoData     = return $ first go (emptyK k)
-  step k (EOF mErr) = k (EOF mErr) >>= \(i',_) ->
-                          return (go i', EOF mErr)
+  -- step :: (Stream s' -> m (ContReturn s' m a))-> Stream s -> m (ContReturn s m (Iteratee s' m a))
+  step k (Chunk xs)   = f xs >>= doContEtee go k
+  step k NoData       = contMoreM (go (icont k))
+  step k s@(EOF mErr) = k (EOF mErr) >>= \ret -> case ret of
+                          ContDone a _ -> contDoneM (idone a) s
+                          ContMore i   -> contDoneM i s
+                          ContErr  i e -> contDoneM i s
 {-# INLINE mapChunksMPT #-}
 
 -- |Convert one stream into another, not necessarily in lockstep.
 -- 
 -- A version of 'convStream' that sends 'EOF's to the inner iteratee.
 convStreamPT
-  :: (Monad m, Nullable s)
+  :: (Monad m)
   =>  Iteratee s m s'
   -> Enumeratee s s' m a
 convStreamPT fi = go
   where
     go = eneeCheckIfDonePass check
-    check k = isStreamFinished >>= maybe (step k)
-                  (\e -> case fromException e of
-                    Just EofException -> lift (k (EOF Nothing))  >>= go . fst
-                    Nothing           -> lift (k (EOF (Just e))) >>= go . fst)
-    step k = fi >>= lift . k . Chunk >>= go . fst
+    check k = isStreamFinished >>= maybe (step k) (hndl k)
+    hndl k (EOF e)       = lift (k (EOF e)) >>= go . wrapCont
+    step k = fi >>= lift . doContIteratee k . Chunk >>= go
 {-# INLINABLE convStreamPT #-}
 
 -- |The most general stream converter.
 -- 
 -- A version of 'unfoldConvStream' that sends 'EOF's to the inner iteratee.
 unfoldConvStreamPT ::
- (Monad m, Nullable s) =>
+ (Monad m) =>
   (acc -> Iteratee s m (acc, s'))
   -> acc
   -> Enumeratee s s' m a
-unfoldConvStreamPT f acc0 = go acc0
-  where
-    go acc = eneeCheckIfDonePass (check acc)
-    check acc k = isStreamFinished >>= maybe (step acc k)
-                      (\e -> case fromException e of
-                        Just EofException -> lift (k (EOF Nothing))
-                                              >>= go acc . fst
-                        Nothing -> lift (k (EOF (Just e)))
-                                     >>= go acc . fst )
-    step acc k = f acc
-                   >>= \(acc',s') -> lift (k (Chunk s'))
-                     >>= go acc' . fst
+unfoldConvStreamPT fi acc0 = unfoldConvStreamCheckPT eneeCheckIfDonePass fi acc0
 {-# INLINABLE unfoldConvStreamPT #-}
 
 -- | A version of 'unfoldConvStreamCheck' that sends 'EOF's
 -- to the inner iteratee.
 unfoldConvStreamCheckPT
-  :: (Monad m, Nullable elo)
+  :: (Monad m)
   => ((Cont eli m a -> Iteratee elo m (Iteratee eli m a))
       -> Enumeratee elo eli m a
      )
@@ -165,14 +161,13 @@ unfoldConvStreamCheckPT
 unfoldConvStreamCheckPT checkDone f acc0 = go acc0
   where
     go acc = checkDone (check acc)
-    check acc k = isStreamFinished >>= maybe (step acc k)
-                      (\e -> case fromException e of
-                        Just EofException -> lift (k (EOF Nothing))
-                                              >>= go acc . fst
-                        Nothing -> lift (k (EOF (Just e))) >>= go acc . fst )
+    check acc k = isStreamFinished >>= maybe (step acc k) (hndl acc k)
+    hndl acc k (EOF e)  = lift (k (EOF e)) >>= go acc . wrapCont
+
     step acc k = do
       (acc',s') <- f acc
-      lift (k (Chunk s')) >>= go acc' . fst
+      i' <- lift . doContIteratee k $ Chunk s'
+      go acc' i'
 {-# INLINABLE unfoldConvStreamCheckPT #-}
 
 -- -------------------------------------
@@ -187,18 +182,41 @@ breakEPT cpred = go
  where
   go = eneeCheckIfDonePass (icont . step)
   step k s'@(Chunk s)
-      | LL.null s  = return (icont (step k), s')
+      | LL.null s  = contMoreM (icont (step k))
       | otherwise  = case LL.break cpred s of
         (str', tail')
-          | LL.null tail' -> (go *** const mempty) <$> k (Chunk str')
-          | otherwise     -> (idone *** const (Chunk tail')) <$> k (Chunk str')
-  step k NoData         =  return (emptyK (step k))
-  step k stream@(EOF{}) =  (idone *** const stream) <$> k stream
+          | LL.null tail' -> doContEtee go k str'
+          | otherwise     -> k (Chunk str') >>= \ret -> case ret of
+                              ContDone a _ -> contDoneM (idone a) (Chunk tail')
+                              ContMore i   -> contDoneM i (Chunk tail')
+                              ContErr  i e -> contDoneM (ierr i e) (Chunk tail')
+  step k NoData         =  continue (step k)
+  step k stream@(EOF{}) =  k stream >>= \ret -> case ret of
+                              ContDone a _ -> contDoneM (idone a) stream
+                              ContMore i   -> contDoneM i stream
+                              ContErr  i e -> contDoneM (ierr i e) stream
 {-# INLINE breakEPT #-}
+  {-
+  go = eneeCheckIfDonePass (icont . step)
+  step k (Chunk s)
+    | LL.null s = continue (step k)
+    | otherwise = case LL.break cpred s of
+        (str', tail')
+          | LL.null tail' -> do
+              ret <- k (Chunk str')
+              doContEtee ((<* dropWhile (not . cpred)) . go) k str'
+                               -- if the inner iteratee completes before
+                               -- the predicate is met, elements still
+                               -- need to be dropped.
+          | otherwise -> k (Chunk str') >>= \ret ->
+                            contDoneM (wrapCont ret) (Chunk str')
+  step k NoData       =  continue (step k)
+  step k stream@EOF{} =  contDoneM (icont k) stream
+  -}
 
 -- | A variant of 'Data.Iteratee.ListLike.take' that passes 'EOF's.
 takePT ::
-  (Monad m, Nullable s, LL.ListLike s el)
+  (Monad m, LL.ListLike s el)
   => Int   -- ^ number of elements to consume
   -> Enumeratee s s m a
 takePT n' iter
@@ -212,17 +230,27 @@ takePT n' iter
   onReq mb doB = ireq mb (takePT n' . doB)
 
   step n k (Chunk str)
-      | LL.null str        = return $ emptyK (step n k)
-      | LL.length str <= n = (takePT (n - LL.length str) *** const mempty)
-                             <$> k (Chunk str)
-      | otherwise          = (idone *** const (Chunk s2)) <$> k (Chunk s1)
+      | LL.null str        = continue (step n k)
+      | LL.length str <= n = k (Chunk str) >>= \ret -> case ret of
+                              ContDone a _ -> contMoreM (takePT (n-LL.length str)
+                                                                (idone a))
+                              ContMore i  -> contMoreM (takePT (n-LL.length str) i)
+                              ContErr i e -> contErrM (takePT (n-LL.length str) i)
+                                                      e
+      | otherwise          = k (Chunk s1) >>= \ret -> case ret of
+                              ContDone a _ -> contDoneM (idone a) (Chunk s2)
+                              ContMore i   -> contDoneM i (Chunk s2)
+                              ContErr i e  -> contErrM (idone i) e
       where (s1, s2) = LL.splitAt n str
-  step  n k NoData         = return (emptyK (step n k))
-  step _n k stream@(EOF{}) = (idone *** const stream) <$> k stream
+  step  n k NoData         = continue (step n k)
+  step n k stream@EOF{} = k stream >>= \rk -> case rk of
+         ContDone a _str' -> contDoneM (idone a) stream
+         ContMore inner   -> contDoneM inner stream
+         ContErr inner e  -> contDoneM (ierr inner e) stream
 {-# INLINE takePT #-}
 
 -- | A variant of 'Data.Iteratee.ListLike.takeUpTo' that passes 'EOF's.
-takeUpToPT :: (Monad m, Nullable s, LL.ListLike s el) => Int -> Enumeratee s s m a
+takeUpToPT :: (Monad m, LL.ListLike s el) => Int -> Enumeratee s s m a
 takeUpToPT i iter
  | i <= 0    = idone iter
  | otherwise = runIter iter onDone onCont onErr onReq
@@ -234,27 +262,44 @@ takeUpToPT i iter
     onReq mb doB = ireq mb (takeUpToPT i . doB)
 
     step n k (Chunk str)
-      | LL.null str       = return $ emptyK (step n k)
-      | LL.length str < n = first (takeUpToPT (n - LL.length str))
-                            <$> k (Chunk str)
+      | LL.null str       = continue (step n k)
+      | LL.length str < n = k (Chunk str) >>= \ret -> case ret of
+                              ContDone a str' -> contDoneM (idone a) str'
+                              ContMore i -> contMoreM (takeUpToPT
+                                                        (n - LL.length str)
+                                                        i)
+                              ContErr i e -> contErrM (takeUpToPT
+                                                        (n - LL.length str)
+                                                        i)
+                                                      e
+
+                            -- first (takeUpToPT (n - LL.length str))
+                            -- <$> k (Chunk str)
       | otherwise         = do
          -- check to see if the inner iteratee has completed, and if so,
          -- grab any remaining stream to put it in the outer iteratee.
          -- the outer iteratee is always complete at this stage, although
          -- the inner may not be.
          let (s1, s2) = LL.splitAt n str
-         (iter', preStr) <- k (Chunk s1)
-         case preStr of
-              (Chunk preC)
-                | LL.null preC -> return (idone iter', Chunk s2)
-                | otherwise    -> return (idone iter'
-                                     , Chunk $ preC `LL.append` s2)
-              NoData           -> return (idone iter', Chunk s2)
-              -- this case shouldn't ever happen, except possibly
-              -- with broken iteratees
-              _                -> return (idone iter', preStr)
-    step  n k NoData         = return (emptyK (step n k))
-    step _n k stream@(EOF{}) = (idone *** const stream) <$> k stream
+         ret <- k (Chunk s1)
+         case ret of
+            ContDone a preStr -> case preStr of
+                (Chunk pre)
+                  | LL.null pre -> contDoneM (idone a) $ Chunk s2
+                  | otherwise   -> contDoneM (idone a) $ Chunk $ pre `LL.append` s2
+                NoData          -> contDoneM (idone a) $ Chunk s2
+
+                -- this case shouldn't ever happen, except possibly
+                -- with broken iteratees
+                -- EOF{}           -> contDoneM (idone a) preStr
+
+            ContMore i   -> contDoneM i (Chunk s2)
+            ContErr  i e -> contErrM (idone i) e
+    step n k NoData         = continue (step n k)
+    step n k stream@EOF{} = k stream >>= \rk -> case rk of
+           ContDone a _str' -> contDoneM (idone a) stream
+           ContMore inner   -> contDoneM inner stream
+           ContErr inner e  -> contDoneM (ierr inner e) stream
 {-# INLINE takeUpToPT #-}
 
 -- | A variant of 'Data.Iteratee.ListLike.takeWhileE' that passes 'EOF's.
@@ -287,7 +332,7 @@ rigidMapStreamPT f = mapChunksPT (LL.rigidMap f)
 
 -- | A variant of 'Data.Iteratee.ListLike.filter' that passes 'EOF's.
 filterPT
-  :: (Monad m, Nullable s, LL.ListLike s el)
+  :: (Monad m, LL.ListLike s el)
   => (el -> Bool)
   -> Enumeratee s s m a
 filterPT p = convStreamPT (LL.filter p <$> getChunk)

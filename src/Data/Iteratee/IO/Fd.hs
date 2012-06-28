@@ -43,7 +43,7 @@ import Foreign.Marshal.Alloc
 
 import System.IO (SeekMode(..))
 
-import "unix-bytestring" System.Posix.IO.ByteString
+import "unix-bytestring" System.Posix.IO.ByteString (tryFdSeek)
 
 -- ------------------------------------------------------------------------
 -- Binary Random IO enumerators
@@ -55,11 +55,10 @@ makefdCallback ::
   -> Fd
   -> Callback st m s
 makefdCallback p bufsize fd st = do
-  n <- liftBase $ tryFdReadBuf fd (castPtr p) bufsize
+  n <- liftBase $ fdReadBuf fd (castPtr p) bufsize
   case n of
-    Left  (Errno err) -> return $ Left (error $ "read failed: " ++ show err)
-    Right 0   -> liftBase yield >> return (Right ((Finished, st), empty))
-    Right n'  -> liftM (\s -> Right ((HasMore, st), s)) .
+    0   -> liftBase yield >> return ((Finished, st), empty)
+    n'  -> liftM (\s -> ((HasMore, st), s)) .
                    liftBase $ readFromPtr p (fromIntegral n')
 {-# INLINABLE makefdCallback #-}
 

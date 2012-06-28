@@ -46,7 +46,7 @@ printLines = lines'
 --  this function should be used in preference to printLines when possible,
 --  as it is more efficient with long lines.
 printLinesUnterminated :: forall s el.
-                       (Eq el, Nullable s, LL.StringLike s, LL.ListLike s el)
+                       (Eq el, LL.StringLike s, LL.ListLike s el)
                        => Iteratee s IO ()
 printLinesUnterminated = lines'
  where
@@ -58,7 +58,7 @@ printLinesUnterminated = lines'
   t1 :: s
   t1 = LL.fromString "\r\n"
 
-terminators :: (Eq el, Nullable s, LL.StringLike s, LL.ListLike s el)
+terminators :: (Eq el, LL.StringLike s, LL.ListLike s el)
             => Iteratee s IO Int
 terminators = do
   l <- heads (LL.fromString "\r\n")
@@ -74,31 +74,33 @@ terminators = do
 -- character stream and the enumerator of the line stream.
 
 enumLines
-  :: (LL.ListLike s el, LL.StringLike s, Nullable s, Monad m) =>
+  :: (LL.ListLike s Char, LL.StringLike s, Monad m) =>
      Enumeratee s [s] m a
 enumLines = convStream getter
   where
     getter = icontP step
-    lChar = (== '\n') . last . LL.toString
+    lChar = (== '\n') . LL.last
     step (Chunk xs)
-      | LL.null xs = (getter, Chunk xs)
-      | lChar xs   = (idone (LL.lines xs), mempty)
-      | otherwise  = (icontP (step' xs), mempty)
-    step str       = (getter, str)
+      | LL.null xs = ContMore getter
+      | lChar xs   = ContDone (LL.lines xs) mempty
+      | otherwise  = continueP (step' xs)
+    step NoData    = ContMore getter
+    step s@EOF{}   = ContDone mempty s
+    step' xs NoData = continueP (step' xs)
     step' xs (Chunk ys)
-      | LL.null ys = (icontP (step' xs), Chunk ys)
-      | lChar ys   = (idone (LL.lines . mappend xs $ ys), mempty)
-      | otherwise  = let w' = LL.lines $ mappend xs ys
+      | LL.null ys = continueP (step' xs)
+      | lChar ys   = ContDone (LL.lines . mappend xs $ ys) mempty
+      | otherwise  = let w' = LL.lines $ LL.append xs ys
                          ws = init w'
                          ck = last w'
-                     in (idone ws, Chunk ck)
-    step' xs str   = (idone (LL.lines xs), str)
+                     in ContDone ws $ Chunk ck
+    step' xs str@EOF{} = ContDone (LL.lines xs) str
 
 -- |Convert the stream of characters to the stream of words, and
 -- apply the given iteratee to enumerate the latter.
 -- Words are delimited by white space.
 -- This is the analogue of List.words
-enumWords :: (LL.ListLike s Char, Nullable s, Monad m) => Enumeratee s [s] m a
+enumWords :: (LL.ListLike s Char, Monad m) => Enumeratee s [s] m a
 enumWords = convStream $ I.dropWhile isSpace >> liftM (:[]) (I.break isSpace)
 {-# INLINE enumWords #-}
 
@@ -112,18 +114,20 @@ enumWordsBS iter = convStream getter iter
     getter = icontP step
     lChar = isSpace . BC.last
     step (Chunk xs)
-      | BC.null xs = (getter, mempty)
-      | lChar xs   = (idone (BC.words xs), Chunk BC.empty)
-      | otherwise  = (icontP (step' xs), mempty)
-    step str       = (idone mempty, str)
+      | BC.null xs = ContMore getter
+      | lChar xs   = ContDone (BC.words xs) $ Chunk BC.empty
+      | otherwise  = continueP (step' xs)
+    step NoData    = ContMore getter
+    step s@EOF{}   = ContDone mempty s
+    step' xs NoData = continueP (step' xs)
     step' xs (Chunk ys)
-      | BC.null ys = (icontP (step' xs), mempty)
-      | lChar ys   = (idone (BC.words . BC.append xs $ ys), mempty)
-      | otherwise  = let w' = BC.words . BC.append xs $ ys
+      | BC.null ys = continueP (step' xs)
+      | lChar ys   = ContDone (BC.words . BC.append xs $ ys) mempty
+      | otherwise  = let w' = BC.words $ BC.append xs ys
                          ws = init w'
                          ck = last w'
-                     in (idone ws, Chunk ck)
-    step' xs str   = (idone (BC.words xs), str)
+                     in ContDone ws $ Chunk ck
+    step' xs str@EOF{} = ContDone (BC.words xs) str
 
 {-# INLINE enumWordsBS #-}
 
@@ -136,16 +140,18 @@ enumLinesBS = convStream getter
     getter = icontP step
     lChar = (== '\n') . BC.last
     step (Chunk xs)
-      | BC.null xs = (getter, Chunk xs)
-      | lChar xs   = (idone (BC.lines xs), Chunk BC.empty)
-      | otherwise  = (icontP (step' xs), mempty)
-    step str       = (idone mempty, str)
+      | BC.null xs = ContMore getter
+      | lChar xs   = ContDone (BC.lines xs) $ Chunk BC.empty
+      | otherwise  = continueP (step' xs)
+    step NoData    = ContMore getter
+    step s@EOF{}   = ContDone mempty s
+    step' xs NoData = continueP (step' xs)
     step' xs (Chunk ys)
-      | BC.null ys = (icontP (step' xs), mempty)
-      | lChar ys   = (idone (BC.lines . BC.append xs $ ys), mempty)
+      | BC.null ys = continueP (step' xs)
+      | lChar ys   = ContDone (BC.lines . BC.append xs $ ys) mempty
       | otherwise  = let w' = BC.lines $ BC.append xs ys
                          ws = init w'
                          ck = last w'
-                     in (idone ws, Chunk ck)
-    step' xs str   = (idone (BC.lines xs), str)
+                     in ContDone ws $ Chunk ck
+    step' xs str@EOF{} = ContDone (BC.lines xs) str
 

@@ -5,6 +5,7 @@
             ,UndecidableInstances
             ,RankNTypes
             ,DeriveDataTypeable
+            ,DeriveFunctor
             ,ScopedTypeVariables
             ,ExistentialQuantification #-}
 
@@ -18,6 +19,9 @@ module Data.Iteratee.Base (
   ,module Data.Iteratee.Exception
   -- ** Iteratees
   ,Iteratee (..)
+  -- ** Iteratee continuation returns
+  ,ContReturn (..)
+  ,Cont
   -- * Functions
   -- ** Control functions
   ,run
@@ -34,11 +38,22 @@ module Data.Iteratee.Base (
   ,idoneM
   ,ierrM
   -- ** Returning from continuations
-  ,idoneT
-  ,emptyK
-  ,emptyKP
+  ,continue
+  ,continueErr
+  ,continueP
+  ,continueErrP
+  ,wrapCont
+  -- ** Continuation-return handling
+  ,contDoneM
+  ,contMoreM
+  ,contErrM
+  ,nextStep
+  ,mapCont
+  ,mapContRet
+  ,doContIteratee
+  ,doContEtee
+  ,doCont
   -- ** Stream Functions
-  ,setEOF
   -- * Classes
   ,module X
 )
@@ -47,7 +62,6 @@ where
 import Prelude hiding (null, catch)
 import Data.Iteratee.Exception
 import Data.Iteratee.Base.LooseMap as X
-import Data.Nullable               as X
 
 import Data.Maybe
 import Data.Monoid
@@ -76,7 +90,7 @@ import Data.Data
 -- to arrive.
 
 data Stream c =
-  EOF (Maybe SomeException)
+  EOF (Maybe EnumException)
   | NoData
   | Chunk c
   deriving (Show, Typeable)
@@ -102,21 +116,126 @@ instance Functor Stream where
   fmap _ NoData     = NoData
   fmap _ (EOF mErr) = EOF mErr
 
--- ----------------------------------------------
--- create exception type hierarchy
 
--- |Produce the 'EOF' error message.  If the stream was terminated because
--- of an error, keep the error message.
-setEOF :: Stream c -> SomeException
-setEOF (EOF (Just e)) = e
-setEOF _              = toException EofException
+-- | The continuation type of an incomplete iteratee.
+type Cont s m a = Stream s -> m (ContReturn s m a)
+
+
+-- ----------------------------------------------
+-- continuation creation and handling
+
+
+data ContReturn s m a =
+    ContDone a (Stream s)
+  | ContMore (Iteratee s m a)
+  | ContErr  (Iteratee s m a) IterException
+  deriving (Functor)
+
+-- | Create a @ContReturn@ in a monad
+--
+-- contDoneM a s === return (ContDone a s)
+contDoneM :: Monad m => a -> Stream s -> m (ContReturn s m a)
+contDoneM a = return . ContDone a
+{-# INLINE contDoneM #-}
+
+
+-- | Create a @ContReturn@ in a monad
+--
+-- contMoreM === return . ContMore
+contMoreM :: Monad m => Iteratee s m a -> m (ContReturn s m a)
+contMoreM = return . ContMore
+{-# INLINE contMoreM #-}
+
+-- | Create a @ContReturn@ from a step function.
+nextStep :: Monad m => Cont s m a -> m (ContReturn s m a)
+nextStep = contMoreM . icont
+{-# INLINE nextStep #-}
+
+-- | Create a @ContReturn@ in a monad
+--
+-- contErrM i e === return (ContErr i e)
+contErrM :: (Monad m, IException e) => Iteratee s m a -> e -> m (ContReturn s m a)
+contErrM i = return . ContErr i . toIterException
+{-# INLINE contErrM #-}
+
+-- | Map over an iteratee continuation.
+--
+-- Sometimes useful for creating iteratees
+mapCont
+  :: Monad m
+  => (Iteratee s m a -> Iteratee s m b)
+  -> (a -> b)
+  -> Cont s m a
+  -> Iteratee s m b
+mapCont fi f k = icont $ \str -> k str >>= \res -> return $ case res of
+          ContDone a str' -> ContDone (f a) str'
+          ContMore i'     -> ContMore (fi i')
+          ContErr  i' e   -> ContErr  (fi i') e
+{-# INLINE mapCont #-}
+
+mapContRet
+  :: Monad m
+  => (Iteratee s m a -> Iteratee s m b)
+  -> (a -> Stream s -> b)
+  -> ContReturn s m a
+  -> ContReturn s m b
+mapContRet fi f ret = case ret of
+    ContDone a str' -> ContDone (f a str') str'
+    ContMore i'     -> ContMore (fi i')
+    ContErr  i' e   -> ContErr (fi i') e
+{-# INLINE mapContRet #-}
+
+
+-- | Create an iteratee from a @ContReturn@.  Sometimes used when writing
+-- enumerators.
+doContIteratee
+  :: Monad m
+  => Cont s m a
+  -> Stream s
+  -> m (Iteratee s m a)
+doContIteratee k s = k s >>= \res -> case res of
+    ContDone a _ -> idoneM a
+    ContMore i   -> return i
+    ContErr  i e -> ierrM i e
+{-# INLINE doContIteratee #-}
+
+-- | Create a @ContReturn@ from a stepping function, a continuation, and
+-- an input stream.  Useful when writing enumeratees.
+doContEtee
+  :: Monad m
+  => (Iteratee sInner m a -> Iteratee sOuter m (Iteratee sInner m a))
+  -> (Stream sInner -> m (ContReturn sInner m a))
+  -> sInner
+  -> m (ContReturn sOuter m (Iteratee sInner m a))
+doContEtee go k s = k (Chunk s) >>= \ret -> case ret of
+    ContDone a _ -> contDoneM (idone a) NoData
+    ContMore i   -> contMoreM (go i)
+    ContErr  i e -> contErrM (go i) e
+{-# INLINE doContEtee #-}
+
+-- | A generic @ContReturn@ handler, if you don't want to write a bunch of
+-- case statements.
+doCont
+  :: Monad m
+  => Cont s m a
+  -> Stream s
+  -> (a -> Stream s -> m b)
+  -> (Iteratee s m a -> m b)
+  -> (Iteratee s m a -> IterException -> m b)
+  -> m b
+doCont k s oD oC oE = k s >>= \res -> case res of
+    ContDone a s -> oD a s
+    ContMore i   -> oC i
+    ContErr  i e -> oE i e
+{-# INLINE doCont #-}
+
 
 -- ----------------------------------------------
 -- | Monadic iteratee
 newtype Iteratee s m a = Iteratee{ runIter :: forall r.
           (a -> r) ->
-          ((Stream s -> m (Iteratee s m a, Stream s)) -> r) ->
-          (Iteratee s m a -> SomeException -> r) ->
+          ((Stream s -> m (ContReturn s m a)) -> r) ->
+          (Iteratee s m a -> IterException -> r) ->
           (forall b. m b -> (b -> (Iteratee s m a)) -> r) ->
           r}
 
@@ -133,37 +252,64 @@ idone :: a -> Iteratee s m a
 idone a = Iteratee $ \onDone _ _ _ -> onDone a
 {-# INLINE idone #-}
 
-idoneT :: a -> Stream s -> (Iteratee s m a, Stream s)
-idoneT a s = (idone a, s)
-{-# INLINE idoneT #-}
-
-icont :: (Stream s -> m (Iteratee s m a, Stream s)) -> Iteratee s m a
+-- | Create an iteratee from a continuation
+icont :: (Stream s -> m (ContReturn s m a)) -> Iteratee s m a
 icont k = Iteratee $ \_ onCont _ _ -> onCont k
 {-# INLINE icont #-}
 
-icontP :: Monad m => (Stream s -> (Iteratee s m a, Stream s)) -> Iteratee s m a
+-- | Create an iteratee from a pure continuation
+icontP :: Monad m => (Stream s -> (ContReturn s m a)) -> Iteratee s m a
 icontP k = Iteratee $ \_ onCont _ _ -> onCont (return . k)
 {-# INLINE icontP #-}
 
--- | Create a continuation return value with an empty chunk
-emptyK
+-- | Create a continuation return value from a continuation
+continue
   :: Monad m
-  => (Stream s -> m (Iteratee s m a, Stream s))
-  -> (Iteratee s m a, Stream b)
-emptyK k = (icont k, NoData)
-{-# INLINE emptyK #-}
+  => Cont s m a
+  -> m (ContReturn s m a)
+continue = contMoreM . icont
+{-# INLINE continue #-}
 
-emptyKP :: Monad m => (Stream s -> (Iteratee s m a, Stream s)) -> (Iteratee s m a, Stream b)
-emptyKP k = (icontP k, NoData)
-{-# INLINE emptyKP #-}
+-- | Create a continuation return value from a pure continuation function
+continueP
+  :: Monad m
+  => (Stream s -> ContReturn s m a)
+  -> ContReturn s m a
+continueP = ContMore . icontP
+{-# INLINE continueP #-}
+
+-- | Wrap a continuation return into an iteratee.  This may cause data loss
+-- if not used properly.
+wrapCont :: ContReturn s m a -> Iteratee s m a
+wrapCont (ContDone a _) = idone a
+wrapCont (ContMore i)   = i
+wrapCont (ContErr i e)  = ierr i e
+{-# INLINE wrapCont #-}
+
+continueErr
+  :: (IException e, Monad m)
+  => e
+  -> Cont s m a
+  -> m (ContReturn s m a)
+continueErr e k = return $ ContErr (icont k) (toIterException e)
+{-# INLINE continueErr #-}
+
+continueErrP
+  :: (IException e, Monad m)
+  => e
+  -> (Stream s -> ContReturn s m a)
+  -> ContReturn s m a
+continueErrP e k = ContErr (icontP k) (toIterException e)
+{-# INLINE continueErrP #-}
+
 
 -- | identical to icont, left in for compatibility-ish reasons
-liftI :: Monad m => (Stream s -> (Iteratee s m a, Stream s)) -> Iteratee s m a
+liftI :: Monad m => (Stream s -> ContReturn s m a) -> Iteratee s m a
 liftI = icontP
 {-# INLINE liftI #-}
 
-ierr :: Iteratee s m a -> SomeException -> Iteratee s m a
-ierr i e = Iteratee $ \_ _ onErr _ -> onErr i e
+ierr :: IException e => Iteratee s m a -> e -> Iteratee s m a
+ierr i e = Iteratee $ \_ _ onErr _ -> onErr i (toIterException e)
 {-# INLINE ierr #-}
 
 ireq :: m b -> (b -> Iteratee s m a) -> Iteratee s m a
@@ -173,15 +319,17 @@ ireq mb bf = Iteratee $ \_ _ _ onReq -> onReq mb bf
 -- Monadic versions, frequently used by enumerators
 idoneM :: Monad m => a -> m (Iteratee s m a)
 idoneM x = return $ idone x
+{-# INLINE idoneM #-}
 
-ierrM :: Monad m => Iteratee s m a -> SomeException -> m (Iteratee s m a)
+ierrM :: (IException e, Monad m) => Iteratee s m a -> e -> m (Iteratee s m a)
 ierrM i e = return $ ierr i e
+{-# INLINE ierrM #-}
 
 instance forall s m. (Functor m) => Functor (Iteratee s m) where
   {-# INLINE fmap #-}
   fmap f m = runIter m (idone . f) onCont onErr (onReq f)
     where
-      onCont k      = icont $ fmap (first (fmap f)) . k
+      onCont k      = icont $ fmap (fmap f) . k
       onErr i e     = ierr (fmap f i) e
       onReq :: (a -> b) -> m x -> (x -> Iteratee s m a) -> Iteratee s m b
       onReq ff mb doB = ireq mb (fmap ff . doB)
@@ -204,22 +352,20 @@ bindIter :: forall s m a b. (Monad m)
     -> Iteratee s m b
 bindIter m f = runIter m f onCont onErr onReq
   where
+    push :: Iteratee s m b -> Stream s -> m (ContReturn s m b)
     push i str = runIter i
-                         (\a         -> return (idone a, str))
+                         (\a         -> return $ ContDone a str)
                          (\k         -> k str)
-                         (\iResume e -> return (ierr iResume e, EOF (Just e)))
+                         (\iResume e -> return $ ContErr (ierr iResume e) e)
                          (\mb doB    -> mb >>= \b -> push (doB b) str)
+    onCont :: (Stream s -> m (ContReturn s m a)) -> Iteratee s m b
     onCont k  = icont $ \str -> do
-                  (i', strRem) <- k str
-                  let oD a  = push (f a) strRem
-                      oC _k = return (i' `bindIter` f, strRem)
-                      oE iResume e = return (ierr (bindIter iResume f) e
-                                             ,EOF (Just e))
-                      oR :: m x -> (x -> Iteratee s m a) -> m (Iteratee s m b, Stream s)
-                      oR mb doB    = mb >>= \b ->
-                                      push (doB b `bindIter` f) strRem
-                  runIter i' oD oC oE oR
-    onErr i e = ierr (i >>= f) e
+                  res <- k str
+                  case res of
+                      ContDone a  strRem -> push (f a) strRem
+                      ContMore i'        -> return $ ContMore (i' `bindIter` f)
+
+    onErr i e = ierr (i `bindIter` f) e
     onReq :: m x -> (x -> Iteratee s m a) -> Iteratee s m b
     onReq mb doB = ireq mb (( `bindIter` f) . doB)
 
@@ -232,24 +378,20 @@ instance (MonadBase b m) => MonadBase b (Iteratee s m) where
 instance (MonadIO m) => MonadIO (Iteratee s m) where
   liftIO = lift . liftIO
 
-instance forall s m. (MonadCatchIO m) =>
-  MonadCatchIO (Iteratee s m) where
-    m `catch` f = let oC k    = icont $ \s -> k s `catch`
-                                  (\e -> return (f e
-                                          , EOF . Just $ toException e))
-                      oE i' e = ierr (i' `catch` f) e
-                  in runIter m idone oC oE (catchOR m f)
-    block       = ilift block
-    unblock     = ilift unblock
 
 -- This definition is pulled out from the MonadCatchIO.catch instance because
 -- it's the simplest way to make the type signatures work out...
-catchOR :: (Exception e, MonadCatchIO m) => Iteratee s m a -> (e -> Iteratee s m a) -> m b -> (b -> Iteratee s m a) -> Iteratee s m a
+catchOR :: (Exception e, MonadCatchIO m)
+        => Iteratee s m a
+        -> (e -> Iteratee s m a)
+        -> m b
+        -> (b -> Iteratee s m a)
+        -> Iteratee s m a
 catchOR _ f mb doB = ireq ((doB `liftM` mb) `catch` (\e -> return (f e) )) id
 
-instance forall s. (Nullable s) => MonadTransControl (Iteratee s) where
+instance forall s. MonadTransControl (Iteratee s) where
   newtype StT (Iteratee s) x =
-    StIter { unStIter :: Either x (Maybe SomeException) }
+    StIter { unStIter :: Either x (Maybe IterException) }
   liftWith f = lift $ f $ \t -> liftM StIter (runIter t
                                  (return . Left)
                                  (const . return $ Right Nothing)
@@ -266,20 +408,22 @@ instance forall s. (Nullable s) => MonadTransControl (Iteratee s) where
 pushoR :: Monad m =>
           m x
        -> (x -> Iteratee s m a)
-       -> m (Either a (Maybe SomeException))
+       -> m (Either a (Maybe IterException))
 pushoR mb doB = mb >>= \b -> runIter (doB b)
    (return . Left)
    (const . return $ Right Nothing)
    (\_ e -> return $ Right (Just e))
    pushoR
 
-te :: SomeException -> Iteratee s m a
+te :: IterException -> Iteratee s m a
 te e = ierr (te e) e
 
-instance (MonadBaseControl b m, Nullable s) => MonadBaseControl b (Iteratee s m) where
+instance (MonadBaseControl b m) => MonadBaseControl b (Iteratee s m) where
   newtype StM (Iteratee s m) a =
     StMIter { unStMIter :: ComposeSt (Iteratee s) m a}
+  {-# INLINE liftBaseWith #-}
   liftBaseWith = defaultLiftBaseWith StMIter
+  {-# INLINE restoreM #-}
   restoreM     = defaultRestoreM unStMIter
 
 -- |Send 'EOF' to the @Iteratee@ and disregard the unconsumed part of the
@@ -290,9 +434,10 @@ run :: forall s m a. Monad m => Iteratee s m a -> m a
 run iter = runIter iter onDone onCont onErr onReq
  where
    onDone  x     = return x
-   onCont  k     = k (EOF Nothing) >>= \(i,_) ->
-                     runIter i onDone onCont' onErr onReq
-   onCont' _     = E.throw EofException
+   onCont  k     = k (EOF Nothing) >>= \res -> case res of
+                      ContDone a _ -> return a
+                      ContMore _   -> E.throw EofException
+                      ContErr  _ e -> E.throw e
    onErr _ e     = E.throw e
    onReq :: m x -> (x -> Iteratee s m a) -> m a
    onReq mb doB  = mb >>= run . doB
@@ -301,21 +446,22 @@ run iter = runIter iter onDone onCont onErr onReq
 -- |Run an iteratee, returning either the result or the iteratee exception.
 -- Note that only internal iteratee exceptions will be returned; exceptions
 -- thrown with @Control.Exception.throw@ or @Control.Monad.CatchIO.throw@ will
--- not be returned.
+-- not be returned, and instead will be thrown in the 'm' monad.
 -- 
 -- See 'Data.Iteratee.Exception.IFException' for details.
-tryRun :: forall s m a e. (Exception e, Monad m)
+tryRun :: forall s m a. (Monad m)
   => Iteratee s m a
-  -> m (Either e a)
+  -> m (Either IFException a)
 tryRun iter = runIter iter onD onC onE onR
   where
-    onD  x     = return $ Right x
-    onC  k     = k (EOF Nothing) >>= \(i,_) -> runIter i onD onC' onE onR
-    onC' _     = return $ maybeExc (toException EofException)
+    onD        = return . Right
+    onC  k     = doCont k (EOF Nothing) (\a _ -> return $ Right a)
+                                        (const . return $ maybeExc EofException)
+                                        (\_ e -> return $ maybeExc e)
     onE   _ e  = return $ maybeExc e
-    onR :: m x -> (x -> Iteratee s m a) -> m (Either e a)
+    onR :: m x -> (x -> Iteratee s m a) -> m (Either IFException a)
     onR mb doB = mb >>= tryRun . doB
-    maybeExc e = maybe (Left (E.throw e)) Left (fromException e)
+    maybeExc e = maybe (Left (E.throw e)) Left (fromException $ toException e)
 
 -- | Lift a computation in the inner monad of an iteratee.
 -- 
@@ -336,7 +482,10 @@ ilift :: forall m n s a.
   -> Iteratee s n a
 ilift f i = runIter i idone onCont onErr  onReq
  where
-  onCont k = icont $ \str -> first (ilift f) `liftM` f (k str)
+  onCont k = icont $ \str -> f (k str) >>= \res -> case res of
+                ContDone a str' -> return $ ContDone a str'
+                ContMore i'     -> return $ ContMore (ilift f i')
+                ContErr  i' e   -> return $ ContErr (ilift f i') e
   onErr = ierr . ilift f
   onReq :: m x -> (x -> Iteratee s m a) -> Iteratee s n a
   onReq mb doB = ireq (liftM (ilift f . doB) (f mb)) id
@@ -351,9 +500,11 @@ ifold :: forall m n acc s a. (Monad m, Monad n)
 ifold f acc i = runIter i onDone onCont onErr onReq
  where
   onDone x = ireq (f (return x) acc) idone
-  onCont k = icont $ \str -> do
-               ((i', strRes), acc') <- f (k str) acc
-               return (ifold f acc' i', strRes)
+  onCont k = icont $ \str -> f (k str) acc >>= \res -> return $ case res of
+                  (ContDone a str', acc') -> ContDone (a, acc') str'
+                  (ContMore i', acc')     -> ContMore (ifold f acc' i')
+                  (ContErr  i' e, acc')   -> ContErr  (ifold f acc' i') e
+
   onErr i' e = ierr (ifold f acc i') e
   onReq :: m x -> (x -> Iteratee s m a) -> Iteratee s n (a, acc)
   onReq mb doB = ireq (f mb acc) (\(b', acc') -> ifold f acc' (doB b'))

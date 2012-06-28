@@ -42,6 +42,7 @@ module Data.Iteratee.Exception (
   IFException (..)
   ,Exception (..)             -- from Control.Exception
   -- ** Enumerator exceptions
+  ,EException (..)
   ,EnumException (..)
   ,DivergentException (..)
   ,EnumStringException (..)
@@ -52,12 +53,16 @@ module Data.Iteratee.Exception (
   ,SeekException (..)
   ,EofException (..)
   ,IterStringException (..)
+  ,IterUnhandledEnumException (..)
   -- * Functions
   ,enStrExc
   ,iterStrExc
+  ,enumStrExc
   ,wrapIterExc
+  ,wrapEnumExc
   ,iterExceptionToException
   ,iterExceptionFromException
+  ,ifExcToIterExc
 )
 where
 
@@ -96,9 +101,19 @@ data EnumException = forall e . Exception e => EnumException e
 instance Show EnumException where
   show (EnumException e) = show e
 
+class Exception e => EException e where
+  toEnumException   :: e -> EnumException
+  toEnumException   = EnumException
+  fromEnumException :: EnumException -> Maybe e
+  fromEnumException = fromException . toException
+
 instance Exception EnumException where
   toException   = ifExceptionToException
   fromException = ifExceptionFromException
+
+instance EException EnumException where
+  toEnumException   = id
+  fromEnumException = Just
 
 enumExceptionToException :: Exception e => e -> SomeException
 enumExceptionToException = toException . IterException
@@ -116,6 +131,8 @@ instance Exception DivergentException where
   toException   = enumExceptionToException
   fromException = enumExceptionFromException
 
+instance EException DivergentException where
+
 -- |Create an enumerator exception from a @String@.
 data EnumStringException = EnumStringException String
   deriving (Show, Typeable)
@@ -123,6 +140,8 @@ data EnumStringException = EnumStringException String
 instance Exception EnumStringException where
   toException   = enumExceptionToException
   fromException = enumExceptionFromException
+
+instance EException EnumStringException where
 
 -- |Create an 'EnumException' from a string.
 enStrExc :: String -> EnumException
@@ -135,6 +154,9 @@ data EnumUnhandledIterException = EnumUnhandledIterException IterException
 instance Exception EnumUnhandledIterException where
   toException   = enumExceptionToException
   fromException = enumExceptionFromException
+
+instance EException EnumUnhandledIterException where
+
 
 -- |Convert an 'IterException' to an 'EnumException'.  Meant to be used
 -- within an @Enumerator@ to signify that it could not handle the
@@ -195,6 +217,20 @@ instance Exception EofException where
 
 instance IException EofException where
 
+-- |The iteratee received an 'EnumException' it could not handle.
+data IterUnhandledEnumException = IterUnhandledEnumException EnumException
+  deriving (Show, Typeable)
+
+instance Exception IterUnhandledEnumException where
+  toException   = iterExceptionToException
+  fromException = iterExceptionFromException
+
+-- |Convert an 'EnumException' to an 'IterException'.  Meant to be used
+-- within an @Iteratee@ to signify that it could not handle the recieved
+-- @EnumException@.
+wrapEnumExc :: EnumException -> IterException
+wrapEnumExc = IterException . IterUnhandledEnumException
+
 -- |An @Iteratee exception@ specified by a @String@.
 data IterStringException = IterStringException String deriving (Typeable, Show)
 
@@ -205,7 +241,16 @@ instance Exception IterStringException where
 instance IException IterStringException where
 
 -- |Create an @iteratee exception@ from a string.
--- This convenience function wraps 'IterStringException' and 'toException'.
-iterStrExc :: String -> SomeException
-iterStrExc= toException . IterStringException
+-- This convenience function wraps 'IterStringException' and 'toIterException'.
+iterStrExc :: String -> IterException
+iterStrExc= toIterException . IterStringException
 
+enumStrExc :: String -> EnumException
+enumStrExc = toEnumException . EnumStringException
+
+ifExcToIterExc :: IFException -> IterException
+ifExcToIterExc ife = let e = ifExceptionToException ife
+                     in case (fromException e, fromException e) of
+                        (Just i, _) -> i
+                        (_, Just e) -> wrapEnumExc e
+                        (_, _)      -> error "iteratee: couldn't convert an 'IFException' to either 'IterException' or 'EnumException'.  How'd that happen?"

@@ -56,7 +56,6 @@ library
     transformers-base         >= 0.4     && < 0.5
 
   exposed-modules:
-    Data.Nullable
     Data.Iteratee
     Data.Iteratee.Base
     Data.Iteratee.Base.ReadableChunk

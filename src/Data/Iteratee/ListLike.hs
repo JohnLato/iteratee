@@ -85,14 +85,14 @@ import qualified Data.ByteString as B
 -- Useful combinators for implementing iteratees and enumerators
 
 -- | Check if a stream has received 'EOF'.
-isFinished :: (Monad m, Nullable s) => Iteratee s m Bool
+isFinished :: (Monad m, LL.ListLike s el) => Iteratee s m Bool
 isFinished = icontP check
   where
   check c@(Chunk xs)
-    | nullC xs    = (icontP check, c)
-    | otherwise   = (idone False, c)
-  check NoData    = (icontP check, NoData)
-  check s@(EOF _) = (idone True, s)
+    | LL.null xs    = continueP check
+    | otherwise   = ContDone False c
+  check NoData    = continueP check
+  check s@(EOF _) = ContDone True s
 {-# INLINE isFinished #-}
 
 -- ------------------------------------------------------------------------
@@ -100,13 +100,13 @@ isFinished = icontP check
 
 -- |Read a stream to the end and return all of its elements as a list.
 -- This iteratee returns all data from the stream *strictly*.
-stream2list :: (Monad m, Nullable s, LL.ListLike s el) => Iteratee s m [el]
+stream2list :: (Monad m, LL.ListLike s el) => Iteratee s m [el]
 stream2list = liftM (concatMap LL.toList) getChunks
 {-# INLINE stream2list #-}
 
 -- |Read a stream to the end and return all of its elements as a stream.
 -- This iteratee returns all data from the stream *strictly*.
-stream2stream :: (Monad m, Nullable s, Monoid s) => Iteratee s m s
+stream2stream :: (Monad m, Monoid s) => Iteratee s m s
 stream2stream = liftM mconcat getChunks
 {-# INLINE stream2stream #-}
 
@@ -131,10 +131,10 @@ break cpred = icontP (step mempty)
   where
     step bfr (Chunk str)  =  case LL.break cpred str of
         (str', tail')
-          | LL.null tail' -> emptyKP (step (bfr `mappend` str))
-          | otherwise     -> idoneT (bfr `mappend` str') $ Chunk tail'
-    step bfr NoData       =  emptyKP (step bfr)
-    step bfr stream       =  idoneT bfr stream
+          | LL.null tail' -> continueP (step (bfr `mappend` str))
+          | otherwise     -> ContDone (bfr `mappend` str') $ Chunk tail'
+    step bfr NoData       =  continueP (step bfr)
+    step bfr stream       =  ContDone bfr stream
 {-# INLINE break #-}
 
 
@@ -146,10 +146,10 @@ head :: (Monad m, LL.ListLike s el) => Iteratee s m el
 head = icontP step
   where
   step (Chunk vec)
-    | LL.null vec  = emptyKP step
-    | otherwise    = idoneT (LL.head vec) $ Chunk $ LL.tail vec
-  step NoData      = emptyKP step
-  step stream      = (ierr (icontP step) (setEOF stream), stream)
+    | LL.null vec  = continueP step
+    | otherwise    = ContDone (LL.head vec) $ Chunk $ LL.tail vec
+  step NoData      = continueP step
+  step str@EOF{}   = ContErr (icontP step) (toIterException EofException)
 {-# INLINE head #-}
 
 -- | Similar to @head@, except it returns @Nothing@ if the stream
@@ -158,26 +158,26 @@ tryHead :: (Monad m, LL.ListLike s el) => Iteratee s m (Maybe el)
 tryHead = icontP step
   where
   step (Chunk vec)
-    | LL.null vec  = emptyKP step
-    | otherwise    = idoneT (Just $ LL.head vec) $ Chunk $ LL.tail vec
-  step NoData      = emptyKP step
-  step stream      = (idone Nothing, stream)
+    | LL.null vec  = continueP step
+    | otherwise    = ContDone (Just $ LL.head vec) $ Chunk $ LL.tail vec
+  step NoData      = continueP step
+  step str@EOF{}   = ContDone Nothing str
 {-# INLINE tryHead #-}
 
 -- |Attempt to read the last element of the stream and return it
 -- Raise a (recoverable) error if the stream is terminated
 -- 
 -- The analogue of @List.last@
-last :: (Monad m, LL.ListLike s el, Nullable s) => Iteratee s m el
+last :: (Monad m, LL.ListLike s el) => Iteratee s m el
 last = icontP (step Nothing)
   where
   step l (Chunk xs)
-    | nullC xs     = (icontP (step l), NoData)
-    | otherwise    = (icontP $ step (Just $ LL.last xs), Chunk LL.empty)
-  step l NoData    = (icontP (step l), NoData)
+    | LL.null xs     = continueP (step l)
+    | otherwise    = continueP $ step (Just $ LL.last xs)
+  step l NoData    = continueP (step l)
   step l s@(EOF _) = case l of
-    Nothing -> (ierr (icontP (step l)) (setEOF s), s)
-    Just x  -> (idone x, s)
+    Nothing -> ContErr (icontP (step l)) (toIterException EofException)
+    Just x  -> ContDone x s
 {-# INLINE last #-}
 
 
@@ -187,23 +187,20 @@ last = icontP (step Nothing)
 -- stream.
 -- For example, if the stream contains 'abd', then (heads 'abc')
 -- will remove the characters 'ab' and return 2.
-heads :: (Monad m, Nullable s, LL.ListLike s el, Eq el)
+heads :: (Monad m, LL.ListLike s el, Eq el)
   => s
   -> Iteratee s m Int
-heads st | nullC st = return 0
-heads st = loop 0 st
+heads st = icontP (step 0 st)
   where
-  loop cnt xs
-    | nullC xs  = return cnt
-    | otherwise = icontP (step cnt xs)
-  step cnt str (Chunk xs) | nullC xs  = emptyKP (step cnt str)
-  step cnt str NoData                 = emptyKP (step cnt str)
-  step cnt str stream     | nullC str = (idone cnt, stream)
-  step cnt str s@(Chunk xs) =
+  step !cnt str ck           | LL.null str = ContDone cnt ck
+  step !cnt str (Chunk xs)   | LL.null xs  = continueP (step cnt str)
+  step !cnt str NoData                     = continueP (step cnt str)
+  step !cnt str stream@EOF{} | LL.null str = ContDone cnt stream
+  step !cnt str s@(Chunk xs) =
     if LL.head str == LL.head xs
        then step (succ cnt) (LL.tail str) (Chunk $ LL.tail xs)
-       else (idone cnt, s)
-  step cnt _ stream         = (idone cnt, stream)
+       else ContDone cnt s
+  step cnt _ stream@EOF{} = ContDone cnt stream
 {-# INLINE heads #-}
 
 
@@ -215,17 +212,17 @@ peek :: (Monad m, LL.ListLike s el) => Iteratee s m (Maybe el)
 peek = icontP step
   where
     step s@(Chunk vec)
-      | LL.null vec = (icontP step, s)
-      | otherwise   = (idone (Just $ LL.head vec), s)
-    step NoData     = emptyKP step
-    step stream     = (idone Nothing, stream)
+      | LL.null vec   = continueP step
+      | otherwise     = ContDone (Just $ LL.head vec) s
+    step NoData       = continueP step
+    step stream@EOF{} = ContDone Nothing stream
 {-# INLINE peek #-}
 
 -- | Return a chunk of @t@ elements length while consuming @d@ elements
 --   from the stream.  Useful for creating a 'rolling average' with
 --  'convStream'.
 roll
-  :: (Monad m, Functor m, Nullable s, LL.ListLike s el, LL.ListLike s' s)
+  :: (Monad m, Functor m, LL.ListLike s el, LL.ListLike s' s)
   => Int  -- ^ length of chunk (t)
   -> Int  -- ^ amount to consume (d)
   -> Iteratee s m s'
@@ -233,16 +230,15 @@ roll t d | t > d  = icontP step
   where
     step (Chunk vec)
       | LL.length vec >= d =
-          (idone (LL.singleton $ LL.take t vec), Chunk $ LL.drop d vec)
+          ContDone (LL.singleton $ LL.take t vec) $ Chunk $ LL.drop d vec
       | LL.length vec >= t =
-          (idone (LL.singleton $ LL.take t vec) <* drop (d-LL.length vec)
-           ,mempty)
-      | LL.null vec        = emptyKP step
-      | otherwise          = emptyKP (step' vec)
-    step NoData            = emptyKP step
-    step stream            = (idone LL.empty, stream)
+          ContMore (drop (d-LL.length vec) >> idone (LL.singleton $ LL.take t vec))
+      | LL.null vec        = continueP step
+      | otherwise          = continueP (step' vec)
+    step NoData            = continueP step
+    step stream@EOF{}      = ContDone LL.empty stream
     step' v1 (Chunk vec)   = step . Chunk $ v1 `mappend` vec
-    step' v1 stream        = (idone (LL.singleton v1), stream)
+    step' v1 stream@EOF{}  = ContDone (LL.singleton v1) stream
 roll t d = LL.singleton <$> joinI (take t stream2stream) <* drop (d-t)
   -- d is >= t, so this version works
 {-# INLINE roll #-}
@@ -251,16 +247,16 @@ roll t d = LL.singleton <$> joinI (take t stream2stream) <* drop (d-t)
 -- |Drop n elements of the stream, if there are that many.
 -- 
 -- The analogue of @List.drop@
-drop :: (Monad m, Nullable s, LL.ListLike s el) => Int -> Iteratee s m ()
+drop :: (Monad m, LL.ListLike s el) => Int -> Iteratee s m ()
 drop 0  = idone ()
 drop n' = icontP (step n')
   where
     step n (Chunk str)
-      | LL.null   str     = emptyKP (step n)
-      | LL.length str < n = emptyKP (step (n - LL.length str))
-      | otherwise         = (idone (), Chunk (LL.drop n str))
-    step n NoData         = emptyKP (step n)
-    step _ stream@EOF{}   = (idone (), stream)
+      | LL.null   str     = continueP (step n)
+      | LL.length str < n = continueP (step (n - LL.length str))
+      | otherwise         = ContDone () $ Chunk (LL.drop n str)
+    step n NoData         = continueP (step n)
+    step _ stream@EOF{}   = ContDone () stream
 {-# INLINE drop #-}
 
 -- |Skip all elements while the predicate is true.
@@ -270,12 +266,12 @@ dropWhile :: (Monad m, LL.ListLike s el) => (el -> Bool) -> Iteratee s m ()
 dropWhile p = icontP step
   where
     step (Chunk str)
-      | LL.null left  = emptyKP step
-      | otherwise     = (idone (), Chunk left)
+      | LL.null left  = continueP step
+      | otherwise     = ContDone () $ Chunk left
       where
         left = LL.dropWhile p str
-    step NoData       = emptyKP step
-    step stream@EOF{} = (idone (), stream)
+    step NoData       = continueP step
+    step stream@EOF{} = ContDone () stream
 {-# INLINE dropWhile #-}
 
 
@@ -288,9 +284,9 @@ length :: (Monad m, Num a, LL.ListLike s el) => Iteratee s m a
 length = icontP (step 0)
   where
     step !i (Chunk xs)   = let newL = i + fromIntegral (LL.length xs)
-                           in newL `seq` emptyKP (step newL)
-    step !i NoData       = emptyKP (step i)
-    step !i stream@EOF{} = (idone i, stream)
+                           in newL `seq` continueP (step newL)
+    step !i NoData       = continueP (step i)
+    step !i stream@EOF{} = ContDone i stream
 {-# INLINE length #-}
 
 -- | Get the length of the current chunk ('Just 0', or @Nothing@ if 'EOF'.
@@ -299,23 +295,23 @@ length = icontP (step 0)
 chunkLength :: (Monad m, LL.ListLike s el) => Iteratee s m (Maybe Int)
 chunkLength = icontP step
  where
-  step s@(Chunk xs) = (idone (Just $ LL.length xs), s)
-  step NoData       = idoneT (Just 0) NoData
-  step stream@EOF{} = (idone Nothing, stream)
+  step s@(Chunk xs) = ContDone (Just $ LL.length xs) s
+  step NoData       = ContDone (Just 0) NoData
+  step stream@EOF{} = ContDone Nothing stream
 {-# INLINE chunkLength #-}
 
 -- | Take @n@ elements from the current chunk, or the whole chunk if
 -- @n@ is greater.
 takeFromChunk ::
-  (Monad m, Nullable s, LL.ListLike s el)
+  (Monad m, LL.ListLike s el)
   => Int
   -> Iteratee s m s
 takeFromChunk n | n <= 0 = idone LL.empty
 takeFromChunk n = icontP step
  where
-  step (Chunk xs)   = let (h,t) = LL.splitAt n xs in (idone h, Chunk t)
-  step NoData       = (idone LL.empty, NoData)
-  step stream@EOF{} = (idone LL.empty, stream)
+  step (Chunk xs)   = let (h,t) = LL.splitAt n xs in ContDone h $ Chunk t
+  step NoData       = ContDone LL.empty NoData
+  step stream@EOF{} = ContDone LL.empty stream
 {-# INLINE takeFromChunk #-}
 
 -- ---------------------------------------------------
@@ -337,18 +333,18 @@ breakE cpred = go
  where
   go = eneeCheckIfDonePass (icont . step)
   step k (Chunk s)
-    | LL.null s = return (emptyK (step k))
+    | LL.null s = continue (step k)
     | otherwise = case LL.break cpred s of
         (str', tail')
-          | LL.null tail' -> do
-              (i', _) <- k (Chunk str')
-              return (go i' <* dropWhile (not . cpred), Chunk tail')
+          | LL.null tail' ->
+              doContEtee ((<* dropWhile (not . cpred)) . go) k str'
                                -- if the inner iteratee completes before
                                -- the predicate is met, elements still
                                -- need to be dropped.
-          | otherwise -> (idone *** const (Chunk tail')) `liftM` k (Chunk str')
-  step k NoData       =  return (emptyK (step k))
-  step k stream       =  return (idone (icont k), stream)
+          | otherwise -> k (Chunk str') >>= \ret ->
+                            contDoneM (wrapCont ret) (Chunk tail')
+  step k NoData       =  continue (step k)
+  step k stream@EOF{} =  contDoneM (icont k) stream
 {-# INLINE breakE #-}
 
 -- |Read n elements from a stream and apply the given iteratee to the
@@ -357,7 +353,7 @@ breakE cpred = go
 -- 
 -- The analogue of @List.take@
 take ::
-  (Monad m, Nullable s, LL.ListLike s el)
+  (Monad m, LL.ListLike s el)
   => Int   -- ^ number of elements to consume
   -> Enumeratee s s m a
 take n' iter
@@ -371,13 +367,16 @@ take n' iter
   onReq mb doB = ireq mb (take n' . doB)
 
   step n k (Chunk str)
-      | LL.null str        = return (emptyK (step n k))
-      | LL.length str <= n = (take (n - LL.length str) *** const mempty)
-                             `liftM` k (Chunk str)
-      | otherwise          = (idone *** const (Chunk s2)) `liftM` k (Chunk s1)
+      | LL.null str        = continue (step n k)
+      | LL.length str <= n = k (Chunk str) >>= \ret ->
+                                contMoreM (take (n - LL.length str) (wrapCont ret))
+      | otherwise          = k (Chunk s1) >>= \ret -> case ret of
+          ContDone a _ -> contDoneM (idone a) (Chunk s2)
+          ContMore i   -> contDoneM i (Chunk s2)
+          ContErr  i e -> contDoneM (ierr i e) (Chunk s2)
       where (s1, s2) = LL.splitAt n str
-  step n k NoData          = return (emptyK (step n k))
-  step _n k stream         = return (idone (icont k), stream)
+  step n k NoData          = continue (step n k)
+  step _n k stream         = contDoneM (icont k) stream
 {-# INLINE take #-}
 
 -- |Read n elements from a stream and apply the given iteratee to the
@@ -404,7 +403,7 @@ take n' iter
 -- 
 -- in each case, @I.head@ consumes only one element, returning the remaining
 -- 4 elements to the outer stream
-takeUpTo :: (Monad m, Nullable s, LL.ListLike s el) => Int -> Enumeratee s s m a
+takeUpTo :: (Monad m, LL.ListLike s el) => Int -> Enumeratee s s m a
 takeUpTo i iter
  | i <= 0    = idone iter
  | otherwise = runIter iter onDone onCont onErr onReq
@@ -416,27 +415,39 @@ takeUpTo i iter
     onReq mb doB = ireq mb (takeUpTo i . doB)
 
     step n k (Chunk str)
-      | LL.null str       = return (emptyK (step n k))
-      | LL.length str < n = first (takeUpTo (n - LL.length str))
-                            `liftM` k (Chunk str)
+      | LL.null str       = continue (step n k)
+      | LL.length str < n = k (Chunk str) >>= \ret -> case ret of
+                              ContDone a str' -> contDoneM (idone a) str'
+                              ContMore i -> contMoreM (takeUpTo
+                                                        (n - LL.length str)
+                                                        i)
+                              ContErr i e -> contErrM (takeUpTo
+                                                        (n - LL.length str)
+                                                        i)
+                                                      e
       | otherwise         = do
          -- check to see if the inner iteratee has completed, and if so,
          -- grab any remaining stream to put it in the outer iteratee.
          -- the outer iteratee is always complete at this stage, although
          -- the inner may not be.
          let (s1, s2) = LL.splitAt n str
-         (iter', preStr) <- k (Chunk s1)
-         case preStr of
-              (Chunk preC)
-                | LL.null preC -> return (idone iter', Chunk s2)
-                | otherwise    -> return (idone iter'
-                                     , Chunk $ preC `LL.append` s2)
-              NoData           -> return (idone iter', Chunk s2)
-              -- this case shouldn't ever happen, except possibly
-              -- with broken iteratees
-              _                -> return (idone iter', preStr)
-    step n k NoData       = return (emptyK (step n k))
-    step _ k stream       = return (idone (icont k), stream)
+         ret <- k (Chunk s1)
+         case ret of
+            ContDone a preStr -> case preStr of
+                (Chunk pre)
+                  | LL.null pre -> contDoneM (idone a) $ Chunk s2
+                  | otherwise   -> contDoneM (idone a) $ Chunk $ pre `LL.append` s2
+                NoData          -> contDoneM (idone a) $ Chunk s2
+
+                -- this case shouldn't ever happen, except possibly
+                -- with broken iteratees
+                EOF{}           -> contDoneM (idone a) preStr
+
+            ContMore i   -> contDoneM i (Chunk s2)
+            ContErr  i e -> contDoneM (ierr i e) (Chunk s2)
+
+    step n k NoData       = continue (step n k)
+    step _ k stream@EOF{} = contDoneM (icont k) stream
 {-# INLINE takeUpTo #-}
 
 -- | Takes an element predicate and returns the (possibly empty)
@@ -496,7 +507,7 @@ rigidMapStream f = mapChunks (LL.rigidMap f)
 -- 
 -- The analogue of @List.filter@
 filter
-  :: (Monad m, Functor m, Nullable s, LL.ListLike s el)
+  :: (Monad m, Functor m, LL.ListLike s el)
   => (el -> Bool)
   -> Enumeratee s s m a
 filter p = convStream (LL.filter p <$> getChunk)
@@ -506,9 +517,11 @@ filter p = convStream (LL.filter p <$> getChunk)
 -- grouped into @sz@-sized blocks.  The final block may be smaller
 -- than \sz\.
 group
-  :: (LL.ListLike s el, Monad m, Nullable s)
+  :: (LL.ListLike s el, Monad m)
   => Int  -- ^ size of group
   -> Enumeratee s [s] m a
+group = const $ mapChunks (:[])
+{-  TODO: implement group
 group cksz iinit = icont (step 0 id iinit)
  where
   -- there are two cases to consider for performance purposes:
@@ -523,7 +536,7 @@ group cksz iinit = icont (step 0 id iinit)
   --
   -- not using eneeCheckIfDone because that loses final chunks at EOF
   step sz pfxd icur (Chunk s)
-    | LL.null s               = return (emptyK (step sz pfxd icur))
+    | LL.null s               = return (continue (step sz pfxd icur))
     | LL.length s + sz < cksz = return (icont (step (sz+LL.length s)
                                              (pfxd . (s:)) icur)
                                         , mempty)
@@ -541,7 +554,7 @@ group cksz iinit = icont (step 0 id iinit)
             onReq mb doB = mb >>= \b ->
                            step (LL.length rest) pfxd' (doB b) (Chunk rest)
         in  runIter icur onDone onCont onErr onReq
-  step sz pfxd icur NoData = return (emptyK (step sz pfxd icur))
+  step sz pfxd icur NoData = return (continue (step sz pfxd icur))
   step _ pfxd icur mErr = case pfxd [] of
                          []   -> return (idone icur, mErr)
                          rest -> ((, mErr) . idone) `liftM`
@@ -554,6 +567,7 @@ group cksz iinit = icont (step 0 id iinit)
               | otherwise -> let (grest, leftover) = gsplit rest
                                  g' = g : grest
                              in (g', leftover)
+                             -}
 
 
 -- | Creates an 'enumeratee' in which elements are grouped into
@@ -561,9 +575,11 @@ group cksz iinit = icont (step 0 id iinit)
 -- 
 -- The analogue of 'List.groupBy'
 groupBy
-  :: forall s el m a. (LL.ListLike s el, Monad m, Nullable s)
+  :: forall s el m a. (LL.ListLike s el, Monad m)
   => (el -> el -> Bool)
   -> Enumeratee s [s] m a
+groupBy = const $ mapChunks (:[])
+{- TODO: implement groupBy
 groupBy same iinit = icont $ go iinit (const True, id)
   where 
     -- As in group, need to handle grouping efficiently when we're fed
@@ -577,9 +593,9 @@ groupBy same iinit = icont $ go iinit (const True, id)
     -- At the end, "finish" the accumulator and handle the last chunk,
     -- unless the stream was entirely empty and there is no
     -- accumulator.
-    go icurr pfx NoData    = return (emptyK $ go icurr pfx)
+    go icurr pfx NoData    = return (continue $ go icurr pfx)
     go icurr pfx (Chunk s) = case gsplit pfx s of
-      ([], partial)   -> return (emptyK $ go icurr partial)
+      ([], partial)   -> return (continue $ go icurr partial)
       (full, partial) ->
         -- if the inner iteratee is done, the outer iteratee needs to be
         -- notified to terminate.
@@ -589,7 +605,7 @@ groupBy same iinit = icont $ go iinit (const True, id)
                          case str' of
                            Chunk rest -> return (icont $ go inext partial
                                            , Chunk $ mconcat rest)
-                           NoData  -> return (emptyK $ go inext partial)
+                           NoData  -> return (continue $ go inext partial)
                            EOF mex -> return (icont $ go inext partial, EOF mex)
             onErr inext e = return (ierr (icont (go inext partial)) e
                                     , EOF (Just e))
@@ -647,6 +663,7 @@ groupBy same iinit = icont $ go iinit (const True, id)
               x = LL.head l
               xs = LL.tail l
 
+-}
 {-# INLINE groupBy #-}
 
 -- | @merge@ offers another way to nest iteratees: as a monad stack.
@@ -675,8 +692,6 @@ groupBy same iinit = icont $ go iinit (const True, id)
 merge ::
   (LL.ListLike s1 el1
    ,LL.ListLike s2 el2
-   ,Nullable s1
-   ,Nullable s2
    ,Monad m
    ,Functor m)
   => (el1 -> el2 -> b)
@@ -694,9 +709,7 @@ merge f = convStream $ f <$> lift head <*> head
 -- will have the same number of elements, although that number may vary
 -- between calls.
 mergeByChunks ::
-  (Nullable c2, Nullable c1
-  ,LL.ListLike c1 el1, LL.ListLike c2 el2
-  ,Functor m, Monad m)
+  (LL.ListLike c1 el1, LL.ListLike c2 el2,Functor m, Monad m)
   => (c1 -> c2 -> c3)  -- ^ merge function
   -> (c1 -> c3)
   -> (c2 -> c3)
@@ -731,9 +744,9 @@ foldl
   -> Iteratee s m a
 foldl f i = icontP (step i)
   where
-    step acc (Chunk xs) = emptyKP (step $ FLL.foldl f acc xs)
-    step acc NoData     = emptyKP (step acc)
-    step acc s@EOF{}    = (idone acc, s)
+    step acc (Chunk xs) = continueP (step $ FLL.foldl f acc xs)
+    step acc NoData     = continueP (step acc)
+    step acc s@EOF{}    = ContDone acc s
 {-# INLINE foldl #-}
 
 
@@ -748,9 +761,9 @@ foldl'
   -> Iteratee s m a
 foldl' f i = icontP (step i)
   where
-    step acc (Chunk xs) = emptyKP (step $! FLL.foldl' f acc xs)
-    step acc NoData     = emptyKP (step acc)
-    step acc s@EOF{}    = (idone acc, s)
+    step !acc (Chunk xs) = continueP (step $ FLL.foldl' f acc xs)
+    step !acc NoData     = continueP (step acc)
+    step !acc s@EOF{}    = ContDone acc s
 {-# INLINE foldl' #-}
 
 -- | Variant of foldl with no base case.  Requires at least one element
@@ -765,11 +778,11 @@ foldl1 f = icontP step
   where
     step (Chunk xs)
       -- if the input is null, we need to toss it and wait for a full chunk
-      | LL.null xs = emptyKP step
-      | otherwise  = (foldl f $ FLL.foldl1 f xs, mempty)
+      | LL.null xs = continueP step
+      | otherwise  = ContMore $ foldl f $ FLL.foldl1 f xs
     -- After the first chunk, just use regular foldl.
-    step NoData     = emptyKP step
-    step str@EOF{}    = (ierr (icontP step) $ toException EofException, str)
+    step NoData     = continueP step
+    step str@EOF{}  = ContErr (icontP step) $ toIterException EofException
 {-# INLINE foldl1 #-}
 
 
@@ -782,11 +795,11 @@ foldl1' f = icontP step
   where
     step (Chunk xs)
       -- if the input is null, we need to toss it and wait for a full chunk
-      | LL.null xs = emptyKP step
-      | otherwise  = (foldl' f $ FLL.foldl1 f xs, mempty)
+      | LL.null xs = continueP step
+      | otherwise  = ContMore $ foldl' f $ FLL.foldl1 f xs
     -- After the first chunk, just use regular foldl'.
-    step NoData     = emptyKP step
-    step str@EOF{}    = (ierr (icontP step) $ toException EofException, str)
+    step NoData     = continueP step
+    step str@EOF{}  = ContErr (icontP step) $ toIterException EofException
 {-# INLINE foldl1' #-}
 
 
@@ -794,9 +807,9 @@ foldl1' f = icontP step
 sum :: (Monad m, LL.ListLike s el, Num el) => Iteratee s m el
 sum = icontP (step 0)
   where
-    step acc (Chunk xs) = emptyKP (step $! acc + LL.sum xs)
-    step acc NoData     = emptyKP (step acc)
-    step acc str@EOF{}  = (idone acc, str)
+    step acc (Chunk xs) = continueP (step $! acc + LL.sum xs)
+    step acc NoData     = continueP (step acc)
+    step acc str@EOF{}  = ContDone acc str
 {-# INLINE sum #-}
 
 
@@ -804,9 +817,9 @@ sum = icontP (step 0)
 product :: (Monad m, LL.ListLike s el, Num el) => Iteratee s m el
 product = icontP (step 1)
   where
-    step acc (Chunk xs) = emptyKP (step $! acc * LL.product xs)
-    step acc NoData     = emptyKP (step acc)
-    step acc str@EOF{}  = (idone acc, str)
+    step acc (Chunk xs) = continueP (step $! acc * LL.product xs)
+    step acc NoData     = continueP (step acc)
+    step acc str@EOF{}  = ContDone acc str
 {-# INLINE product #-}
 
 
@@ -817,7 +830,7 @@ product = icontP (step 1)
 -- 
 -- Compare to @List.zip@.
 zip
-  :: (Monad m, Nullable s, LL.ListLike s el)
+  :: (Monad m, LL.ListLike s el)
   => Iteratee s m a
   -> Iteratee s m b
   -> Iteratee s m (a, b)
@@ -830,14 +843,20 @@ zip x0 y0 = runIter x0 (odx y0) (ocx y0) (oex y0) (orx y0)
 
   ody x_k b        = (,b) `liftM` icont x_k
   ocy xK yK        = icont (step xK yK)
-  oey xK i' e      = throwRec e (zip (icont xK) i')
+  oey xK i' e      = throwRec e (ocx i' xK) -- zip (icont xK) i')
   ory xK mb doB    = ireq mb (zip (icont xK) . doB)
 
-  step xK yK (Chunk xs) | nullC xs = return (emptyK (step xK yK))
-  step xK yK str   = do
-    (x,xLeft) <- xK str
-    (y,yLeft) <- yK str
-    return (zip x y, shorter xLeft yLeft)
+  step xK yK NoData = contMoreM (icont $ step xK yK)
+  step xK yK str    = do
+    xRet <- xK str
+    yRet <- yK str
+    case (xRet,yRet) of
+      -- special-case both done because we need to check for the shortest,
+      -- and special-case both in 'ContMore' because it's likely to be the most
+      -- common case and this will cut a few indirections.
+      (ContDone x strX, ContDone y strY) -> contDoneM (x,y) (shorter strX strY)
+      (ContMore x, ContMore y) -> contMoreM (zip x y)
+      (xRet, yRet) -> contMoreM (zip (wrapCont xRet) (wrapCont yRet))
 
   shorter c1@(Chunk xs) c2@(Chunk ys)
     | LL.length xs < LL.length ys = c1
@@ -847,9 +866,32 @@ zip x0 y0 = runIter x0 (odx y0) (ocx y0) (oex y0) (orx y0)
   shorter _          _         = NoData
   
 {-# INLINE zip #-}
+  {-
+  odx yIter a      = (a,) `liftM` joinIM (enumEof yIter)
+  ocx yIter k      = runIter yIter (ody k) (ocy k) (oey k) (ory k)
+  oex yIter i' e   = throwRec e (enumWith i' yIter)
+  orx yIter ma doA = ireq ma $ (`enumWith` yIter) . doA
+
+  ody x_k b        = (,b) `liftM` icont x_k
+  ocy xK yK        = icont $ step xK yK
+  oey xK i' e      = ierr (ocx i' xK) e
+  ory :: forall x. Cont s m a -> m x -> (x -> Iteratee s m b) -> Iteratee s m (a,b)
+  ory xK mb doB    = ireq mb $ (\b -> ocx (doB b) xK)
+
+  step :: Cont s m a -> Cont s m b -> Cont s m (a,b)
+  step xK yK NoData = contMoreM (icont $ step xK yK)
+  step xK yK str = do
+    xret <- xK str
+    yret <- yK str
+    case xret of
+        -- TODO: use something better than 'run' here
+        ContDone a str' -> run (wrapCont yret) >>= \y -> contDoneM (a,y) str'
+        ContMore i      -> contMoreM (enumWith i $ wrapCont yret)
+        ContErr  i e    -> contErrM  (enumWith i $ wrapCont yret) e
+        -}
 
 zip3
-  :: (Monad m, Nullable s, LL.ListLike s el)
+  :: (Monad m, LL.ListLike s el)
   => Iteratee s m a -> Iteratee s m b
   -> Iteratee s m c -> Iteratee s m (a, b, c)
 zip3 a b c = zip a (zip b c) >>=
@@ -857,7 +899,7 @@ zip3 a b c = zip a (zip b c) >>=
 {-# INLINE zip3 #-}
 
 zip4
-  :: (Monad m, Nullable s, LL.ListLike s el)
+  :: (Monad m, LL.ListLike s el)
   => Iteratee s m a -> Iteratee s m b
   -> Iteratee s m c -> Iteratee s m d
   -> Iteratee s m (a, b, c, d)
@@ -866,7 +908,7 @@ zip4 a b c d = zip a (zip3 b c d) >>=
 {-# INLINE zip4 #-}
 
 zip5
-  :: (Monad m, Nullable s, LL.ListLike s el)
+  :: (Monad m, LL.ListLike s el)
   => Iteratee s m a -> Iteratee s m b
   -> Iteratee s m c -> Iteratee s m d
   -> Iteratee s m e -> Iteratee s m (a, b, c, d, e)
@@ -877,13 +919,14 @@ zip5 a b c d e = zip a (zip4 b c d e) >>=
 -- | Enumerate over two iteratees in parallel as long as the first iteratee
 -- is still consuming input.  The second iteratee will be terminated with EOF
 -- when the first iteratee has completed.  An example use is to determine
--- how many elements an iteratee has consumed:
+-- how many elements an iteratee has consumed (although this is less efficient
+-- than using @countConsumed@ directly)
 -- 
 -- > snd <$> enumWith (dropWhile (<5)) length
 -- 
 -- Compare to @zip@
 enumWith
-  :: (Monad m, Nullable s, LL.ListLike s el)
+  :: forall m s el a b. (Monad m, LL.ListLike s el)
   => Iteratee s m a
   -> Iteratee s m b
   -> Iteratee s m (a, b)
@@ -895,15 +938,21 @@ enumWith x0 y0 = runIter x0 (odx y0) (ocx y0) (oex y0) (orx y0)
   orx yIter ma doA = ireq ma $ (`enumWith` yIter) . doA
 
   ody x_k b        = (,b) `liftM` icont x_k
-  ocy xK yK        = icont (step xK yK)
-  oey xK i' e      = throwRec e (enumWith (icont xK) i')
-  ory xK mb doB    = ireq mb (enumWith (icont xK) . doB)
+  ocy xK yK        = icont $ step xK yK
+  oey xK i' e      = ierr (ocx i' xK) e
+  ory :: forall x. Cont s m a -> m x -> (x -> Iteratee s m b) -> Iteratee s m (a,b)
+  ory xK mb doB    = ireq mb $ (\b -> ocx (doB b) xK)
 
-  step xK yK (Chunk xs) | nullC xs = return (emptyK (step xK yK))
+  step :: Cont s m a -> Cont s m b -> Cont s m (a,b)
+  step xK yK NoData = contMoreM (icont $ step xK yK)
   step xK yK str = do
-    (x, xLeft) <- xK str
-    (y,_yLeft) <- yK str
-    return (enumWith x y, xLeft)
+    xret <- xK str
+    yret <- yK str
+    case xret of
+        -- TODO: use something better than 'run' here
+        ContDone a str' -> run (wrapCont yret) >>= \y -> contDoneM (a,y) str'
+        ContMore i      -> contMoreM (enumWith i $ wrapCont yret)
+        ContErr  i e    -> contErrM  (enumWith i $ wrapCont yret) e
 {-# INLINE enumWith #-}
 
 -- |Enumerate a list of iteratees over a single stream simultaneously
@@ -912,7 +961,7 @@ enumWith x0 y0 = runIter x0 (odx y0) (ocx y0) (oex y0) (orx y0)
 -- 
 -- Compare to @Prelude.sequence_@.
 sequence_
-  :: forall el s m a. (Monad m, LL.ListLike s el, Nullable s)
+  :: forall el s m a. (Monad m, LL.ListLike s el)
   => [Iteratee s m a]
   -> Iteratee s m ()
 sequence_ = check []
@@ -934,15 +983,25 @@ sequence_ = check []
                                    (onReq ks iters)
     onCont ks iters k  = check (k:ks) iters
     onErr ks iters i e = throwRec e (check ks (i:iters))
-    onReq :: [Stream s -> m (Iteratee s m a, Stream s)]
+    onReq :: [Cont s m a]
           -> [Iteratee s m a]
           -> m b
           -> (b -> Iteratee s m a)
           -> Iteratee s m ()
     onReq ks iters mb doB = ireq mb (\b -> check ks (doB b:iters))
 
-    step ks str = first (check []) `liftM` CM.foldM (accf str) ([], str) ks
-    accf str (iS, !strs) k = ((:iS) *** flip shorter strs) `liftM` k str
+    step ks str = CM.foldM (accf str) ([], str,Nothing) ks >>= \ret -> case ret of
+        (iS, _, Just e)  -> contErrM (check [] iS) e
+        ([], str', _)    -> contDoneM () str'
+        (iS, EOF Nothing, _)  -> contErrM (throwRec EofException (check [] iS))
+                                          (toIterException EofException)
+        (iS, EOF (Just e), _) -> let e' = wrapEnumExc e
+                                 in contErrM (throwRec e' (check [] iS)) e'
+        (iS, str', _)    -> contMoreM (check [] iS)
+    accf str (iS, !strs, !mErr) k = k str >>= \ret -> case ret of
+        ContDone _ str' -> return (iS, shorter str' strs, mErr)
+        ContMore i      -> return (iS, strs, mErr)
+        ContErr  i e    -> return (i:iS, strs, Just e)
       
     -- return the shorter one of two streams; errors are propagated with the
     -- priority given to the "left"
@@ -957,31 +1016,27 @@ sequence_ = check []
 -- |Transform an iteratee into one that keeps track of how much data it
 -- consumes.
 countConsumed :: forall a s el m n.
-                 (Monad m, LL.ListLike s el, Nullable s, Integral n) =>
-                 Iteratee s m a
+                 (Monad m, LL.ListLike s el, Integral n)
+              => Iteratee s m a
               -> Iteratee s m (a, n)
 countConsumed = check 0
   where
-    newLen :: n -> s -> s -> n
-    newLen n c c' = n + fromIntegral (LL.length c - LL.length c')
+    newLen :: n -> s -> Stream s -> n
+    newLen n c (Chunk c') = n + fromIntegral (LL.length c - LL.length c')
+    newLen n c _          = n + fromIntegral (LL.length c)
     check :: n -> Iteratee s m a -> Iteratee s m (a,n)
     check !n iter = runIter iter (onDone n)
                                  (onCont n)
                                  (onErr n)
                                  (onReq n)
-    step !n k str@(Chunk c) = k str >>= \res -> return $ case res of
-      (i, Chunk c')            -> (check (newLen n c c') i, Chunk c')
-      (i, str'@(EOF (Just e))) -> (throwRec e (check (newLen n c mempty) i)
-                                   , str')
-      (i, NoData)              -> (check (newLen n c LL.empty) i, NoData)
-      (i, str')                -> (throwRec EofException
-                                            (check (newLen n c mempty) i), str')
-    step !n k NoData = k NoData >>= \res -> return $ case res of
-      (_, Chunk _)             -> error "iteratee: invariant violation - got data from NoData.  Bad Continuation!"
-      (i, NoData)              -> (check n i, NoData)
-      (i, str'@(EOF (Just e))) -> (throwRec e (check n i), str')
-      (i, str')                -> (throwRec EofException (check n i), str')
-    step n k str = first (liftM (,n)) `liftM` k str
+
+    step !n k str@(Chunk c) = k str >>=
+        return . mapContRet (check $ newLen n c mempty) (\a s -> (a,newLen n c s))
+
+    step !n k NoData        = contMoreM (icont (step n k))
+    step n k str@EOF{}      = k str >>=
+        return . mapContRet (check n) (\a s -> (a,n))
+
     onDone n a  = idone (a,n)
     onCont n k  = icont (step n k)
     onErr n i e = throwRec e (check n i)
@@ -1002,7 +1057,7 @@ enumPureNChunk str n iter
     enum' str' iter'
       | LL.null str' = return iter'
       | otherwise    = let (s1, s2)     = LL.splitAt n str'
-                           onCont k     = k (Chunk s1) >>= enum' s2 . fst
+                           onCont k     = doContIteratee k (Chunk s1) >>= enum' s2
                            onErr i' e   = return $ ierr i' e
                            onReq mb doB = mb >>= enum' str' . doB
                        in runIter iter' idoneM onCont onErr onReq
@@ -1014,26 +1069,26 @@ enumPureNChunk str n iter
 -- | Map a monadic function over the elements of the stream and ignore the
 -- result.
 mapM_
-  :: (Monad m, LL.ListLike s el, Nullable s)
+  :: (Monad m, LL.ListLike s el)
   => (el -> m b)
   -> Iteratee s m ()
 mapM_ f = icont step
   where
-    step NoData     = return (emptyK step)
-    step (Chunk xs) = LL.mapM_ f xs >> return (emptyK step)
-    step s@(EOF _)  = return (idone (), s)
+    step (Chunk xs) = LL.mapM_ f xs >> contMoreM (icont step)
+    step NoData     = contMoreM (icont step)
+    step s@(EOF _)  = contDoneM () s
 {-# INLINE mapM_ #-}
 
 -- |The analogue of @Control.Monad.foldM@
 foldM
-  :: (Monad m, LL.ListLike s b, Nullable s)
+  :: (Monad m, LL.ListLike s b)
   => (a -> b -> m a)
   -> a
   -> Iteratee s m a
 foldM f e = icont (step e)
   where
     step acc (Chunk xs) = CM.foldM f acc (LL.toList xs) >>= \acc' ->
-                            return . emptyK $ step acc'
-    step acc NoData     = return . emptyK $ step acc
-    step acc stream     = return $ idoneT acc stream
+                            nextStep $ step acc'
+    step acc NoData     = nextStep $ step acc
+    step acc s@EOF{}    = contDoneM acc s
 {-# INLINE foldM #-}

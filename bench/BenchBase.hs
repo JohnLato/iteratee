@@ -215,8 +215,9 @@ conv2 = idN "convStream id length chunked" (I.joinI . I.convStream idChunk $ I.l
 idChunk = I.icontP step
   where
     step (I.Chunk xs)
-      | LL.null xs      = (idChunk, mempty)
-      | True            = (idone xs, mempty)
+      | LL.null xs      = ContMore idChunk
+      | True            = ContDone xs mempty
+    step I.NoData       = ContMore idChunk
 convBenches = [conv1, conv2]
 
 instance NFData BS.ByteString where

@@ -27,15 +27,23 @@ instance Arbitrary c => Arbitrary (Stream c) where
     xs <- arbitrary
     elements [EOF err, Chunk xs, NoData]
 
-tE :: Exception e => e -> SomeException
-tE = toException
+tE :: EException e => e -> EnumException
+tE = toEnumException
 
-instance Arbitrary SomeException where
+instance Arbitrary EnumException where
+  arbitrary = do
+    i <- arbitrary
+    elements [tE DivergentException, tE $ EnumUnhandledIterException i]
+
+tI :: IException e => e -> IterException
+tI = toIterException
+
+instance Arbitrary IterException where
   arbitrary = do
     str <- arbitrary
     off <- fromInteger <$> (arbitrary :: Gen Integer)
-    elements [tE DivergentException, tE (SeekException off),
-      tE EofException, iterStrExc str]
+    elements [tI (SeekException off), tI EofException, iterStrExc str]
+
 
 instance (Num a, Ord a, Arbitrary a, Monad m) => Arbitrary (Iteratee [a] m [a]) where
   arbitrary = do

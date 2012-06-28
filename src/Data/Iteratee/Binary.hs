@@ -35,14 +35,14 @@ data Endian = MSB -- ^ Most Significant Byte is first (big-endian)
   deriving (Eq, Ord, Show, Enum)
 
 endianRead2
-  :: (Nullable s, LL.ListLike s Word8, Monad m)
+  :: (LL.ListLike s Word8, Monad m)
   => Endian
   -> Iteratee s m Word16
 endianRead2 e = endianReadN e 2 word16'
 {-# INLINE endianRead2 #-}
 
 endianRead3
-  :: (Nullable s, LL.ListLike s Word8, Monad m)
+  :: (LL.ListLike s Word8, Monad m)
   => Endian
   -> Iteratee s m Word32
 endianRead3 e = endianReadN e 3 (word32' . (0:))
@@ -52,7 +52,7 @@ endianRead3 e = endianReadN e 3 (word32' . (0:))
 -- set the entire first byte so the Int32 will be negative as
 -- well.
 endianRead3i
-  :: (Nullable s, LL.ListLike s Word8, Monad m)
+  :: (LL.ListLike s Word8, Monad m)
   => Endian
   -> Iteratee s m Int32
 endianRead3i e = do
@@ -72,14 +72,14 @@ endianRead3i e = do
 {-# INLINE endianRead3i #-}
 
 endianRead4
-  :: (Nullable s, LL.ListLike s Word8, Monad m)
+  :: (LL.ListLike s Word8, Monad m)
   => Endian
   -> Iteratee s m Word32
 endianRead4 e = endianReadN e 4 word32'
 {-# INLINE endianRead4 #-}
 
 endianRead8
-  :: (Nullable s, LL.ListLike s Word8, Monad m)
+  :: (LL.ListLike s Word8, Monad m)
   => Endian
   -> Iteratee s m Word64
 endianRead8 e = endianReadN e 8 word64'
@@ -87,7 +87,7 @@ endianRead8 e = endianReadN e 8 word64'
 
 -- This function does all the parsing work, depending upon provided arguments
 endianReadN ::
- (Nullable s, LL.ListLike s Word8, Monad m)
+ (LL.ListLike s Word8, Monad m)
   => Endian
   -> Int
   -> ([Word8] -> b)
@@ -95,29 +95,28 @@ endianReadN ::
 endianReadN MSB n0 cnct = icontP (step n0 [])
  where
   step !n acc (Chunk c)
-    | LL.null c        = (icontP (step n acc), NoData)
+    | LL.null c        = continueP (step n acc)
     | LL.length c >= n = let (this,next) = LL.splitAt n c
                              !result     = cnct $ acc ++ LL.toList this
-                         in (idone result, Chunk next)
-    | otherwise        = (icontP (step (n - LL.length c) (acc ++ LL.toList c))
-                          , NoData)
-  step !n acc NoData   = (icontP (step n acc), NoData)
-  step !n acc (EOF Nothing  )  = (icontP (step n acc)
-                                 , EOF . Just $ toException EofException)
-  step !n acc s@(EOF (Just _)) = (icontP (step n acc), s)
+                         in ContDone result $ Chunk next
+    | otherwise        = continueP (step (n - LL.length c) (acc ++ LL.toList c))
+  step !n acc NoData   = continueP (step n acc)
+  step !n acc (EOF Nothing  )  = ContErr (icontP (step n acc))
+                                         (toIterException EofException)
+  step !n acc s@(EOF (Just e)) = ContErr (icontP (step n acc)) (wrapEnumExc e)
 endianReadN LSB n0 cnct = icontP (step n0 [])
  where
+  step !n acc NoData   = continueP (step n acc)
   step !n acc (Chunk c)
-    | LL.null c        = (icontP (step n acc), Chunk c)
+    | LL.null c        = continueP (step n acc)
     | LL.length c >= n = let (this,next) = LL.splitAt n c
                              !result = cnct $ reverse (LL.toList this) ++ acc
-                         in (idone result, Chunk next)
-    | otherwise        = (icontP (step (n - LL.length c)
+                         in ContDone result $ Chunk next
+    | otherwise        = continueP (step (n - LL.length c)
                                        (reverse (LL.toList c) ++ acc))
-                          , NoData)
-  step !n acc (EOF Nothing) = (icontP (step n acc)
-                               , EOF . Just $ toException EofException)
-  step !n acc str           = (icontP (step n acc), str)
+  step !n acc (EOF Nothing) = ContErr (icontP (step n acc))
+                                 (toIterException EofException)
+  step !n acc (EOF (Just e)) = ContErr (icontP (step n acc)) (wrapEnumExc e)
 {-# INLINE endianReadN #-}
 
 -- As of now, the polymorphic code is as fast as the best specializations

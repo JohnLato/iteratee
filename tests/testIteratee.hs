@@ -65,7 +65,7 @@ isEOF _         = False
 enumNoData :: Monad m => Enumerator s m a
 enumNoData iter = runIter iter idoneM onC ierrM onR
   where
-    onC k = fst `liftM` k NoData
+    onC k = wrapCont `liftM` k NoData
     onR mb doB = mb >>= enumNoData . doB
 
 -- ---------------------------------------------
@@ -224,7 +224,7 @@ prop_eof xs ys i = runner1 (enumPure1Chunk ys $ runIdentity $
 
 prop_isFinished = runner1 (enumEof (isFinished :: Iteratee [Int] Identity Bool)) == True
 
-prop_isFinished2 = runner1 (enumErr (iterStrExc "Error") (isFinished :: Iteratee [Int] Identity Bool)) == True
+prop_isFinished2 = runner1 (enumErr (enumStrExc "Error") (isFinished :: Iteratee [Int] Identity Bool)) == True
 
 prop_null xs i = runner1 (enumPure1Chunk xs =<< enumPure1Chunk [] i)
                  == runner1 (enumPure1Chunk xs i)
@@ -318,9 +318,9 @@ prop_product xs n = n > 0 ==>
 
 convId :: (LL.ListLike s el, Monad m) => Iteratee s m s
 convId = icontP (\str -> case str of
-  s@(Chunk xs) | LL.null xs -> (convId, s)
-  s@(Chunk xs) -> (idone xs, Chunk mempty)
-  s@(EOF e)    -> (idone mempty, EOF e)
+  s@(Chunk xs) -> ContDone xs NoData
+  NoData       -> ContDone mempty NoData
+  s@(EOF e)    -> ContDone mempty $ EOF e
   )
 
 prop_convId xs = runner1 (enumPure1Chunk xs convId) == xs

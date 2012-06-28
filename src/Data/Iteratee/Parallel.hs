@@ -33,7 +33,10 @@ import           Control.Monad
 -- parallel Iteratee: E0,   E1,  E2,       .. Ez
 --                 \_ I0\_ I1\_ .. Iy\__ Iz
 -- 
-parI :: forall s a. (Nullable s, Monoid s) => Iteratee s IO a -> Iteratee s IO a
+parI :: forall s a. (Monoid s) => Iteratee s IO a -> Iteratee s IO a
+parI = error "parI is currently undefined"
+-- TODO: implement parI
+{-
 parI = icont . firstStep
   where
     -- first step, here we fork separate thread for the next chain and at the
@@ -68,11 +71,12 @@ parI = icont . firstStep
             onReq mb doB = mb >>= \b ->
                              runIter (doB b) onDone onCont onErr onReq
             onFina k = putMVar var $ icont k
+            -}
 
 -- | Transform an Enumeratee into a parallel composable one, introducing
 --  one step extra delay, see 'parI'.
 parE ::
-  (Nullable s1, Nullable s2, Monoid s1)
+  (Monoid s1)
   => Enumeratee s1 s2 IO r
   -> Enumeratee s1 s2 IO r
 parE outer inner = parI (outer inner)
@@ -81,7 +85,7 @@ parE outer inner = parI (outer inner)
 -- and discard the results. Each iteratee runs in a separate forkIO thread,
 -- passes all errors from iteratees up.
 psequence_ ::
-  (LL.ListLike s el, Nullable s)
+  (LL.ListLike s el)
   => [Iteratee s IO a]
   -> Iteratee s IO ()
 psequence_ = I.sequence_ . map parI
@@ -97,7 +101,7 @@ psequence = I.sequence . map parI
 -- | A variant of 'parI' with the parallelized iteratee lifted into an
 -- arbitrary MonadIO.
 liftParI ::
-  (Nullable s, Monoid s, MonadIO m)
+  (Monoid s, MonadIO m)
   => Iteratee s IO a
   -> Iteratee s m a
 liftParI = ilift liftIO . parI
@@ -108,28 +112,27 @@ liftParI = ilift liftIO . parI
 --
 -- Implementation of `sum`
 --
--- > sum :: (Monad m, LL.ListLike s, Nullable s) => Iteratee s m Int64
+-- > sum :: (Monad m, LL.ListLike s) => Iteratee s m Int64
 -- > sum = getSum <$> mapReduce 4 (Sum . LL.sum)
 mapReduce ::
-  (Monad m, Nullable s, Monoid b)
+  (Monad m, Monoid b)
   => Int               -- ^ maximum number of chunks to read
   -> (s -> b)          -- ^ map function
   -> Iteratee s m b
 mapReduce bufsize f = icontP (step (0, []))
  where
   step a@(!buf,acc) (Chunk xs)
-    | nullC xs = (icontP (step a), NoData)
     | buf >= bufsize =
         let acc'  = mconcat acc
             b'    = f xs
-        in b' `par` acc' `pseq` (icontP (step (0,[b' `mappend` acc'])), NoData)
+        in b' `par` acc' `pseq` continueP (step (0,[b' `mappend` acc']))
     | otherwise     =
         let b' = f xs
-        in b' `par` (icontP (step (succ buf,b':acc)), NoData)
+        in b' `par` continueP (step (succ buf,b':acc))
   step a NoData =
-    emptyKP (step a)
+    continueP (step a)
   step (_,acc) s@(EOF Nothing) =
-    (idone (mconcat acc), s)
+    ContDone (mconcat acc) s
   step acc     s@(EOF (Just err))  =
-    (throwRecoverableErr err (icontP $ step acc), s)
+    ContErr (icontP $ step acc) (wrapEnumExc err)
 

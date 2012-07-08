@@ -63,10 +63,9 @@ isEOF _         = False
 -- They can receive it via (>>=) though, so we test it this way
 
 enumNoData :: Monad m => Enumerator s m a
-enumNoData iter = runIter iter idoneM onC ierrM onR
+enumNoData iter = runIter iter idoneM onC ierrM
   where
     onC k = wrapCont `liftM` k NoData
-    onR mb doB = mb >>= enumNoData . doB
 
 -- ---------------------------------------------
 -- Iteratee instances

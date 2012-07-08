@@ -236,7 +236,6 @@ newtype Iteratee s m a = Iteratee{ runIter :: forall r.
           (a -> r) ->
           ((Stream s -> m (ContReturn s m a)) -> r) ->
           (Iteratee s m a -> IterException -> r) ->
-          (forall b. m b -> (b -> (Iteratee s m a)) -> r) ->
           r}
 
 -- invariants:
@@ -249,17 +248,17 @@ newtype Iteratee s m a = Iteratee{ runIter :: forall r.
 -- ----------------------------------------------
 
 idone :: a -> Iteratee s m a
-idone a = Iteratee $ \onDone _ _ _ -> onDone a
+idone a = Iteratee $ \onDone _ _ -> onDone a
 {-# INLINE idone #-}
 
 -- | Create an iteratee from a continuation
 icont :: (Stream s -> m (ContReturn s m a)) -> Iteratee s m a
-icont k = Iteratee $ \_ onCont _ _ -> onCont k
+icont k = Iteratee $ \_ onCont _ -> onCont k
 {-# INLINE icont #-}
 
 -- | Create an iteratee from a pure continuation
 icontP :: Monad m => (Stream s -> (ContReturn s m a)) -> Iteratee s m a
-icontP k = Iteratee $ \_ onCont _ _ -> onCont (return . k)
+icontP k = Iteratee $ \_ onCont _ -> onCont (return . k)
 {-# INLINE icontP #-}
 
 -- | Create a continuation return value from a continuation
@@ -309,11 +308,15 @@ liftI = icontP
 {-# INLINE liftI #-}
 
 ierr :: IException e => Iteratee s m a -> e -> Iteratee s m a
-ierr i e = Iteratee $ \_ _ onErr _ -> onErr i (toIterException e)
+ierr i e = Iteratee $ \_ _ onErr -> onErr i (toIterException e)
 {-# INLINE ierr #-}
 
-ireq :: m b -> (b -> Iteratee s m a) -> Iteratee s m a
-ireq mb bf = Iteratee $ \_ _ _ onReq -> onReq mb bf
+ireq :: Monad m => m b -> (b -> Iteratee s m a) -> Iteratee s m a
+ireq mb bf = icont $ \str -> do
+  b <- mb
+  runIter (bf b) (\a -> contDoneM a str)
+                 (\k -> k str)
+                 (\i' e -> contErrM i' e)
 {-# INLINE ireq #-}
 
 -- Monadic versions, frequently used by enumerators
@@ -327,12 +330,10 @@ ierrM i e = return $ ierr i e
 
 instance forall s m. (Functor m) => Functor (Iteratee s m) where
   {-# INLINE fmap #-}
-  fmap f m = runIter m (idone . f) onCont onErr (onReq f)
+  fmap f m = runIter m (idone . f) onCont onErr
     where
       onCont k      = icont $ fmap (fmap f) . k
       onErr i e     = ierr (fmap f i) e
-      onReq :: (a -> b) -> m x -> (x -> Iteratee s m a) -> Iteratee s m b
-      onReq ff mb doB = ireq mb (fmap ff . doB)
 
 instance (Functor m, Monad m) => Applicative (Iteratee s m) where
     pure x  = idone x
@@ -350,14 +351,13 @@ bindIter :: forall s m a b. (Monad m)
     => Iteratee s m a
     -> (a -> Iteratee s m b)
     -> Iteratee s m b
-bindIter m f = runIter m f onCont onErr onReq
+bindIter m f = runIter m f onCont onErr
   where
     push :: Iteratee s m b -> Stream s -> m (ContReturn s m b)
     push i str = runIter i
                          (\a         -> return $ ContDone a str)
                          (\k         -> k str)
                          (\iResume e -> return $ ContErr (ierr iResume e) e)
-                         (\mb doB    -> mb >>= \b -> push (doB b) str)
     onCont :: (Stream s -> m (ContReturn s m a)) -> Iteratee s m b
     onCont k  = icont $ \str -> do
                   res <- k str
@@ -366,8 +366,6 @@ bindIter m f = runIter m f onCont onErr onReq
                       ContMore i'        -> return $ ContMore (i' `bindIter` f)
 
     onErr i e = ierr (i `bindIter` f) e
-    onReq :: m x -> (x -> Iteratee s m a) -> Iteratee s m b
-    onReq mb doB = ireq mb (( `bindIter` f) . doB)
 
 instance MonadTrans (Iteratee s) where
   lift = flip ireq idone
@@ -395,8 +393,7 @@ instance forall s. MonadTransControl (Iteratee s) where
   liftWith f = lift $ f $ \t -> liftM StIter (runIter t
                                  (return . Left)
                                  (const . return $ Right Nothing)
-                                 (\_ e -> return $ Right (Just e))
-                                 (\mb doB -> pushoR mb doB))
+                                 (\_ e -> return $ Right (Just e)) )
   restoreT = join . lift . liftM
                (either idone
                        (te . fromMaybe (iterStrExc
@@ -404,16 +401,6 @@ instance forall s. MonadTransControl (Iteratee s) where
                       . unStIter )
   {-# INLINE liftWith #-}
   {-# INLINE restoreT #-}
-
-pushoR :: Monad m =>
-          m x
-       -> (x -> Iteratee s m a)
-       -> m (Either a (Maybe IterException))
-pushoR mb doB = mb >>= \b -> runIter (doB b)
-   (return . Left)
-   (const . return $ Right Nothing)
-   (\_ e -> return $ Right (Just e))
-   pushoR
 
 te :: IterException -> Iteratee s m a
 te e = ierr (te e) e
@@ -431,7 +418,7 @@ instance (MonadBaseControl b m) => MonadBaseControl b (Iteratee s m) where
 -- thrown with 'Control.Exception.throw'.  Iteratees that do not terminate
 -- on @EOF@ will throw 'EofException'.
 run :: forall s m a. Monad m => Iteratee s m a -> m a
-run iter = runIter iter onDone onCont onErr onReq
+run iter = runIter iter onDone onCont onErr
  where
    onDone  x     = return x
    onCont  k     = k (EOF Nothing) >>= \res -> case res of
@@ -439,8 +426,6 @@ run iter = runIter iter onDone onCont onErr onReq
                       ContMore _   -> E.throw EofException
                       ContErr  _ e -> E.throw e
    onErr _ e     = E.throw e
-   onReq :: m x -> (x -> Iteratee s m a) -> m a
-   onReq mb doB  = mb >>= run . doB
 {-# INLINE run #-}
 
 -- |Run an iteratee, returning either the result or the iteratee exception.
@@ -452,15 +437,13 @@ run iter = runIter iter onDone onCont onErr onReq
 tryRun :: forall s m a. (Monad m)
   => Iteratee s m a
   -> m (Either IFException a)
-tryRun iter = runIter iter onD onC onE onR
+tryRun iter = runIter iter onD onC onE
   where
     onD        = return . Right
     onC  k     = doCont k (EOF Nothing) (\a _ -> return $ Right a)
                                         (const . return $ maybeExc EofException)
                                         (\_ e -> return $ maybeExc e)
     onE   _ e  = return $ maybeExc e
-    onR :: m x -> (x -> Iteratee s m a) -> m (Either IFException a)
-    onR mb doB = mb >>= tryRun . doB
     maybeExc e = maybe (Left (E.throw e)) Left (fromException $ toException e)
 
 -- | Lift a computation in the inner monad of an iteratee.
@@ -480,15 +463,13 @@ ilift :: forall m n s a.
   => (forall r. m r -> n r)
   -> Iteratee s m a
   -> Iteratee s n a
-ilift f i = runIter i idone onCont onErr  onReq
+ilift f i = runIter i idone onCont onErr
  where
   onCont k = icont $ \str -> f (k str) >>= \res -> case res of
                 ContDone a str' -> return $ ContDone a str'
                 ContMore i'     -> return $ ContMore (ilift f i')
                 ContErr  i' e   -> return $ ContErr (ilift f i') e
   onErr = ierr . ilift f
-  onReq :: m x -> (x -> Iteratee s m a) -> Iteratee s n a
-  onReq mb doB = ireq (liftM (ilift f . doB) (f mb)) id
 
 -- | Lift a computation in the inner monad of an iteratee, while threading
 -- through an accumulator.
@@ -497,7 +478,7 @@ ifold :: forall m n acc s a. (Monad m, Monad n)
   -> acc
   -> Iteratee s m a
   -> Iteratee s n (a, acc)
-ifold f acc i = runIter i onDone onCont onErr onReq
+ifold f acc i = runIter i onDone onCont onErr
  where
   onDone x = ireq (f (return x) acc) idone
   onCont k = icont $ \str -> f (k str) acc >>= \res -> return $ case res of
@@ -506,5 +487,3 @@ ifold f acc i = runIter i onDone onCont onErr onReq
                   (ContErr  i' e, acc')   -> ContErr  (ifold f acc' i') e
 
   onErr i' e = ierr (ifold f acc i') e
-  onReq :: m x -> (x -> Iteratee s m a) -> Iteratee s n (a, acc)
-  onReq mb doB = ireq (f mb acc) (\(b', acc') -> ifold f acc' (doB b'))

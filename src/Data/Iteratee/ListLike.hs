@@ -358,13 +358,12 @@ take ::
   -> Enumeratee s s m a
 take n' iter
   | n' <= 0   = return iter
-  | otherwise = runIter iter onDone onCont onErr onReq
+  | otherwise = runIter iter onDone onCont onErr
  where
   onDone x = drop n' >> idone (idone x)
   onCont k = if n' == 0 then idone (icont k)
                 else icont (step n' k)
   onErr i  = ierr (take n' i)
-  onReq mb doB = ireq mb (take n' . doB)
 
   step n k (Chunk str)
       | LL.null str        = continue (step n k)
@@ -406,13 +405,12 @@ take n' iter
 takeUpTo :: (Monad m, LL.ListLike s el) => Int -> Enumeratee s s m a
 takeUpTo i iter
  | i <= 0    = idone iter
- | otherwise = runIter iter onDone onCont onErr onReq
+ | otherwise = runIter iter onDone onCont onErr
   where
     onDone x = idone (idone x)
     onCont k = if i == 0 then idone (icont k)
                          else icont (step i k)
     onErr i' = ierr (takeUpTo i i')
-    onReq mb doB = ireq mb (takeUpTo i . doB)
 
     step n k (Chunk str)
       | LL.null str       = continue (step n k)
@@ -834,17 +832,15 @@ zip
   => Iteratee s m a
   -> Iteratee s m b
   -> Iteratee s m (a, b)
-zip x0 y0 = runIter x0 (odx y0) (ocx y0) (oex y0) (orx y0)
+zip x0 y0 = runIter x0 (odx y0) (ocx y0) (oex y0)
  where
   odx yIter a      = (a, ) `liftM` yIter
-  ocx yIter k      = runIter yIter (ody k) (ocy k) (oey k) (ory k)
+  ocx yIter k      = runIter yIter (ody k) (ocy k) (oey k)
   oex yIter i' e   = throwRec e (zip i' yIter)
-  orx yIter ma doA = ireq ma $ (`zip` yIter) . doA
 
   ody x_k b        = (,b) `liftM` icont x_k
   ocy xK yK        = icont (step xK yK)
   oey xK i' e      = throwRec e (ocx i' xK) -- zip (icont xK) i')
-  ory xK mb doB    = ireq mb (zip (icont xK) . doB)
 
   step xK yK NoData = contMoreM (icont $ step xK yK)
   step xK yK str    = do
@@ -930,18 +926,15 @@ enumWith
   => Iteratee s m a
   -> Iteratee s m b
   -> Iteratee s m (a, b)
-enumWith x0 y0 = runIter x0 (odx y0) (ocx y0) (oex y0) (orx y0)
+enumWith x0 y0 = runIter x0 (odx y0) (ocx y0) (oex y0)
  where
   odx yIter a      = (a,) `liftM` joinIM (enumEof yIter)
-  ocx yIter k      = runIter yIter (ody k) (ocy k) (oey k) (ory k)
+  ocx yIter k      = runIter yIter (ody k) (ocy k) (oey k)
   oex yIter i' e   = throwRec e (enumWith i' yIter)
-  orx yIter ma doA = ireq ma $ (`enumWith` yIter) . doA
 
   ody x_k b        = (,b) `liftM` icont x_k
   ocy xK yK        = icont $ step xK yK
   oey xK i' e      = ierr (ocx i' xK) e
-  ory :: forall x. Cont s m a -> m x -> (x -> Iteratee s m b) -> Iteratee s m (a,b)
-  ory xK mb doB    = ireq mb $ (\b -> ocx (doB b) xK)
 
   step :: Cont s m a -> Cont s m b -> Cont s m (a,b)
   step xK yK NoData = contMoreM (icont $ step xK yK)
@@ -980,15 +973,8 @@ sequence_ = check []
     check ks (i:iters) = runIter i (\_ -> check ks iters)
                                    (onCont ks iters)
                                    (onErr ks iters)
-                                   (onReq ks iters)
     onCont ks iters k  = check (k:ks) iters
     onErr ks iters i e = throwRec e (check ks (i:iters))
-    onReq :: [Cont s m a]
-          -> [Iteratee s m a]
-          -> m b
-          -> (b -> Iteratee s m a)
-          -> Iteratee s m ()
-    onReq ks iters mb doB = ireq mb (\b -> check ks (doB b:iters))
 
     step ks str = CM.foldM (accf str) ([], str,Nothing) ks >>= \ret -> case ret of
         (iS, _, Just e)  -> contErrM (check [] iS) e
@@ -1028,7 +1014,6 @@ countConsumed = check 0
     check !n iter = runIter iter (onDone n)
                                  (onCont n)
                                  (onErr n)
-                                 (onReq n)
 
     step !n k str@(Chunk c) = k str >>=
         return . mapContRet (check $ newLen n c mempty) (\a s -> (a,newLen n c s))
@@ -1040,7 +1025,6 @@ countConsumed = check 0
     onDone n a  = idone (a,n)
     onCont n k  = icont (step n k)
     onErr n i e = throwRec e (check n i)
-    onReq n mb doB = ireq mb (check n . doB)
 {-# INLINE countConsumed #-}
 
 -- ------------------------------------------------------------------------
@@ -1059,8 +1043,7 @@ enumPureNChunk str n iter
       | otherwise    = let (s1, s2)     = LL.splitAt n str'
                            onCont k     = doContIteratee k (Chunk s1) >>= enum' s2
                            onErr i' e   = return $ ierr i' e
-                           onReq mb doB = mb >>= enum' str' . doB
-                       in runIter iter' idoneM onCont onErr onReq
+                       in runIter iter' idoneM onCont onErr
 {-# INLINE enumPureNChunk #-}
 
 -- ------------------------------------------------------------------------

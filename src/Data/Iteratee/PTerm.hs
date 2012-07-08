@@ -221,13 +221,12 @@ takePT ::
   -> Enumeratee s s m a
 takePT n' iter
   | n' <= 0   = return iter
-  | otherwise = runIter iter onDone onCont onErr onReq
+  | otherwise = runIter iter onDone onCont onErr
  where
   onDone x = drop n' >> idone (idone x)
   onCont k = if n' == 0 then idone (icont k)
                 else icont (step n' k)
   onErr i  = ierr (takePT n' i)
-  onReq mb doB = ireq mb (takePT n' . doB)
 
   step n k (Chunk str)
       | LL.null str        = continue (step n k)
@@ -253,13 +252,12 @@ takePT n' iter
 takeUpToPT :: (Monad m, LL.ListLike s el) => Int -> Enumeratee s s m a
 takeUpToPT i iter
  | i <= 0    = idone iter
- | otherwise = runIter iter onDone onCont onErr onReq
+ | otherwise = runIter iter onDone onCont onErr
   where
     onDone x = idone (idone x)
     onCont k = if i == 0 then idone (icont k)
                          else icont (step i k)
     onErr i' = ierr (takeUpToPT i i')
-    onReq mb doB = ireq mb (takeUpToPT i . doB)
 
     step n k (Chunk str)
       | LL.null str       = continue (step n k)

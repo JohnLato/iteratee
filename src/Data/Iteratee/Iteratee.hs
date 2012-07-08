@@ -109,11 +109,10 @@ throwRec = throwRecoverableErr
 -- @Left SomeException@. 'checkErr' is useful for iteratees that may not
 -- terminate, such as @Data.Iteratee.head@ with an empty stream.
 checkErr :: Monad m => Iteratee s m a -> Iteratee s m (Either IterException a)
-checkErr iter = runIter iter (idone . Right) oc oe oR
+checkErr iter = runIter iter (idone . Right) oc oe
  where
   oc     = mapCont checkErr Right
   oe _ e = idone (Left e)
-  oR mb doB = ireq mb (checkErr . doB)
 
 -- ------------------------------------------------------------------------
 -- Parser combinators
@@ -250,12 +249,8 @@ eneeCheckIfDoneHandle
   -> Enumeratee elo eli m a
 eneeCheckIfDoneHandle h fc inner = worker inner
  where
-  worker i     = runIter i onDone fc h onReq
+  worker i     = runIter i onDone fc h
   onDone x     = idone (idone x)
-  onReq :: forall b. m b
-                     -> (b -> Iteratee eli m a)
-                     -> Iteratee elo m (Iteratee eli m a)
-  onReq mb doB = ireq mb (worker . doB)
 {-# INLINABLE eneeCheckIfDoneHandle #-}
 
 -- | Create enumeratees that pass all errors through the outer iteratee.
@@ -394,7 +389,7 @@ joinI i = i >>= lift . tryRun >>= either (throwErr . wrapExc) idone
   where
  -- TODO: either use this def. or toss it.
   -}
-joinI i = runIter i onDone onCont onErr onR
+joinI i = runIter i onDone onCont onErr
  where
   onDone i'   = ireq (tryRun i') (either (throwErr . wrapExc) return)
   onCont k    = icont $ \str -> doCont k str
@@ -445,10 +440,9 @@ enumChunk (EOF (Just e)) = enumErr e
 -- stream. The result is the iteratee in the Done state.  It is an error
 -- if the iteratee does not terminate on EOF.
 enumEof :: (Monad m) => Enumerator s m a
-enumEof iter = runIter iter idoneM onC ierrM onR
+enumEof iter = runIter iter idoneM onC ierrM
   where
     onC  k     = doContIteratee k (EOF Nothing)
-    onR mb doB = mb >>= enumEof . doB
 
 -- |Another primitive enumerator: tell the Iteratee the stream terminated
 -- with an error.
@@ -456,10 +450,9 @@ enumEof iter = runIter iter idoneM onC ierrM onR
 -- If the iteratee is already in an error state, the previous error is
 -- preserved.
 enumErr :: (EException e, Monad m) => e -> Enumerator s m a
-enumErr e iter = runIter iter idoneM onCont ierrM onR
+enumErr e iter = runIter iter idoneM onCont ierrM
   where
     onCont  k  = doContIteratee k (EOF $ Just (toEnumException e))
-    onR mb doB = mb >>= enumErr e . doB
 
 
 -- |The composition of two enumerators: essentially the functional composition
@@ -536,10 +529,9 @@ mergeEnums e1 e2 etee i = e1 $ e2 (joinI . etee $ ilift lift i) >>= run
 -- The enumerator performs no monadic action, but monadic effects embedded in
 -- the iteratee can be performed.
 enumPure1Chunk :: (Monad m) => s -> Enumerator s m a
-enumPure1Chunk str iter = runIter iter idoneM onC ierrM onR
+enumPure1Chunk str iter = runIter iter idoneM onC ierrM
   where
     onC k      = doContIteratee k (Chunk str)
-    onR mb doB = mb >>= enumPure1Chunk str . doB
 
 
 -- | A 1-chunk enumerator
@@ -554,7 +546,7 @@ enumChunkRemaining
   => s
   -> Iteratee s m a
   -> m (Iteratee s m a, Stream s)
-enumChunkRemaining str iter = runIter iter onD onC onE onR
+enumChunkRemaining str iter = runIter iter onD onC onE
   where
     onD a      = return (idone a, Chunk str)
     onC k      = k (Chunk str) >>= \res -> case res of
@@ -562,7 +554,6 @@ enumChunkRemaining str iter = runIter iter onD onC onE onR
                     ContMore i'     -> return (i', NoData)
                     ContErr  i' e   -> return (ierr i' e, NoData)
     onE i err  = return (ierr i err, Chunk str)
-    onR mb doB = mb >>= enumChunkRemaining str . doB
 
 -- | Enumerate chunks from a list
 -- 
@@ -570,7 +561,7 @@ enumList :: (Monad m) => [s] -> Enumerator s m a
 enumList chunks = go chunks
  where
   go [] i  = return i
-  go xs' i = runIter i idoneM (onCont xs') onErr (onReq xs')
+  go xs' i = runIter i idoneM (onCont xs') onErr
    where
     onCont (x:xs) k = k (Chunk x) >>= \res -> case res of
                         ContMore i'  -> go xs i'
@@ -578,7 +569,6 @@ enumList chunks = go chunks
                         ContErr i' e -> ierrM i' e
     onCont []     k = return $ icont k
     onErr iRes e    = return $ throwRec e iRes
-    onReq xs mb doB = mb >>= go xs . doB
 {-# INLINABLE enumList #-}
 
 -- | Checks if an iteratee has finished.
@@ -586,12 +576,11 @@ enumList chunks = go chunks
 -- This enumerator runs the iteratee, performing any monadic actions.
 -- If the result is True, the returned iteratee is done.
 enumCheckIfDone :: (Monad m) => Iteratee s m a -> m (Bool, Iteratee s m a)
-enumCheckIfDone iter = runIter iter onDone onCont onErr onReq
+enumCheckIfDone iter = runIter iter onDone onCont onErr
   where
     onDone x  = return (True, idone x)
     onCont k  = return (False, icont k)
     onErr i e = return (False, ierr i e)
-    onReq mb doB = mb >>= enumCheckIfDone . doB
 {-# INLINE enumCheckIfDone #-}
 
 
@@ -637,15 +626,13 @@ enumFromCallbackCatch
   -> Enumerator s m a
 enumFromCallbackCatch c handler = loop
   where
-    loop st iter = runIter iter idoneM (onCont st) (onErr st) (onReq st)
+    loop st iter = runIter iter idoneM (onCont st) (onErr st)
     onCont st k  = c st >>= check k
     onErr st i e = case fromIterException e of
       Just e' -> handler e' >>=
                    maybe (loop st i)
                          (return . ierr i) . fmap wrapEnumExc
       Nothing -> return (ierr i e)
-    onReq :: st -> m x -> (x -> Iteratee s m a) -> m (Iteratee s m a)
-    onReq st mb doB = mb >>= loop st . doB
       
     nextStep (HasMore, st') = loop st'
     nextStep (Finished,_)   = return

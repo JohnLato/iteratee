@@ -518,8 +518,6 @@ group
   :: (LL.ListLike s el, Monad m)
   => Int  -- ^ size of group
   -> Enumeratee s [s] m a
-group = const $ mapChunks (:[])
-{-  TODO: implement group
 group cksz iinit = icont (step 0 id iinit)
  where
   -- there are two cases to consider for performance purposes:
@@ -534,29 +532,26 @@ group cksz iinit = icont (step 0 id iinit)
   --
   -- not using eneeCheckIfDone because that loses final chunks at EOF
   step sz pfxd icur (Chunk s)
-    | LL.null s               = return (continue (step sz pfxd icur))
-    | LL.length s + sz < cksz = return (icont (step (sz+LL.length s)
-                                             (pfxd . (s:)) icur)
-                                        , mempty)
+    | LL.null s               = continue (step sz pfxd icur)
+    | LL.length s + sz < cksz = continue (step (sz+LL.length s) (pfxd . (s:)) icur)
     | otherwise               =
         let (full, rest) = gsplit . mconcat $ pfxd [s]
             pfxd'        = if LL.null rest then id else (rest:)
-            onDone x  = return (idone (idone x), Chunk rest)
-            onErr i e = return (ierr (icont (step (LL.length rest) pfxd' i)) e
-                                , Chunk rest)
-            onCont k  = (icont . step (LL.length rest) pfxd'
-                         *** const (Chunk rest))
-                         `liftM` k (Chunk full)
-            -- since step is a monadic function, the monadic request can be
-            -- inlined, saving an indirection
-            onReq mb doB = mb >>= \b ->
-                           step (LL.length rest) pfxd' (doB b) (Chunk rest)
-        in  runIter icur onDone onCont onErr onReq
-  step sz pfxd icur NoData = return (continue (step sz pfxd icur))
+            onDone x  = contDoneM (idone x) $ Chunk rest
+            onErr i e = contErrM (icont (step (LL.length rest) pfxd' i)) e
+            onCont k  = do
+                iRet <- k (Chunk full)
+                case iRet of
+                  ContDone x str' -> contDoneM (return x) (Chunk rest)
+                  ContMore i'     -> continue (step (LL.length rest) pfxd' i')
+                  ContErr  i' e   -> contErrM (icont $ step (LL.length rest) pfxd' i') e
+        in  runIter icur onDone onCont onErr
+  step sz pfxd icur NoData = continue (step sz pfxd icur)
   step _ pfxd icur mErr = case pfxd [] of
-                         []   -> return (idone icur, mErr)
-                         rest -> ((, mErr) . idone) `liftM`
-                                 enumPure1Chunk [mconcat rest] icur
+                         []   -> contDoneM icur mErr
+                         rest -> do
+                           i' <- enumPure1Chunk [mconcat rest] icur
+                           contDoneM i' mErr
 
   gsplit ls = case LL.splitAt cksz ls of
     (g, rest) | LL.null rest -> if LL.length g == cksz
@@ -565,7 +560,6 @@ group cksz iinit = icont (step 0 id iinit)
               | otherwise -> let (grest, leftover) = gsplit rest
                                  g' = g : grest
                              in (g', leftover)
-                             -}
 
 
 -- | Creates an 'enumeratee' in which elements are grouped into
@@ -576,8 +570,6 @@ groupBy
   :: forall s el m a. (LL.ListLike s el, Monad m)
   => (el -> el -> Bool)
   -> Enumeratee s [s] m a
-groupBy = const $ mapChunks (:[])
-{- TODO: implement groupBy
 groupBy same iinit = icont $ go iinit (const True, id)
   where 
     -- As in group, need to handle grouping efficiently when we're fed
@@ -591,31 +583,30 @@ groupBy same iinit = icont $ go iinit (const True, id)
     -- At the end, "finish" the accumulator and handle the last chunk,
     -- unless the stream was entirely empty and there is no
     -- accumulator.
-    go icurr pfx NoData    = return (continue $ go icurr pfx)
+    go icurr pfx NoData    = continue $ go icurr pfx
     go icurr pfx (Chunk s) = case gsplit pfx s of
-      ([], partial)   -> return (continue $ go icurr partial)
+      ([], partial)   -> continue $ go icurr partial
       (full, partial) ->
         -- if the inner iteratee is done, the outer iteratee needs to be
         -- notified to terminate.
         -- if the inner iteratee is in an error state, that error should
         -- be lifted to the outer iteratee
-        let onCont k = k (Chunk full) >>= \(inext, str') ->
-                         case str' of
-                           Chunk rest -> return (icont $ go inext partial
-                                           , Chunk $ mconcat rest)
-                           NoData  -> return (continue $ go inext partial)
-                           EOF mex -> return (icont $ go inext partial, EOF mex)
-            onErr inext e = return (ierr (icont (go inext partial)) e
-                                    , EOF (Just e))
-            onDone :: a -> m (Iteratee s m (Iteratee [s] m a), Stream s)
-            onDone a      = return (idone (idone a)
-                                    , Chunk . mconcat $ snd partial [])
-            onReq mb doB  = mb >>= \b -> go (doB b) pfx (Chunk s)
-        in runIter icurr onDone onCont onErr onReq
+        let onCont k = do
+              iret <- k (Chunk full) -- >>= \(inext, str') ->
+              case iret of
+                ContDone x rest  -> contDoneM (return x) (fmap mconcat $ rest)
+                ContMore inext   -> continue $ go inext partial
+                ContErr inext mx -> contErrM (icont $ go inext partial) mx
+            onErr inext e = contErrM (icont $ go inext partial) e
+            onDone a      = contDoneM (idone a) $ Chunk . mconcat $ snd partial []
+        in runIter icurr onDone onCont onErr
     go icurr (_inpfx, pfxd) (EOF mex) = case pfxd [] of
-      [] -> ((,EOF mex) . idone) `liftM` enumChunk (EOF mex) icurr
-      rest -> ((,EOF mex) . idone) `liftM`
-               (enumPure1Chunk [mconcat rest] icurr >>= enumChunk (EOF mex))
+      [] -> do
+          i' <- enumChunk (EOF mex) icurr
+          contDoneM i' (EOF mex)
+      rest -> do
+          i' <- enumPure1Chunk [mconcat rest] icurr >>= enumChunk (EOF mex)
+          contDoneM i' (EOF mex)
 
     -- Here, gsplit carries an accumulator consisting of a predicate
     -- "inpfx" that indicates whether a new element belongs in the
@@ -661,7 +652,6 @@ groupBy same iinit = icont $ go iinit (const True, id)
               x = LL.head l
               xs = LL.tail l
 
--}
 {-# INLINE groupBy #-}
 
 -- | @merge@ offers another way to nest iteratees: as a monad stack.

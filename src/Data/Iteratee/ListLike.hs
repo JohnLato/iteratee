@@ -963,11 +963,6 @@ sequence_ = check []
     -- all of the unfinished iteratees are run with a single chunk,
     -- then checked again.
 
-    -- a possible inefficiency is if multiple iteratees are in the
-    -- Request state (monadic action), as each request is fed to the
-    -- enumerator separately.  An alternative implementation would aggregate
-    -- all monadic effects (as this version aggregates all continuations)
-    -- to perform them at once.
     check [] [] = idone ()
     check ks [] = icont (step ks)
     check ks (i:iters) = runIter i (\_ -> check ks iters)
@@ -986,7 +981,7 @@ sequence_ = check []
         (iS, str', _)    -> contMoreM (check [] iS)
     accf str (iS, !strs, !mErr) k = k str >>= \ret -> case ret of
         ContDone _ str' -> return (iS, shorter str' strs, mErr)
-        ContMore i      -> return (iS, strs, mErr)
+        ContMore i      -> return (i:iS, strs, mErr)
         ContErr  i e    -> return (i:iS, strs, Just e)
       
     -- return the shorter one of two streams; errors are propagated with the

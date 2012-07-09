@@ -121,7 +121,7 @@ mapReduce ::
   -> Iteratee s m b
 mapReduce bufsize f = icontP (step (0, []))
  where
-  step a@(!buf,acc) (Chunk xs)
+  step (!buf,acc) (Chunk xs)
     | buf >= bufsize =
         let acc'  = mconcat acc
             b'    = f xs
@@ -133,6 +133,6 @@ mapReduce bufsize f = icontP (step (0, []))
     continueP (step a)
   step (_,acc) s@(EOF Nothing) =
     ContDone (mconcat acc) s
-  step acc     s@(EOF (Just err))  =
+  step acc     (EOF (Just err))  =
     ContErr (icontP $ step acc) (wrapEnumExc err)
 

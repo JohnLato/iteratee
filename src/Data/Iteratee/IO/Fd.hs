@@ -36,7 +36,6 @@ import Control.Monad.Trans.Control
 import Control.Monad.Base
 import Control.Exception.Lifted
 
-import Foreign.C.Error
 import Foreign.Ptr
 import Foreign.Storable
 import Foreign.Marshal.Alloc

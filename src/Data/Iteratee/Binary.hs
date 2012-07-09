@@ -103,7 +103,7 @@ endianReadN MSB n0 cnct = icontP (step n0 [])
   step !n acc NoData   = continueP (step n acc)
   step !n acc (EOF Nothing  )  = ContErr (icontP (step n acc))
                                          (toIterException EofException)
-  step !n acc s@(EOF (Just e)) = ContErr (icontP (step n acc)) (wrapEnumExc e)
+  step !n acc (EOF (Just e)) = ContErr (icontP (step n acc)) (wrapEnumExc e)
 endianReadN LSB n0 cnct = icontP (step n0 [])
  where
   step !n acc NoData   = continueP (step n acc)

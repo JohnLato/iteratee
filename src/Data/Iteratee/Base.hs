@@ -66,16 +66,12 @@ import Data.Iteratee.Base.LooseMap as X
 import Data.Maybe
 import Data.Monoid
 
-import Control.Arrow (first)
 import Control.Monad (liftM, join)
 import Control.Monad.Base
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
-import Control.Monad.CatchIO (MonadCatchIO (..),
-  catch, block)
 import Control.Monad.Trans.Control
 import Control.Applicative hiding (empty)
-import Control.Exception (SomeException)
 import qualified Control.Exception as E
 import Data.Data
 
@@ -223,7 +219,7 @@ doCont
   -> (Iteratee s m a -> m b)
   -> (Iteratee s m a -> IterException -> m b)
   -> m b
-doCont k s oD oC oE = k s >>= \res -> case res of
+doCont k str oD oC oE = k str >>= \res -> case res of
     ContDone a s -> oD a s
     ContMore i   -> oC i
     ContErr  i e -> oE i e
@@ -364,6 +360,7 @@ bindIter m f = runIter m f onCont onErr
                   case res of
                       ContDone a  strRem -> push (f a) strRem
                       ContMore i'        -> return $ ContMore (i' `bindIter` f)
+                      ContErr  i' e      -> contErrM (i' `bindIter` f) e
 
     onErr i e = ierr (i `bindIter` f) e
 
@@ -376,16 +373,6 @@ instance (MonadBase b m) => MonadBase b (Iteratee s m) where
 instance (MonadIO m) => MonadIO (Iteratee s m) where
   liftIO = lift . liftIO
 
-
--- This definition is pulled out from the MonadCatchIO.catch instance because
--- it's the simplest way to make the type signatures work out...
-catchOR :: (Exception e, MonadCatchIO m)
-        => Iteratee s m a
-        -> (e -> Iteratee s m a)
-        -> m b
-        -> (b -> Iteratee s m a)
-        -> Iteratee s m a
-catchOR _ f mb doB = ireq ((doB `liftM` mb) `catch` (\e -> return (f e) )) id
 
 instance forall s. MonadTransControl (Iteratee s) where
   newtype StT (Iteratee s) x =

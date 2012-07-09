@@ -251,6 +251,6 @@ enumStrExc = toEnumException . EnumStringException
 ifExcToIterExc :: IFException -> IterException
 ifExcToIterExc ife = let e = ifExceptionToException ife
                      in case (fromException e, fromException e) of
-                        (Just i, _) -> i
-                        (_, Just e) -> wrapEnumExc e
-                        (_, _)      -> error "iteratee: couldn't convert an 'IFException' to either 'IterException' or 'EnumException'.  How'd that happen?"
+                        (Just i, _)  -> i
+                        (_, Just e') -> wrapEnumExc e'
+                        (_, _)       -> error "iteratee: couldn't convert an 'IFException' to either 'IterException' or 'EnumException'.  How'd that happen?"

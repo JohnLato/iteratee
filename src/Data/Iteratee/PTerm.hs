@@ -66,12 +66,10 @@ import           Data.Iteratee.ListLike (drop)
 
 import qualified Data.ListLike as LL
 
-import           Control.Arrow ((***), first)
 import           Control.Monad.Trans.Class
 import           Control.Monad
 
 import qualified Data.ByteString as B
-import           Data.Monoid
 import           Data.Word (Word8)
 
 (<$>) :: Monad m => (a1 -> r) -> m a1 -> m r
@@ -116,10 +114,14 @@ mapChunksMPT f = go
   -- step :: (Stream s' -> m (ContReturn s' m a))-> Stream s -> m (ContReturn s m (Iteratee s' m a))
   step k (Chunk xs)   = f xs >>= doContEtee go k
   step k NoData       = contMoreM (go (icont k))
-  step k s@(EOF mErr) = k (EOF mErr) >>= \ret -> case ret of
+  step k s@(EOF Nothing) = k (EOF Nothing) >>= \ret -> case ret of
                           ContDone a _ -> contDoneM (idone a) s
                           ContMore i   -> contDoneM i s
-                          ContErr  i e -> contDoneM i s
+                          ContErr  i e -> contDoneM (ierr i e) s
+  step k s@(EOF (Just e)) = k (EOF (Just e)) >>= \ret -> case ret of
+                          ContDone a _  -> contDoneM (idone a) s
+                          ContMore i    -> contDoneM i s
+                          ContErr  i e' -> contErrM (go i) e'
 {-# INLINE mapChunksMPT #-}
 
 -- |Convert one stream into another, not necessarily in lockstep.
@@ -133,7 +135,8 @@ convStreamPT fi = go
   where
     go = eneeCheckIfDonePass check
     check k = isStreamFinished >>= maybe (step k) (hndl k)
-    hndl k (EOF e)       = lift (k (EOF e)) >>= go . wrapCont
+    hndl k (EOF e) = lift (k (EOF e)) >>= go . wrapCont
+    hndl _ _str    = error "iteratee: internal error in convStreamPT"
     step k = fi >>= lift . doContIteratee k . Chunk >>= go
 {-# INLINABLE convStreamPT #-}
 
@@ -162,7 +165,8 @@ unfoldConvStreamCheckPT checkDone f acc0 = go acc0
   where
     go acc = checkDone (check acc)
     check acc k = isStreamFinished >>= maybe (step acc k) (hndl acc k)
-    hndl acc k (EOF e)  = lift (k (EOF e)) >>= go acc . wrapCont
+    hndl acc k (EOF e) = lift (k (EOF e)) >>= go acc . wrapCont
+    hndl _   _ _str    = error "iteratee: internal error in unfoldConvStreamCheckPT"
 
     step acc k = do
       (acc',s') <- f acc
@@ -181,7 +185,7 @@ breakEPT
 breakEPT cpred = go
  where
   go = eneeCheckIfDonePass (icont . step)
-  step k s'@(Chunk s)
+  step k (Chunk s)
       | LL.null s  = contMoreM (icont (step k))
       | otherwise  = case LL.break cpred s of
         (str', tail')
@@ -242,7 +246,7 @@ takePT n' iter
                               ContErr i e  -> contErrM (idone i) e
       where (s1, s2) = LL.splitAt n str
   step  n k NoData         = continue (step n k)
-  step n k stream@EOF{} = k stream >>= \rk -> case rk of
+  step _ k stream@EOF{} = k stream >>= \rk -> case rk of
          ContDone a _str' -> contDoneM (idone a) stream
          ContMore inner   -> contDoneM inner stream
          ContErr inner e  -> contDoneM (ierr inner e) stream
@@ -250,14 +254,14 @@ takePT n' iter
 
 -- | A variant of 'Data.Iteratee.ListLike.takeUpTo' that passes 'EOF's.
 takeUpToPT :: (Monad m, LL.ListLike s el) => Int -> Enumeratee s s m a
-takeUpToPT i iter
- | i <= 0    = idone iter
- | otherwise = runIter iter onDone onCont onErr
+takeUpToPT count iter
+ | count <= 0 = idone iter
+ | otherwise  = runIter iter onDone onCont onErr
   where
     onDone x = idone (idone x)
-    onCont k = if i == 0 then idone (icont k)
-                         else icont (step i k)
-    onErr i' = ierr (takeUpToPT i i')
+    onCont k = if count == 0 then idone (icont k)
+                             else icont (step count k)
+    onErr i' = ierr (takeUpToPT count i')
 
     step n k (Chunk str)
       | LL.null str       = continue (step n k)
@@ -271,8 +275,6 @@ takeUpToPT i iter
                                                         i)
                                                       e
 
-                            -- first (takeUpToPT (n - LL.length str))
-                            -- <$> k (Chunk str)
       | otherwise         = do
          -- check to see if the inner iteratee has completed, and if so,
          -- grab any remaining stream to put it in the outer iteratee.
@@ -289,12 +291,12 @@ takeUpToPT i iter
 
                 -- this case shouldn't ever happen, except possibly
                 -- with broken iteratees
-                -- EOF{}           -> contDoneM (idone a) preStr
+                EOF{}           -> contDoneM (idone a) preStr
 
             ContMore i   -> contDoneM i (Chunk s2)
             ContErr  i e -> contErrM (idone i) e
     step n k NoData         = continue (step n k)
-    step n k stream@EOF{} = k stream >>= \rk -> case rk of
+    step _ k stream@EOF{} = k stream >>= \rk -> case rk of
            ContDone a _str' -> contDoneM (idone a) stream
            ContMore inner   -> contDoneM inner stream
            ContErr inner e  -> contDoneM (ierr inner e) stream

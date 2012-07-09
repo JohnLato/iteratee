@@ -72,17 +72,9 @@ import Prelude hiding (head, drop, dropWhile, take, break, foldl, foldl1, length
 import Data.Iteratee.IO.Base
 import Data.Iteratee.Base
 
-
-import Control.Arrow (first, (***))
-import Control.Exception
-import Control.Monad
 import Control.Monad.Trans.Class
-import Data.Maybe
 import Data.Typeable
 
--- exception helpers
-excDivergent :: SomeException
-excDivergent = toException DivergentException
 
 -- ------------------------------------------------------------------------
 -- Primitive iteratees
@@ -127,7 +119,7 @@ identity = idone ()
 isStreamFinished :: (Monad m) => Iteratee s m (Maybe (Stream s))
 isStreamFinished = icontP check
   where
-    check s@(Chunk xs) = ContDone Nothing s
+    check s@(Chunk _)  = ContDone Nothing s
     check NoData       = ContMore isStreamFinished
     check s@(EOF _)    = ContDone (Just s) s
 {-# INLINE isStreamFinished #-}
@@ -179,19 +171,19 @@ foldChunksM f = icont . go
 getChunk :: (Monad m) => Iteratee s m s
 getChunk = icontP step
  where
-  step (Chunk xs) = ContDone xs NoData
-  step NoData     = continueP step
-  step s@(EOF Nothing)  = continueErrP EofException step
-  step s@(EOF (Just e)) = continueErrP (wrapEnumExc e) step
+  step (Chunk xs)     = ContDone xs NoData
+  step NoData         = continueP step
+  step (EOF Nothing)  = continueErrP EofException step
+  step (EOF (Just e)) = continueErrP (wrapEnumExc e) step
 {-# INLINE getChunk #-}
 
 -- | Get a list of all chunks from the stream.
 getChunks :: (Monad m) => Iteratee s m [s]
 getChunks = icontP (step id)
  where
-  step acc s@(Chunk xs) = continueP $ step $ acc . (xs:)
-  step acc NoData       = continueP (step acc)
-  step acc s@(EOF{})    = ContDone (acc []) s
+  step acc (Chunk xs) = continueP $ step $ acc . (xs:)
+  step acc NoData     = continueP (step acc)
+  step acc s@(EOF{})  = ContDone (acc []) s
 {-# INLINE getChunks #-}
 
 -- ---------------------------------------------------
@@ -316,7 +308,11 @@ mapChunksM f = go
   step :: (Stream s' -> m (ContReturn s' m a))-> Stream s -> m (ContReturn s m (Iteratee s' m a))
   step k (Chunk xs)   = f xs >>= doContEtee go k
   step k NoData       = contMoreM (go (icont k))
-  step k s@(EOF mErr) = contDoneM (icont k) s
+  step k s@(EOF Nothing) = contDoneM (icont k) s
+  step k (EOF (Just e))  = k (EOF (Just e)) >>= \iret -> case iret of
+      ContDone x _  -> contDoneM (return x) NoData
+      ContMore i'   -> contMoreM (go i')
+      ContErr i' e' -> contErrM (go i') e'
 {-# INLINE mapChunksM #-}
 
 -- |Convert one stream into another, not necessarily in lockstep.
@@ -337,6 +333,8 @@ convStream fi = go
     check k = isStreamFinished >>= maybe (step k) (hndl k)
     hndl k (EOF Nothing)  = idone (icont k)
     hndl k (EOF (Just e)) = ierr (step k) (wrapEnumExc e)
+    hndl _ NoData         = error "iteratee: internal error in convStream"
+    hndl _ (Chunk _)      = error "iteratee: internal error in convStream"
     step k = fi >>= lift . doContIteratee k . Chunk >>= go
 {-# INLINABLE convStream #-}
 
@@ -364,8 +362,10 @@ unfoldConvStreamCheck checkDone f acc0 = go acc0
   where
     go acc = checkDone (check acc)
     check acc k  = isStreamFinished >>= maybe (step acc k) (hndl acc k)
-    hndl acc k (EOF Nothing)  = idone (icont k)
+    hndl _   k (EOF Nothing)  = idone (icont k)
     hndl acc k (EOF (Just e)) = ierr (step acc k) (wrapEnumExc e)
+    hndl _   _ NoData         = error "iteratee: internal error in unfoldConvStreamCheck"
+    hndl _   _ (Chunk _)      = error "iteratee: internal error in unfoldConvStreamCheck"
     step acc k = do
       (acc', s') <- f acc
       i' <- lift . doContIteratee k $ Chunk s'
@@ -399,7 +399,6 @@ joinI i = runIter i onDone onCont onErr
                     (contErrM  . joinI)
 
   onErr i' e  = throwRec e (joinI i')
-  onR mb doB  = lift mb >>= joinI . doB
   onExc e   = contErrM (throwErr e) e
   wrapExc e = let e' = toException e
               in case (fromException e', fromException e') of
@@ -634,13 +633,13 @@ enumFromCallbackCatch c handler = loop
                          (return . ierr i) . fmap wrapEnumExc
       Nothing -> return (ierr i e)
       
-    nextStep (HasMore, st') = loop st'
-    nextStep (Finished,_)   = return
+    doNext (HasMore, st') = loop st'
+    doNext (Finished,_)   = return
     check :: Cont s m a
              -> ((CBState, st), s)
              -> m (Iteratee s m a)
     check k (cbstate, s) = k (Chunk s) >>= \res -> case res of
                                ContDone a _   -> return (idone a)
-                               ContMore i'    -> nextStep cbstate i'
-                               ContErr  i' e' -> nextStep cbstate (ierr i' e')
+                               ContMore i'    -> doNext cbstate i'
+                               ContErr  i' e' -> doNext cbstate (ierr i' e')
 {-# INLINE enumFromCallbackCatch #-}

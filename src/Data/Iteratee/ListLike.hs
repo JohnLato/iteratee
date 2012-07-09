@@ -1,4 +1,7 @@
-{-# LANGUAGE FlexibleContexts, BangPatterns, TupleSections, ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleContexts
+            ,BangPatterns
+            ,TupleSections
+            ,ScopedTypeVariables #-}
 
 -- |Monadic Iteratees:
 -- incremental input parsers, processors and transformers
@@ -75,7 +78,6 @@ import qualified Data.ListLike.FoldableLL as FLL
 import Data.Iteratee.Iteratee
 import Data.Monoid
 import Control.Applicative ((<$>), (<*>), (<*))
-import Control.Arrow (first, (***))
 import Control.Monad (liftM, mplus)
 import qualified Control.Monad as CM
 import Control.Monad.Trans.Class
@@ -149,7 +151,7 @@ head = icontP step
     | LL.null vec  = continueP step
     | otherwise    = ContDone (LL.head vec) $ Chunk $ LL.tail vec
   step NoData      = continueP step
-  step str@EOF{}   = ContErr (icontP step) (toIterException EofException)
+  step EOF{}   = ContErr (icontP step) (toIterException EofException)
 {-# INLINE head #-}
 
 -- | Similar to @head@, except it returns @Nothing@ if the stream
@@ -238,6 +240,7 @@ roll t d | t > d  = icontP step
     step NoData            = continueP step
     step stream@EOF{}      = ContDone LL.empty stream
     step' v1 (Chunk vec)   = step . Chunk $ v1 `mappend` vec
+    step' v1 NoData        = continueP (step' v1)
     step' v1 stream@EOF{}  = ContDone (LL.singleton v1) stream
 roll t d = LL.singleton <$> joinI (take t stream2stream) <* drop (d-t)
   -- d is >= t, so this version works
@@ -403,14 +406,14 @@ take n' iter
 -- in each case, @I.head@ consumes only one element, returning the remaining
 -- 4 elements to the outer stream
 takeUpTo :: (Monad m, LL.ListLike s el) => Int -> Enumeratee s s m a
-takeUpTo i iter
- | i <= 0    = idone iter
- | otherwise = runIter iter onDone onCont onErr
+takeUpTo count iter
+ | count <= 0 = idone iter
+ | otherwise  = runIter iter onDone onCont onErr
   where
     onDone x = idone (idone x)
-    onCont k = if i == 0 then idone (icont k)
-                         else icont (step i k)
-    onErr i' = ierr (takeUpTo i i')
+    onCont k = if count == 0 then idone (icont k)
+                             else icont (step count k)
+    onErr i' = ierr (takeUpTo count i')
 
     step n k (Chunk str)
       | LL.null str       = continue (step n k)
@@ -542,7 +545,10 @@ group cksz iinit = icont (step 0 id iinit)
             onCont k  = do
                 iRet <- k (Chunk full)
                 case iRet of
-                  ContDone x str' -> contDoneM (return x) (Chunk rest)
+                  ContDone x (Chunk str') -> contDoneM (return x)
+                                                (Chunk . mconcat $ str' ++ [rest])
+                  ContDone x NoData       -> contDoneM (return x) (Chunk rest)
+                  ContDone x EOF{}        -> contDoneM (return x) (Chunk rest)
                   ContMore i'     -> continue (step (LL.length rest) pfxd' i')
                   ContErr  i' e   -> contErrM (icont $ step (LL.length rest) pfxd' i') e
         in  runIter icur onDone onCont onErr
@@ -770,7 +776,8 @@ foldl1 f = icontP step
       | otherwise  = ContMore $ foldl f $ FLL.foldl1 f xs
     -- After the first chunk, just use regular foldl.
     step NoData     = continueP step
-    step str@EOF{}  = ContErr (icontP step) $ toIterException EofException
+    step (EOF Nothing)  = ContErr (icontP step) $ toIterException EofException
+    step (EOF (Just e)) = ContErr (icontP step) $ wrapEnumExc e
 {-# INLINE foldl1 #-}
 
 
@@ -787,7 +794,8 @@ foldl1' f = icontP step
       | otherwise  = ContMore $ foldl' f $ FLL.foldl1 f xs
     -- After the first chunk, just use regular foldl'.
     step NoData     = continueP step
-    step str@EOF{}  = ContErr (icontP step) $ toIterException EofException
+    step (EOF Nothing)  = ContErr (icontP step) $ toIterException EofException
+    step (EOF (Just e)) = ContErr (icontP step) $ wrapEnumExc e
 {-# INLINE foldl1' #-}
 
 
@@ -842,7 +850,7 @@ zip x0 y0 = runIter x0 (odx y0) (ocx y0) (oex y0)
       -- common case and this will cut a few indirections.
       (ContDone x strX, ContDone y strY) -> contDoneM (x,y) (shorter strX strY)
       (ContMore x, ContMore y) -> contMoreM (zip x y)
-      (xRet, yRet) -> contMoreM (zip (wrapCont xRet) (wrapCont yRet))
+      (xRet', yRet') -> contMoreM (zip (wrapCont xRet') (wrapCont yRet'))
 
   shorter c1@(Chunk xs) c2@(Chunk ys)
     | LL.length xs < LL.length ys = c1
@@ -968,7 +976,7 @@ sequence_ = check []
                                           (toIterException EofException)
         (iS, EOF (Just e), _) -> let e' = wrapEnumExc e
                                  in contErrM (throwRec e' (check [] iS)) e'
-        (iS, str', _)    -> contMoreM (check [] iS)
+        (iS, _, _)            -> contMoreM (check [] iS)
     accf str (iS, !strs, !mErr) k = k str >>= \ret -> case ret of
         ContDone _ str' -> return (iS, shorter str' strs, mErr)
         ContMore i      -> return (i:iS, strs, mErr)
@@ -1005,7 +1013,7 @@ countConsumed = check 0
 
     step !n k NoData        = contMoreM (icont (step n k))
     step n k str@EOF{}      = k str >>=
-        return . mapContRet (check n) (\a s -> (a,n))
+        return . mapContRet (check n) (\a _s -> (a,n))
 
     onDone n a  = idone (a,n)
     onCont n k  = icont (step n k)

@@ -5,7 +5,7 @@ import Prelude as P
 
 import QCUtils
 
-import Test.Framework (defaultMain, testGroup)
+import Test.Framework (defaultMain, testGroup, buildTest)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 import Test.Framework.Providers.HUnit (testCase)
 
@@ -13,6 +13,7 @@ import Test.HUnit
 import Test.QuickCheck
 
 import           Data.Iteratee hiding (head, break)
+import           Data.Iteratee.Parallel
 import qualified Data.Iteratee.Char as IC
 import qualified Data.Iteratee as Iter
 import           Data.Functor.Identity
@@ -23,6 +24,8 @@ import qualified Data.ListLike as LL
 import           Control.Monad as CM
 import           Control.Monad.Writer
 import           Control.Exception (SomeException)
+
+import           System.IO.Unsafe
 
 instance Show (a -> b) where
   show _ = "<<function>>"
@@ -71,6 +74,8 @@ enumNoData iter = runIter iter idoneM onC ierrM
 -- Iteratee instances
 
 runner1 = runIdentity . Iter.run . runIdentity
+
+runnerIO mIter = mIter >>= Iter.run
 
 enumSpecial xs n
   | LL.null xs = enumPure1Chunk LL.empty >=> enumPureNChunk xs n
@@ -451,6 +456,14 @@ test_sequence_ =
     lift $ tell [y]
 
 -- ---------------------------------------------
+-- Data.Iteratee.Parallel
+
+prop_parI :: [Int] -> Int -> Iteratee [Int] IO [Int] -> Property
+prop_parI xs n i = n > 0 ==>
+  unsafePerformIO    (runnerIO (enumSpecial xs n i))
+  == unsafePerformIO (runnerIO (enumSpecial xs n (parI i)))
+
+-- ---------------------------------------------
 -- Data.Iteratee.PTerm
 
 mk_prop_pt_id etee p_etee i xs n = n > 0 ==>
@@ -615,6 +628,9 @@ tests = [
    ,testProperty "mapChunksM" prop_mapChunksM
    ,testProperty "mapChunksM_" prop_mapChunksM_
    ,testProperty "foldChunksM" prop_foldChunksM
+   ]
+  ,testGroup "Parallel" [
+    testProperty "parI" prop_parI
    ]
   ]
 

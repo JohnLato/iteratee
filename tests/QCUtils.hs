@@ -14,10 +14,15 @@ import Data.Functor.Identity
 
 import Control.Applicative
 import Control.Exception
+import System.IO.Unsafe
 
 -- Show instance
 instance (Show a, LL.ListLike s el) => Show (Iteratee s Identity a) where
   show = (++) "<<Iteratee>> " . show . runIdentity . run
+
+instance (Show a, LL.ListLike s el) => Show (Iteratee s IO a) where
+  show = (++) "<<Iteratee>> " . show . unsafePerformIO . run
+
 
 -- Arbitrary instances
 

@@ -34,44 +34,56 @@ import           Control.Monad
 --                 \_ I0\_ I1\_ .. Iy\__ Iz
 -- 
 parI :: forall s a. (Monoid s) => Iteratee s IO a -> Iteratee s IO a
-parI = error "parI is currently undefined"
--- TODO: implement parI
-{-
-parI = icont . firstStep
+parI  iter = do
+    var <- liftIO $ newEmptyMVar
+    liftIO . void . forkIO $ consumer var iter
+    icont $ reader var
   where
-    -- first step, here we fork separate thread for the next chain and at the
-    -- same time ask for more date from the previous chain
-    firstStep iter chunk = do
-        var <- liftIO newEmptyMVar
-        _   <- sideStep var chunk iter
-        return (icont $ go var, mempty)
+    reader var NoData = continue $ reader var
+    reader var c@Chunk{} = do
+        (innervar,res) <- takeMVar var
+        case res of
+            ContDone a s' -> contDoneM a (s' `mappend` c)
+            ContMore _    -> putMVar innervar c >> continue (reader var)
+            ContErr _ e   -> continueErr e $ \c' -> putMVar innervar c'
+                                                    >> continue (reader var)
+    reader var str@(EOF Nothing) = do
+        (innervar,res) <- takeMVar var
+        case res of
+            ContDone a s' -> contDoneM a (s' `mappend` str)
+            ContMore _    -> putMVar innervar str >> final var
+            ContErr _ e   -> continueErr e $ \c' -> putMVar innervar c'
+                                                    >> final var
+    -- we received EOF, so we need to send either ContDone or ContErr
+    -- at this time.  It is still possible to recover via ContErr
+    final var = do
+        (innervar,res) <- takeMVar var
+        case res of
+            ContDone a s -> contDoneM a s
+            ContMore i'  -> contErrM (icont (reader var)) EofException
+            ContErr _ e  -> continueErr e $ \c' -> putMVar innervar c'
+                                                   >> final var
+    consumer var iter = runIter iter onDone onCont onErr
+      where
+        onDone a = do
+            unused <- newEmptyMVar
+            putMVar var (unused, ContDone a mempty)
+        onCont k = do
+            innervar <- newEmptyMVar
+            putMVar var (innervar, ContMore (icont k))
+            str <- takeMVar innervar
+            res <- k str
+            case res of
+                ContDone a str' -> putMVar var (innervar, (ContDone a str'))
+                ContMore i'     -> consumer var i'
+                ContErr i' e    -> consumer var $ ierr i' e
+        onErr i' e = do
+            innervar <- newEmptyMVar
+            putMVar var (innervar, ContErr i' e)
+            str <- takeMVar innervar
+            iRecovered <- enumChunk str i'
+            consumer var iRecovered
 
-    -- somewhere in the middle, we are getting iteratee from previous step,
-    -- feeding it with some new data, asking for more data and starting
-    -- more processing in separete thread
-    go var chunk@(Chunk _) = do
-        iter <- liftIO $ takeMVar var
-        _    <- sideStep var chunk iter
-        return (icont $ go var, mempty)
-
-    -- final step - no more data, so  we need to inform our consumer about it
-    go var e = do
-        iter <- liftIO $ takeMVar var
-        return (join . lift $ enumChunk e iter, e)
-
-    -- forks away from the main computation, return results via MVar
-    sideStep var chunk iter = liftIO . forkIO
-            $ runIter iter onDone onCont onErr onReq
-        where
-            onDone a  = putMVar var $ idone a
-            onCont k  = k chunk >>= \(i',_) ->
-                          runIter i' onDone onFina onErr onReq
-            onErr i e = putMVar var $ ierr i e
-            onReq :: IO x -> (x -> Iteratee s IO a) -> IO ()
-            onReq mb doB = mb >>= \b ->
-                             runIter (doB b) onDone onCont onErr onReq
-            onFina k = putMVar var $ icont k
-            -}
 
 -- | Transform an Enumeratee into a parallel composable one, introducing
 --  one step extra delay, see 'parI'.

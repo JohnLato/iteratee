@@ -12,7 +12,6 @@ module Data.Iteratee.Parallel (
 where
 
 import           Control.Monad.IO.Class
-import           Control.Monad.Trans.Class
 import           Data.Iteratee as I hiding (mapM_, zip, filter)
 import qualified Data.ListLike as LL
 
@@ -34,9 +33,9 @@ import           Control.Monad
 --                 \_ I0\_ I1\_ .. Iy\__ Iz
 -- 
 parI :: forall s a. (Monoid s) => Iteratee s IO a -> Iteratee s IO a
-parI  iter = do
+parI  iter0 = do
     var <- liftIO $ newEmptyMVar
-    liftIO . void . forkIO $ consumer var iter
+    liftIO . void . forkIO $ consumer var iter0
     icont $ reader var
   where
     reader var NoData = continue $ reader var
@@ -54,13 +53,23 @@ parI  iter = do
             ContMore _    -> putMVar innervar str >> final var
             ContErr _ e   -> continueErr e $ \c' -> putMVar innervar c'
                                                     >> final var
+    -- treat this case exactly like receiving a chunk, since the enumerator
+    -- should be expecting the iteratee to recover and continue
+    reader var c@(EOF (Just _)) = do
+        (innervar,res) <- takeMVar var
+        case res of
+            ContDone a s' -> contDoneM a (s' `mappend` c)
+            ContMore _    -> putMVar innervar c >> continue (reader var)
+            ContErr _ e   -> continueErr e $ \c' -> putMVar innervar c'
+                                                    >> continue (reader var)
+
     -- we received EOF, so we need to send either ContDone or ContErr
     -- at this time.  It is still possible to recover via ContErr
     final var = do
         (innervar,res) <- takeMVar var
         case res of
             ContDone a s -> contDoneM a s
-            ContMore i'  -> contErrM (icont (reader var)) EofException
+            ContMore _   -> contErrM (icont (reader var)) EofException
             ContErr _ e  -> continueErr e $ \c' -> putMVar innervar c'
                                                    >> final var
     consumer var iter = runIter iter onDone onCont onErr

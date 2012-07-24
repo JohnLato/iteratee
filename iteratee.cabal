@@ -12,10 +12,10 @@ maintainer:    John W. Lato <jwlato@gmail.com>
 license:       BSD3
 license-file:  LICENSE
 homepage:      http://www.tiresiaspress.us/haskell/iteratee
-tested-with:   GHC == 7.0.4, GHC == 7.2.1
+tested-with:   GHC == 7.2.1, GHC == 7.4.2
 stability:     experimental
 
-cabal-version: >= 1.6
+cabal-version: >= 1.10
 build-type:    Simple
 
 extra-source-files:
@@ -28,6 +28,7 @@ extra-source-files:
   bench/*.hs
 
 library
+  default-language: Haskell2010
   hs-source-dirs:
     src
 
@@ -52,7 +53,7 @@ library
     containers                >= 0.2     && < 0.6,
     parallel                  >= 2       && < 4,
     transformers              >= 0.2     && < 0.4,
-    transformers-base         >= 0.3     && < 0.5
+    transformers-base         >= 0.4     && < 0.5
 
   exposed-modules:
     Data.Nullable
@@ -81,6 +82,7 @@ library
 
 
 Test-Suite testIteratee
+  default-language: Haskell2010
   type: exitcode-stdio-1.0
   main-is: testIteratee.hs
   hs-source-dirs: tests src
@@ -95,17 +97,21 @@ Test-Suite testIteratee
       unix-bytestring         >= 0.3.5 && < 0.4
 
   build-depends:
-      base                       >= 3   && < 6,
+      base,
+      iteratee,
+      mtl,
+      ListLike,
+      transformers,
       HUnit                      == 1.2.* ,
-      mtl                        >= 2   && < 3,
       QuickCheck                 >= 2   && < 3,
       test-framework             >= 0.3 && < 0.7,
       test-framework-quickcheck2 >= 0.2 && < 0.3,
       test-framework-hunit       >= 0.2 && < 0.3
 
 benchmark bench-all
+  default-language: Haskell2010
   type: exitcode-stdio-1.0
-  hs-source-dirs: src bench
+  hs-source-dirs: bench
   main-is:        BenchAll.hs
 
   if os(windows)

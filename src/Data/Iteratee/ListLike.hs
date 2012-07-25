@@ -77,7 +77,7 @@ import qualified Data.ListLike as LL
 import qualified Data.ListLike.FoldableLL as FLL
 import Data.Iteratee.Iteratee
 import Data.Monoid
-import Control.Applicative ((<$>), (<*>), (<*))
+import Control.Applicative ((<$>), (<*>))
 import Control.Monad (liftM, mplus)
 import qualified Control.Monad as CM
 import Control.Monad.Trans.Class
@@ -224,7 +224,7 @@ peek = icontP step
 --   from the stream.  Useful for creating a 'rolling average' with
 --  'convStream'.
 roll
-  :: (Monad m, Functor m, LL.ListLike s el, LL.ListLike s' s)
+  :: (Monad m, LL.ListLike s el, LL.ListLike s' s)
   => Int  -- ^ length of chunk (t)
   -> Int  -- ^ amount to consume (d)
   -> Iteratee s m s'
@@ -242,7 +242,7 @@ roll t d | t > d  = icontP step
     step' v1 (Chunk vec)   = step . Chunk $ v1 `mappend` vec
     step' v1 NoData        = continueP (step' v1)
     step' v1 stream@EOF{}  = ContDone (LL.singleton v1) stream
-roll t d = LL.singleton <$> joinI (take t stream2stream) <* drop (d-t)
+roll t d = LL.singleton `liftM` joinI (take t stream2stream) <** drop (d-t)
   -- d is >= t, so this version works
 {-# INLINE roll #-}
 
@@ -329,7 +329,7 @@ takeFromChunk n = icontP step
 -- 
 -- @breakE@ should be used in preference to @break@ whenever possible.
 breakE
-  :: (LL.ListLike s el, Monad m, Functor m)
+  :: (LL.ListLike s el, Monad m)
   => (el -> Bool)
   -> Enumeratee s s m a
 breakE cpred = go
@@ -340,7 +340,7 @@ breakE cpred = go
     | otherwise = case LL.break cpred s of
         (str', tail')
           | LL.null tail' ->
-              doContEtee ((<* dropWhile (not . cpred)) . go) k str'
+              doContEtee ((<** dropWhile (not . cpred)) . go) k str'
                                -- if the inner iteratee completes before
                                -- the predicate is met, elements still
                                -- need to be dropped.
@@ -349,6 +349,10 @@ breakE cpred = go
   step k NoData       =  continue (step k)
   step k stream@EOF{} =  contDoneM (icont k) stream
 {-# INLINE breakE #-}
+
+-- defining this local so we don't need Functor constraints on 'm'
+(<**) :: Monad m => m a -> m b -> m a
+l <** r = l >>= \a -> r >> return a
 
 -- |Read n elements from a stream and apply the given iteratee to the
 -- stream of the read elements. Unless the stream is terminated early, we
@@ -467,7 +471,7 @@ takeWhile = break . (not .)
 -- 
 -- This is preferred to @takeWhile@.
 takeWhileE
- :: (LL.ListLike s el, Monad m, Functor m)
+ :: (LL.ListLike s el, Monad m)
  => (el -> Bool)
  -> Enumeratee s s m a
 takeWhileE = breakE . (not .)
@@ -508,10 +512,10 @@ rigidMapStream f = mapChunks (LL.rigidMap f)
 -- 
 -- The analogue of @List.filter@
 filter
-  :: (Monad m, Functor m, LL.ListLike s el)
+  :: (Monad m, LL.ListLike s el)
   => (el -> Bool)
   -> Enumeratee s s m a
-filter p = convStream (LL.filter p <$> getChunk)
+filter p = convStream (LL.filter p `liftM` getChunk)
 {-# INLINE filter #-}
 
 -- |Creates an 'Enumeratee' in which elements from the stream are
@@ -675,7 +679,7 @@ groupBy same iinit = icont $ go iinit (const True, id)
 -- >           ( enumFile 10 "file2" . joinI . enumLinesBS $ joinI
 -- >                 (ileaveLines logger)) >>= run)
 -- > 
--- > ileaveLines :: (Functor m, Monad m)
+-- > ileaveLines :: (Monad m)
 -- >   => Enumeratee [ByteString] [ByteString] (Iteratee [ByteString] m)
 -- >        [ByteString]
 -- > ileaveLines = merge (\l1 l2 ->
@@ -686,8 +690,8 @@ groupBy same iinit = icont $ go iinit (const True, id)
 merge ::
   (LL.ListLike s1 el1
    ,LL.ListLike s2 el2
-   ,Monad m
-   ,Functor m)
+   ,Functor m
+   ,Monad m)
   => (el1 -> el2 -> b)
   -> Enumeratee s2 b (Iteratee s1 m) a
 merge f = convStream $ f <$> lift head <*> head
@@ -703,15 +707,15 @@ merge f = convStream $ f <$> lift head <*> head
 -- will have the same number of elements, although that number may vary
 -- between calls.
 mergeByChunks ::
-  (LL.ListLike c1 el1, LL.ListLike c2 el2,Functor m, Monad m)
+  (LL.ListLike c1 el1, LL.ListLike c2 el2,Monad m)
   => (c1 -> c2 -> c3)  -- ^ merge function
   -> (c1 -> c3)
   -> (c2 -> c3)
   -> Enumeratee c2 c3 (Iteratee c1 m) a
 mergeByChunks f f1 f2 = unfoldConvStream iter (0 :: Int)
  where
-  iter 1 = (1,) . f1 <$> lift getChunk
-  iter 2 = (2,) . f2 <$> getChunk
+  iter 1 = ((1,) . f1) `liftM` lift getChunk
+  iter 2 = ((2,) . f2) `liftM` getChunk
   iter _ = do
     ml1 <- lift chunkLength
     ml2 <- chunkLength

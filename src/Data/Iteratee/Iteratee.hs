@@ -227,7 +227,7 @@ eneeCheckIfDone ::
 eneeCheckIfDone = eneeCheckIfDonePass
 
 type EnumerateeHandler eli elo m a =
-  Iteratee eli m a
+  Iteratee elo m (Iteratee eli m a)
   -> IterException
   -> Iteratee elo m (Iteratee eli m a)
 
@@ -235,36 +235,43 @@ type EnumerateeHandler eli elo m a =
 -- a handler which is used
 -- to process any exceptions in a separate method.
 eneeCheckIfDoneHandle
-  :: forall m eli elo a.
-     EnumerateeHandler eli elo m a
+  :: forall m eli elo a. Monad m
+  => EnumerateeHandler eli elo m a
   -> (Cont eli m a -> Iteratee elo m (Iteratee eli m a))
   -> Enumeratee elo eli m a
-eneeCheckIfDoneHandle h fc inner = worker inner
+eneeCheckIfDoneHandle h fc inner = runIter (worker inner) return ckCont h
  where
-  worker i     = runIter i onDone fc h
+  worker i     = runIter i onDone fc handle
+  handle recInner e = throwRec e (return recInner)
   onDone x     = idone (idone x)
+  ckCont k     = icont $ \str -> do
+        res <- k str
+        case res of
+            ContDone a rest -> contDoneM a rest
+            ContMore i'     -> contMoreM i'
+            ContErr i' e    -> contMoreM (h i' e)
 {-# INLINABLE eneeCheckIfDoneHandle #-}
 
 -- | Create enumeratees that pass all errors through the outer iteratee.
 eneeCheckIfDonePass
-  ::
-     (Cont eli m a -> Iteratee elo m (Iteratee eli m a))
+  :: Monad m
+  => (Cont eli m a -> Iteratee elo m (Iteratee eli m a))
   -> Enumeratee elo eli m a
 eneeCheckIfDonePass f = worker
  where
-  worker = eneeCheckIfDoneHandle handler f
-  handler i = ierr (worker i)
+  worker    = eneeCheckIfDoneHandle handler f
+  handler i = ierr (i >>= worker)
 {-# INLINABLE eneeCheckIfDonePass #-}
 
 -- | Create an enumeratee that ignores all errors from the inner iteratee
 eneeCheckIfDoneIgnore
-  ::
-     (Cont eli m a -> Iteratee elo m (Iteratee eli m a))
+  :: Monad m
+  => (Cont eli m a -> Iteratee elo m (Iteratee eli m a))
   -> Enumeratee elo eli m a
 eneeCheckIfDoneIgnore f = worker
  where
   worker = eneeCheckIfDoneHandle handler f
-  handler i _e = worker i
+  handler i _e = i >>= worker
 {-# INLINABLE eneeCheckIfDoneIgnore #-}
 
 

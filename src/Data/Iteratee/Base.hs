@@ -56,6 +56,9 @@ module Data.Iteratee.Base (
   -- ** Stream Functions
   -- * Classes
   ,module X
+  -- * Debugging utilities
+  ,traceContIteratee
+  ,traceContEtee
 )
 where
 
@@ -74,6 +77,8 @@ import Control.Monad.Trans.Control
 import Control.Applicative hiding (empty)
 import qualified Control.Exception as E
 import Data.Data
+
+import Debug.Trace
 
 
 -- |A stream is a (continuing) sequence of elements bundled in Chunks.
@@ -474,3 +479,29 @@ ifold f acc i = runIter i onDone onCont onErr
                   (ContErr  i' e, acc')   -> ContErr  (ifold f acc' i') e
 
   onErr i' e = ierr (ifold f acc i') e
+
+
+-- some useful debugging tools
+
+traceContIteratee
+  :: Monad m
+  => String
+  -> Cont s m a
+  -> Stream s
+  -> m (Iteratee s m a)
+traceContIteratee lbl k s = k s >>= \res -> case res of
+    ContDone a _ -> trace (lbl ++ ": ContDone") $ idoneM a
+    ContMore i   -> trace (lbl ++ ": ContMore") $ return i
+    ContErr  i e -> trace (lbl ++ ": ContErr " ++ show e) $ ierrM i e
+
+traceContEtee
+  :: Monad m
+  => String
+  -> (Iteratee sInner m a -> Iteratee sOuter m (Iteratee sInner m a))
+  -> (Stream sInner -> m (ContReturn sInner m a))
+  -> sInner
+  -> m (ContReturn sOuter m (Iteratee sInner m a))
+traceContEtee lbl go k s = k (Chunk s) >>= \ret -> case ret of
+    ContDone a _ -> trace (lbl ++ ": ContDone") $ contDoneM (idone a) NoData
+    ContMore i   -> trace (lbl ++ ": ContMore") $ contMoreM (go i)
+    ContErr  i e -> trace (lbl ++ ": ContErr " ++ show e) $ contErrM (go i) e

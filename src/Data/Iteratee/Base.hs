@@ -483,6 +483,7 @@ ifold f acc i = runIter i onDone onCont onErr
 
 -- some useful debugging tools
 
+-- | like 'doContIteratee'
 traceContIteratee
   :: Monad m
   => String
@@ -494,6 +495,7 @@ traceContIteratee lbl k s = k s >>= \res -> case res of
     ContMore i   -> trace (lbl ++ ": ContMore") $ return i
     ContErr  i e -> trace (lbl ++ ": ContErr " ++ show e) $ ierrM i e
 
+-- | like 'doContEtee'
 traceContEtee
   :: Monad m
   => String

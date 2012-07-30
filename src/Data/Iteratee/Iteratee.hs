@@ -62,6 +62,8 @@ module Data.Iteratee.Iteratee (
   -- * Misc.
   ,seek
   ,FileOffset
+  -- ** Debugging utils
+  ,traceEteeExc
   -- * Classes
   ,module Data.Iteratee.Base
 )
@@ -74,6 +76,8 @@ import Data.Iteratee.Base
 
 import Control.Monad.Trans.Class
 import Data.Typeable
+
+import Debug.Trace
 
 
 -- ------------------------------------------------------------------------
@@ -650,3 +654,22 @@ enumFromCallbackCatch c handler = loop
                                ContMore i'    -> doNext cbstate i'
                                ContErr  i' e' -> doNext cbstate (ierr i' e')
 {-# INLINE enumFromCallbackCatch #-}
+
+
+-- | trace exceptions through enumeratees
+traceEteeExc :: String -> Enumeratee s1 s2 m a -> Enumeratee s1 s2 m a
+traceEteeExc lbl etee inner = runIter outer onDone (oc outer) onOuterErr
+  where
+    outer = etee inner'
+    inner' = runIter inner (od inner) (oc inner) (oe inner)
+
+    onDone innerRet = runIter innerRet (od outer) (oc outer)
+                                       (showRec "output inner done" outer)
+    onOuterErr outerRec e = showRec "output outer" outer outerRec e
+
+    od i _   = i
+    oc i _   = i
+    oe       = showRec "input iteratee"
+    showRec lbl' i rec e = trace (lbl ++ " - " ++ lbl' ++ ": " ++ show e) $
+                 runIter rec (const i) (const i)
+                   (\_ e' -> trace (lbl ++ " - *** " ++ lbl' ++ " recovery!!: " ++ show e') i)

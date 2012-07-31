@@ -98,6 +98,8 @@ Test-Suite testIteratee
   build-depends:
       base,
       iteratee,
+      bytestring,
+      directory,
       mtl,
       ListLike,
       transformers,

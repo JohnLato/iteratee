@@ -4,6 +4,7 @@
 import Prelude as P
 
 import QCUtils
+import Seek
 
 import Test.Framework (defaultMain, testGroup, buildTest)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
@@ -631,6 +632,10 @@ tests = [
    ]
   ,testGroup "Parallel" [
     testProperty "parI" prop_parI
+   ]
+  ,testGroup "Seeking" [
+    testCase "seek" testSeek1
+   ,testCase "nested seek" testSeek2
    ]
   ]
 

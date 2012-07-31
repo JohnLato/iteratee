@@ -88,18 +88,12 @@ mapChunksPT f = go
  where
   go = eneeCheckIfDonePass (icont . step)
   step k (Chunk xs)   = doContEtee go k (f xs)
-  step k NoData       = contMoreM (go (icont k))
-  step k s@(EOF mErr) = k (EOF mErr) >>= \ret -> contDoneM (wrapCont ret) s
+  step k NoData       = continue (step k)
+  step k s@(EOF mErr) = k (EOF mErr) >>= \ret -> case ret of
+      ContDone a _  -> contDoneM (return a) s
+      ContMore i'   -> contMoreM $ go i'
+      ContErr i' e' -> contErrM (go i') e'
 {-# INLINE mapChunksPT #-}
-  {-
-  step k (Chunk xs) = k (Chunk (f xs)) >>= \ret -> return $ case ret of
-                        ContMore i       -> ContMore (go i)
-                        ContErr  i e     -> ContErr (go i) e
-                        ContDone a _str' -> ContDone (idone a) NoData
-  step k NoData     = contMoreM (go (icont k))
-
-  step k s@EOF{}    = contDoneM (icont k) s
-  -}
 
 -- | Convert a stream of @s@ to a stream of @s'@ using the supplied function.
 -- 
@@ -112,16 +106,12 @@ mapChunksMPT f = go
  where
   go = eneeCheckIfDonePass (icont . step)
   -- step :: (Stream s' -> m (ContReturn s' m a))-> Stream s -> m (ContReturn s m (Iteratee s' m a))
-  step k (Chunk xs)   = f xs >>= doContEtee go k
-  step k NoData       = contMoreM (go (icont k))
-  step k s@(EOF Nothing) = k (EOF Nothing) >>= \ret -> case ret of
+  step k (Chunk xs) = f xs >>= doContEtee go k
+  step k NoData     = continue $ step k
+  step k s@EOF{}    = k (EOF Nothing) >>= \ret -> case ret of
                           ContDone a _ -> contDoneM (idone a) s
-                          ContMore i   -> contDoneM i s
-                          ContErr  i e -> contDoneM (ierr i e) s
-  step k s@(EOF (Just e)) = k (EOF (Just e)) >>= \ret -> case ret of
-                          ContDone a _  -> contDoneM (idone a) s
-                          ContMore i    -> contDoneM i s
-                          ContErr  i e' -> contErrM (go i) e'
+                          ContMore i   -> contMoreM (go i)
+                          ContErr  i e -> contErrM (go i) e
 {-# INLINE mapChunksMPT #-}
 
 -- |Convert one stream into another, not necessarily in lockstep.
@@ -197,26 +187,9 @@ breakEPT cpred = go
   step k NoData         =  continue (step k)
   step k stream@(EOF{}) =  k stream >>= \ret -> case ret of
                               ContDone a _ -> contDoneM (idone a) stream
-                              ContMore i   -> contDoneM i stream
-                              ContErr  i e -> contDoneM (ierr i e) stream
+                              ContMore i   -> contMoreM (go i)
+                              ContErr  i e -> contErrM (go i) e
 {-# INLINE breakEPT #-}
-  {-
-  go = eneeCheckIfDonePass (icont . step)
-  step k (Chunk s)
-    | LL.null s = continue (step k)
-    | otherwise = case LL.break cpred s of
-        (str', tail')
-          | LL.null tail' -> do
-              ret <- k (Chunk str')
-              doContEtee ((<* dropWhile (not . cpred)) . go) k str'
-                               -- if the inner iteratee completes before
-                               -- the predicate is met, elements still
-                               -- need to be dropped.
-          | otherwise -> k (Chunk str') >>= \ret ->
-                            contDoneM (wrapCont ret) (Chunk str')
-  step k NoData       =  continue (step k)
-  step k stream@EOF{} =  contDoneM (icont k) stream
-  -}
 
 -- | A variant of 'Data.Iteratee.ListLike.take' that passes 'EOF's.
 takePT ::
@@ -245,11 +218,11 @@ takePT n' iter
                               ContMore i   -> contDoneM i (Chunk s2)
                               ContErr i e  -> contErrM (idone i) e
       where (s1, s2) = LL.splitAt n str
-  step  n k NoData         = continue (step n k)
-  step _ k stream@EOF{} = k stream >>= \rk -> case rk of
+  step n k NoData       = continue (step n k)
+  step n k stream@EOF{} = k stream >>= \rk -> case rk of
          ContDone a _str' -> contDoneM (idone a) stream
-         ContMore inner   -> contDoneM inner stream
-         ContErr inner e  -> contDoneM (ierr inner e) stream
+         ContMore inner   -> contMoreM (takePT n inner)
+         ContErr inner e  -> contErrM  (takePT n inner) e
 {-# INLINE takePT #-}
 
 -- | A variant of 'Data.Iteratee.ListLike.takeUpTo' that passes 'EOF's.
@@ -296,10 +269,10 @@ takeUpToPT count iter
             ContMore i   -> contDoneM i (Chunk s2)
             ContErr  i e -> contErrM (idone i) e
     step n k NoData         = continue (step n k)
-    step _ k stream@EOF{} = k stream >>= \rk -> case rk of
+    step n k stream@EOF{} = k stream >>= \rk -> case rk of
            ContDone a _str' -> contDoneM (idone a) stream
-           ContMore inner   -> contDoneM inner stream
-           ContErr inner e  -> contDoneM (ierr inner e) stream
+           ContMore inner   -> contMoreM (takeUpToPT n inner)
+           ContErr inner e  -> contErrM (takeUpToPT n inner) e
 {-# INLINE takeUpToPT #-}
 
 -- | A variant of 'Data.Iteratee.ListLike.takeWhileE' that passes 'EOF's.

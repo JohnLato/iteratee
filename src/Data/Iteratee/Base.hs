@@ -239,11 +239,9 @@ newtype Iteratee s m a = Iteratee{ runIter :: forall r.
           (Iteratee s m a -> IterException -> r) ->
           r}
 
+
 -- invariants:
--- 1.  If an iteratee executes the second (continuation) parameter, the
---       returned @Stream s@ will be ignored unless the returned iteratee
---       is in the 'done' state (will execute the first continuation)
--- 2.  The returned @Stream s@ of the second (continuation) parameter must
+-- 1.  The returned @Stream s@ of the second (continuation) parameter must
 --       be a subset of the input stream.
 
 -- ----------------------------------------------

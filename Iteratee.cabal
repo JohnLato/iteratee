@@ -124,7 +124,11 @@ benchmark bench-all
       unix-bytestring         >= 0.3.5 && < 0.4
 
   build-depends:
-      base       >= 3   && < 6,
+      base,
+      iteratee,
+      bytestring,
+      ListLike,
+      transformers,
       criterion  >= 0.6 && < 0.7,
       deepseq    >= 1.2 && < 2,
       mtl        >= 2   && < 3

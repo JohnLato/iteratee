@@ -19,6 +19,7 @@ module Data.Iteratee.Base (
   ,module Data.Iteratee.Exception
   -- ** Iteratees
   ,Iteratee (..)
+  ,runIter
   -- ** Iteratee continuation returns
   ,ContReturn (..)
   ,Cont
@@ -233,11 +234,22 @@ doCont k str oD oC oE = k str >>= \res -> case res of
 
 -- ----------------------------------------------
 -- | Monadic iteratee
-newtype Iteratee s m a = Iteratee{ runIter :: forall r.
-          (a -> r) ->
-          ((Stream s -> m (ContReturn s m a)) -> r) ->
-          (Iteratee s m a -> IterException -> r) ->
-          r}
+
+data Iteratee s m a =
+    IDone a
+  | ICont (Stream s -> m (ContReturn s m a))
+  | IErr  (Iteratee s m a) (IterException)
+
+runIter
+  :: Iteratee s m a
+  -> (a -> r)
+  -> ((Stream s -> m (ContReturn s m a)) -> r)
+  -> (Iteratee s m a -> IterException -> r)
+  -> r
+runIter (IDone a)  onDone _      _     = onDone a
+runIter (ICont k)  _      onCont _     = onCont k
+runIter (IErr i e) _      _      onErr = onErr i e
+{-# INLINE runIter #-}
 
 
 -- invariants:
@@ -247,17 +259,17 @@ newtype Iteratee s m a = Iteratee{ runIter :: forall r.
 -- ----------------------------------------------
 
 idone :: a -> Iteratee s m a
-idone a = Iteratee $ \onDone _ _ -> onDone a
+idone = IDone
 {-# INLINE idone #-}
 
 -- | Create an iteratee from a continuation
 icont :: (Stream s -> m (ContReturn s m a)) -> Iteratee s m a
-icont k = Iteratee $ \_ onCont _ -> onCont k
+icont = ICont
 {-# INLINE icont #-}
 
 -- | Create an iteratee from a pure continuation
 icontP :: Monad m => (Stream s -> (ContReturn s m a)) -> Iteratee s m a
-icontP k = Iteratee $ \_ onCont _ -> onCont (return . k)
+icontP k = ICont (return . k)
 {-# INLINE icontP #-}
 
 -- | Create a continuation return value from a continuation
@@ -307,7 +319,7 @@ liftI = icontP
 {-# INLINE liftI #-}
 
 ierr :: IException e => Iteratee s m a -> e -> Iteratee s m a
-ierr i e = Iteratee $ \_ _ onErr -> onErr i (toIterException e)
+ierr i e = IErr i (toIterException e)
 {-# INLINE ierr #-}
 
 ireq :: Monad m => m b -> (b -> Iteratee s m a) -> Iteratee s m a

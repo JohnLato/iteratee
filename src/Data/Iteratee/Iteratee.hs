@@ -343,7 +343,7 @@ convStream fi = go
     go = eneeCheckIfDonePass check
     check k = isStreamFinished >>= maybe (step k) (hndl k)
     hndl k (EOF Nothing)  = idone (icont k)
-    hndl k (EOF (Just e)) = ierr (step k) (wrapEnumExc e)
+    hndl k (EOF (Just e)) = ierr (check k) (wrapEnumExc e)
     hndl _ NoData         = error "iteratee: internal error in convStream"
     hndl _ (Chunk _)      = error "iteratee: internal error in convStream"
     step k = fi >>= lift . doContIteratee k . Chunk >>= go
@@ -374,7 +374,7 @@ unfoldConvStreamCheck checkDone f acc0 = go acc0
     go acc = checkDone (check acc)
     check acc k  = isStreamFinished >>= maybe (step acc k) (hndl acc k)
     hndl _   k (EOF Nothing)  = idone (icont k)
-    hndl acc k (EOF (Just e)) = ierr (step acc k) (wrapEnumExc e)
+    hndl acc k (EOF (Just e)) = ierr (check acc k) (wrapEnumExc e)
     hndl _   _ NoData         = error "iteratee: internal error in unfoldConvStreamCheck"
     hndl _   _ (Chunk _)      = error "iteratee: internal error in unfoldConvStreamCheck"
     step acc k = do

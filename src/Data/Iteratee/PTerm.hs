@@ -118,7 +118,7 @@ mapChunksMPT f = go
 -- 
 -- A version of 'convStream' that sends 'EOF's to the inner iteratee.
 convStreamPT
-  :: (Monad m)
+  :: (Monad m, LL.ListLike s el)
   =>  Iteratee s m s'
   -> Enumeratee s s' m a
 convStreamPT fi = go
@@ -134,7 +134,7 @@ convStreamPT fi = go
 -- 
 -- A version of 'unfoldConvStream' that sends 'EOF's to the inner iteratee.
 unfoldConvStreamPT ::
- (Monad m) =>
+ (Monad m, LL.ListLike s el) =>
   (acc -> Iteratee s m (acc, s'))
   -> acc
   -> Enumeratee s s' m a
@@ -144,13 +144,13 @@ unfoldConvStreamPT fi acc0 = unfoldConvStreamCheckPT eneeCheckIfDonePass fi acc0
 -- | A version of 'unfoldConvStreamCheck' that sends 'EOF's
 -- to the inner iteratee.
 unfoldConvStreamCheckPT
-  :: (Monad m)
-  => ((Cont eli m a -> Iteratee elo m (Iteratee eli m a))
-      -> Enumeratee elo eli m a
+  :: (Monad m, LL.ListLike fromStr elo)
+  => ((Cont toStr m a -> Iteratee fromStr m (Iteratee toStr m a))
+      -> Enumeratee fromStr toStr m a
      )
-  -> (acc -> Iteratee elo m (acc, eli))
+  -> (acc -> Iteratee fromStr m (acc, toStr))
   -> acc
-  -> Enumeratee elo eli m a
+  -> Enumeratee fromStr toStr m a
 unfoldConvStreamCheckPT checkDone f acc0 = go acc0
   where
     go acc = checkDone (check acc)

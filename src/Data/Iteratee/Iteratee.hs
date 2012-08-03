@@ -404,22 +404,8 @@ joinI :: forall m s s' a.
  (Monad m) =>
   Iteratee s m (Iteratee s' m a)
   -> Iteratee s m a
-{-
 joinI i = i >>= lift . tryRun >>= either (throwErr . wrapExc) idone
   where
- -- TODO: either use this def. or toss it.
-  -}
-joinI i = runIter i onDone onCont onErr
- where
-  onDone i'   = ireq (tryRun i') (either (throwErr . wrapExc) return)
-  onCont k    = icont $ \str -> doCont k str
-                    (\i' str' -> tryRun i' >>= either (onExc . wrapExc)
-                                                      (`contDoneM` str') )
-                    (contMoreM . joinI)
-                    (contErrM  . joinI)
-
-  onErr i' e  = throwRec e (joinI i')
-  onExc e   = contErrM (throwErr e) e
   wrapExc e = let e' = toException e
               in case (fromException e', fromException e') of
                   (Just a, _) -> a

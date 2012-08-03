@@ -76,6 +76,7 @@ import Data.Iteratee.Base
 import qualified Data.ListLike as LL
 
 import Control.Monad.Trans.Class
+import Control.Monad ((<=<))
 import Data.Typeable
 
 import Debug.Trace
@@ -315,7 +316,14 @@ mapChunks f = go
           ContDone a _  -> contDoneM (return a) s
           ContMore i'   -> contMoreM $ go i'
           ContErr i' e' -> contErrM (go i') e'
-{-# INLINE mapChunks #-}
+{-# INLINE[3] mapChunks #-}
+
+{-# RULES
+"mapChunks/mapChunks"    forall f g i. mapChunks  f (mapChunks  g i) = return (mapChunks  (g . f) i)
+"mapChunks/mapChunksM"   forall f g i. mapChunks  f (mapChunksM g i) = return (mapChunksM (g . f) i)
+"mapChunksM/mapChunks"   forall f g i. mapChunksM f (mapChunks  g i) = return (mapChunksM (return g <=< f) i)
+"mapChunksM/mapChunksM"  forall f g i. mapChunksM f (mapChunksM g i) = return (mapChunksM (g <=< f) i)
+  #-}
 
 -- | Convert a stream of @s@ to a stream of @s'@ using the supplied function.
 mapChunksM
@@ -333,7 +341,7 @@ mapChunksM f = go
       ContDone x _  -> contDoneM (return x) NoData
       ContMore i'   -> contMoreM (go i')
       ContErr i' e' -> contErrM (go i') e'
-{-# INLINE mapChunksM #-}
+{-# INLINE[3] mapChunksM #-}
 
 -- |Convert one stream into another, not necessarily in lockstep.
 -- 
@@ -479,6 +487,7 @@ infixr 0 =$
   -> Iteratee s' m a
   -> Iteratee s m a
 (=$) = (.) joinI
+{-# INLINE (=$) #-}
 
 infixl 1 $=
 
@@ -491,7 +500,7 @@ infixl 1 $=
   -> Enumeratee s s' m b
   -> Enumerator s' m b
 ($=) enum enee iter = enum (enee iter) >>= run
-
+{-# INLINE ($=) #-}
 
 -- | Enumeratee composition
 -- Run the second enumeratee within the first.  In this example, stream2list
@@ -506,7 +515,8 @@ infixl 1 $=
   => (forall x . Enumeratee s1 s2 m x)
   -> Enumeratee s2 s3 m a
   -> Enumeratee s1 s3 m a
-f ><> g = joinI . f . g
+f ><> g = \i -> joinI (f (g i))
+{-# INLINE[1] (><>) #-}
 
 -- | enumeratee composition with the arguments flipped, see '><>'
 (<><) ::
@@ -515,6 +525,7 @@ f ><> g = joinI . f . g
   -> (forall x. Enumeratee s1 s2 m x)
   -> Enumeratee s1 s3 m a
 f <>< g = joinI . g . f
+{-# INLINE[1] (<><) #-}
 
 -- | Combine enumeration over two streams.  The merging enumeratee would
 -- typically be the result of 'Data.Iteratee.ListLike.merge' or

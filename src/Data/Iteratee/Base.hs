@@ -350,8 +350,9 @@ bindIter :: forall s m a b. (Monad m)
     => Iteratee s m a
     -> (a -> Iteratee s m b)
     -> Iteratee s m b
-bindIter m f = runIter m f onCont onErr
+bindIter m f = go m f
   where
+    go l r = runIter l r onCont onErr
     push :: Iteratee s m b -> Stream s -> m (ContReturn s m b)
     push i str = runIter i
                          (\a         -> return $ ContDone a str)
@@ -362,10 +363,10 @@ bindIter m f = runIter m f onCont onErr
                   res <- k str
                   case res of
                       ContDone a  strRem -> push (f a) strRem
-                      ContMore i'        -> return $ ContMore (i' `bindIter` f)
-                      ContErr  i' e      -> contErrM (i' `bindIter` f) e
+                      ContMore i'        -> return $ ContMore (i' `go` f)
+                      ContErr  i' e      -> contErrM (i' `go` f) e
 
-    onErr i e = ierr (i `bindIter` f) e
+    onErr i e = ierr (i `go` f) e
 
 instance MonadTrans (Iteratee s) where
   lift = flip ireq idone

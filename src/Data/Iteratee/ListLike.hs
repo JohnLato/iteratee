@@ -1038,7 +1038,9 @@ enumPureNChunk str n iter
       | otherwise    = let (s1, s2)     = LL.splitAt n str'
                            onCont k     = doContIteratee k (Chunk s1) >>= enum' s2
                            onErr i' e   = return $ ierr i' e
-                       in runIter iter' idoneM onCont onErr
+                       in if LL.null s1
+                            then enum' s2 iter'
+                            else runIter iter' idoneM onCont onErr
 {-# INLINE enumPureNChunk #-}
 
 -- ------------------------------------------------------------------------

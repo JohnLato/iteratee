@@ -299,13 +299,17 @@ mapChunks f = go
   -- done, the rest of the output won't be used and can therefore be
   -- dropped here.  If the result isn't done, there shouldn't be any
   -- returned output, so again it can be dropped.
-  step k (Chunk xs) = k (Chunk (f xs)) >>= \ret -> return $ case ret of
-                        ContMore i       -> ContMore (go i)
-                        ContErr  i e     -> ContErr (go i) e
-                        ContDone a _str' -> ContDone (idone a) NoData
-  step k NoData     = contMoreM (go (icont k))
+  step k (Chunk xs) = k (Chunk (f xs)) >>= \ret -> case ret of
+                        ContMore i       -> contMoreM (go i)
+                        ContErr  i e     -> contErrM (go i) e
+                        ContDone a _str' -> contDoneM (idone a) NoData
+  step k NoData     = continue (step k)
 
-  step k s@EOF{}    = contDoneM (icont k) s
+  step k s@(EOF Nothing) = contDoneM (icont k) s
+  step k s@(EOF (Just e)) = k (EOF (Just e)) >>= \ret -> case ret of
+          ContDone a _  -> contDoneM (return a) s
+          ContMore i'   -> contMoreM $ go i'
+          ContErr i' e' -> contErrM (go i') e'
 {-# INLINE mapChunks #-}
 
 -- | Convert a stream of @s@ to a stream of @s'@ using the supplied function.

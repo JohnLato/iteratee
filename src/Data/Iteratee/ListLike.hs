@@ -515,7 +515,7 @@ filter
   :: (Monad m, LL.ListLike s el)
   => (el -> Bool)
   -> Enumeratee s s m a
-filter p = convStream (LL.filter p `liftM` getChunk)
+filter p = mapChunks (LL.filter p)
 {-# INLINE filter #-}
 
 -- |Creates an 'Enumeratee' in which elements from the stream are

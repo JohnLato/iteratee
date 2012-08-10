@@ -241,6 +241,35 @@ type EnumerateeHandler eli elo m a =
   -> IterException
   -> Iteratee elo m (Iteratee eli m a)
 
+fuseEneeHandle
+  :: Monad m
+  => EnumerateeHandler s1 s2 m a
+  -> (Cont s1 m a -> Iteratee s2 m (Iteratee s1 m a))
+  -> EnumerateeHandler s2 s3 m (Iteratee s1 m a)
+  -> (Cont s2 m (Iteratee s1 m a) -> Iteratee s3 m (Iteratee s2 m (Iteratee s1 m a)))
+  -> Enumeratee s3 s1 m a
+fuseEneeHandle h1 k1 h2 k2 = eneeCheckIfDoneHandle hFuse kFuse
+  where
+    hFuse fusedRec exc = do
+        rec1 <- fusedRec
+        let hD a = return a
+            hC k = oC k
+            hE i' e = do
+                i21 <- h2 (return i') e
+                runIter i21 return oC oE
+        rec2 <- runIter (h1 (return rec1) exc) hD hC hE
+        eneeCheckIfDoneHandle hFuse kFuse rec2
+    kFuse k = runIter (k1 k) return oC oE
+    oC k'   = k2 k' >>= \i' -> runIter i' return oC oE
+    oE i' e = ierr (runIter i' return oC oE) e
+{-# INLINE fuseEneeHandle #-}
+
+{-# RULES
+"fuseEneeHandle" forall h1 k1 h2 k2 i. eneeCheckIfDoneHandle h2 k2 (eneeCheckIfDoneHandle h1 k1 i)
+                      = return (fuseEneeHandle h1 k1 h2 k2 i)
+  #-}
+
+
 -- | The same as eneeCheckIfDonePass, with one extra argument:
 -- a handler which is used
 -- to process any exceptions in a separate method.
@@ -260,29 +289,29 @@ eneeCheckIfDoneHandle h fc inner = runIter (worker inner) return ckCont h
             ContDone a rest -> contDoneM a rest
             ContMore i'     -> contMoreM i'
             ContErr i' e    -> contMoreM (h i' e)
-{-# INLINABLE eneeCheckIfDoneHandle #-}
+{-# NOINLINE eneeCheckIfDoneHandle #-}
 
 -- | Create enumeratees that pass all errors through the outer iteratee.
 eneeCheckIfDonePass
   :: Monad m
   => (Cont eli m a -> Iteratee elo m (Iteratee eli m a))
   -> Enumeratee elo eli m a
-eneeCheckIfDonePass f = worker
+eneeCheckIfDonePass f = eneeCheckIfDoneHandle handler f
  where
   worker    = eneeCheckIfDoneHandle handler f
   handler i = ierr (i >>= worker)
-{-# INLINABLE eneeCheckIfDonePass #-}
+{-# INLINE eneeCheckIfDonePass #-}
 
 -- | Create an enumeratee that ignores all errors from the inner iteratee
 eneeCheckIfDoneIgnore
   :: Monad m
   => (Cont eli m a -> Iteratee elo m (Iteratee eli m a))
   -> Enumeratee elo eli m a
-eneeCheckIfDoneIgnore f = worker
+eneeCheckIfDoneIgnore f = eneeCheckIfDoneHandle handler f
  where
   worker = eneeCheckIfDoneHandle handler f
   handler i _e = i >>= worker
-{-# INLINABLE eneeCheckIfDoneIgnore #-}
+{-# INLINE eneeCheckIfDoneIgnore #-}
 
 
 -- | Convert one stream into another with the supplied mapping function.
@@ -297,7 +326,7 @@ eneeCheckIfDoneIgnore f = worker
 -- > unpacker = mapChunks B.unpack
 -- 
 mapChunks :: (Monad m) => (s -> s') -> Enumeratee s s' m a
-mapChunks f = go
+mapChunks f = eneeCheckIfDonePass (icont . step)
  where
   go = eneeCheckIfDonePass (icont . step)
 
@@ -316,7 +345,7 @@ mapChunks f = go
           ContDone a _  -> contDoneM (return a) s
           ContMore i'   -> contMoreM $ go i'
           ContErr i' e' -> contErrM (go i') e'
-{-# INLINE[3] mapChunks #-}
+{-# INLINE mapChunks #-}
 
 {-# RULES
 "mapChunks/mapChunks"    forall f g i. mapChunks  f (mapChunks  g i) = return (mapChunks  (g . f) i)
@@ -330,7 +359,7 @@ mapChunksM
   :: forall m s s' a. (Monad m)
   => (s -> m s')
   -> Enumeratee s s' m a
-mapChunksM f = go
+mapChunksM f = eneeCheckIfDonePass (icont . step)
  where
   go = eneeCheckIfDonePass (icont . step)
   step :: (Stream s' -> m (ContReturn s' m a))-> Stream s -> m (ContReturn s m (Iteratee s' m a))
@@ -341,7 +370,7 @@ mapChunksM f = go
       ContDone x _  -> contDoneM (return x) NoData
       ContMore i'   -> contMoreM (go i')
       ContErr i' e' -> contErrM (go i') e'
-{-# INLINE[3] mapChunksM #-}
+{-# INLINE mapChunksM #-}
 
 -- |Convert one stream into another, not necessarily in lockstep.
 -- 
@@ -355,7 +384,7 @@ convStream
   :: (Monad m, LL.ListLike s elo)
   => Iteratee s m s'
   -> Enumeratee s s' m a
-convStream fi = go
+convStream fi = eneeCheckIfDonePass check
   where
     go = eneeCheckIfDonePass check
     check k = isStreamFinished >>= maybe (step k) (hndl k)
@@ -364,7 +393,7 @@ convStream fi = go
     hndl _ NoData         = error "iteratee: internal error in convStream"
     hndl _ (Chunk _)      = error "iteratee: internal error in convStream"
     step k = fi >>= lift . doContIteratee k . Chunk >>= go
-{-# INLINABLE convStream #-}
+{-# INLINE convStream #-}
 
 
 -- |The most general stream converter.  Given a function to produce iteratee
@@ -376,7 +405,7 @@ unfoldConvStream ::
   -> acc
   -> Enumeratee s s' m a
 unfoldConvStream fi acc0 = unfoldConvStreamCheck eneeCheckIfDonePass fi acc0
-{-# INLINABLE unfoldConvStream #-}
+{-# INLINE unfoldConvStream #-}
 
 unfoldConvStreamCheck
   :: (Monad m, LL.ListLike fromStr elo)
@@ -386,7 +415,7 @@ unfoldConvStreamCheck
   -> (acc -> Iteratee fromStr m (acc, toStr))
   -> acc
   -> Enumeratee fromStr toStr m a
-unfoldConvStreamCheck checkDone f acc0 = go acc0
+unfoldConvStreamCheck checkDone f acc0 = checkDone (check acc0)
   where
     go acc = checkDone (check acc)
     check acc k  = isStreamFinished >>= maybe (step acc k) (hndl acc k)
@@ -398,7 +427,7 @@ unfoldConvStreamCheck checkDone f acc0 = go acc0
       (acc', s') <- f acc
       i' <- lift . doContIteratee k $ Chunk s'
       go acc' i'
-{-# INLINABLE unfoldConvStreamCheck #-}
+{-# INLINE unfoldConvStreamCheck #-}
 
 -- | Collapse a nested iteratee.  The inner iteratee is terminated by @EOF@.
 --   Errors are propagated through the result.
@@ -448,6 +477,7 @@ enumChunk (Chunk xs)     = enumPure1Chunk xs
 enumChunk NoData         = return
 enumChunk (EOF Nothing)  = enumEof
 enumChunk (EOF (Just e)) = enumErr e
+{-# INLINE enumChunk #-}
 
 -- |The most primitive enumerator: applies the iteratee to the terminated
 -- stream. The result is the iteratee in the Done state.  It is an error
@@ -456,6 +486,7 @@ enumEof :: (Monad m) => Enumerator s m a
 enumEof iter = runIter iter idoneM onC ierrM
   where
     onC  k     = doContIteratee k (EOF Nothing)
+{-# INLINE enumEof #-}
 
 -- |Another primitive enumerator: tell the Iteratee the stream terminated
 -- with an error.
@@ -466,6 +497,7 @@ enumErr :: (EException e, Monad m) => e -> Enumerator s m a
 enumErr e iter = runIter iter idoneM onCont ierrM
   where
     onCont  k  = doContIteratee k (EOF $ Just (toEnumException e))
+{-# INLINE enumErr #-}
 
 
 -- |The composition of two enumerators: essentially the functional composition
@@ -499,7 +531,7 @@ infixl 1 $=
   => (forall a. Enumerator s m a)
   -> Enumeratee s s' m b
   -> Enumerator s' m b
-($=) enum enee iter = enum (enee iter) >>= run
+($=) enum enee = \iter -> enum (enee iter) >>= run
 {-# INLINE ($=) #-}
 
 -- | Enumeratee composition
@@ -516,7 +548,7 @@ infixl 1 $=
   -> Enumeratee s2 s3 m a
   -> Enumeratee s1 s3 m a
 f ><> g = \i -> joinI (f (g i))
-{-# INLINE[1] (><>) #-}
+{-# INLINE (><>) #-}
 
 -- | enumeratee composition with the arguments flipped, see '><>'
 (<><) ::
@@ -524,8 +556,8 @@ f ><> g = \i -> joinI (f (g i))
   => Enumeratee s2 s3 m a
   -> (forall x. Enumeratee s1 s2 m x)
   -> Enumeratee s1 s3 m a
-f <>< g = joinI . g . f
-{-# INLINE[1] (<><) #-}
+f <>< g = \i -> joinI (g (f i))
+{-# INLINE (<><) #-}
 
 -- | Combine enumeration over two streams.  The merging enumeratee would
 -- typically be the result of 'Data.Iteratee.ListLike.merge' or
@@ -548,7 +580,7 @@ enumPure1Chunk :: (Monad m) => s -> Enumerator s m a
 enumPure1Chunk str iter = runIter iter idoneM onC ierrM
   where
     onC k      = doContIteratee k (Chunk str)
-
+{-# INLINE enumPure1Chunk #-}
 
 -- | A 1-chunk enumerator
 --
@@ -570,6 +602,7 @@ enumChunkRemaining str iter = runIter iter onD onC onE
                     ContMore i'     -> return (i', NoData)
                     ContErr  i' e   -> return (ierr i' e, NoData)
     onE i err  = return (ierr i err, Chunk str)
+{-# INLINE enumChunkRemaining #-}
 
 -- | Enumerate chunks from a list
 -- 
@@ -608,6 +641,7 @@ enumFromCallback ::
   -> Enumerator s m a
 enumFromCallback c =
   enumFromCallbackCatch c (\NotAnException -> return Nothing)
+{-# INLINE enumFromCallback #-}
 
 -- Dummy exception to catch in enumFromCallback
 -- This never gets thrown, but it lets us

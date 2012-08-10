@@ -84,7 +84,7 @@ import           Data.Word (Word8)
 -- A version of 'mapChunks' that sends 'EOF's to the inner iteratee.
 -- 
 mapChunksPT :: (Monad m) => (s -> s') -> Enumeratee s s' m a
-mapChunksPT f = go
+mapChunksPT f = eneeCheckIfDonePass (icont . step)
  where
   go = eneeCheckIfDonePass (icont . step)
   step k (Chunk xs)   = doContEtee go k (f xs)
@@ -102,7 +102,7 @@ mapChunksMPT
   :: (Monad m)
   => (s -> m s')
   -> Enumeratee s s' m a
-mapChunksMPT f = go
+mapChunksMPT f = eneeCheckIfDonePass (icont . step)
  where
   go = eneeCheckIfDonePass (icont . step)
   -- step :: (Stream s' -> m (ContReturn s' m a))-> Stream s -> m (ContReturn s m (Iteratee s' m a))
@@ -121,14 +121,14 @@ convStreamPT
   :: (Monad m, LL.ListLike s el)
   =>  Iteratee s m s'
   -> Enumeratee s s' m a
-convStreamPT fi = go
+convStreamPT fi = eneeCheckIfDonePass check
   where
     go = eneeCheckIfDonePass check
     check k = isStreamFinished >>= maybe (step k) (hndl k)
     hndl k (EOF e) = lift (k (EOF e)) >>= go . wrapCont
     hndl _ _str    = error "iteratee: internal error in convStreamPT"
     step k = fi >>= lift . doContIteratee k . Chunk >>= go
-{-# INLINABLE convStreamPT #-}
+{-# INLINE convStreamPT #-}
 
 -- |The most general stream converter.
 -- 
@@ -139,7 +139,7 @@ unfoldConvStreamPT ::
   -> acc
   -> Enumeratee s s' m a
 unfoldConvStreamPT fi acc0 = unfoldConvStreamCheckPT eneeCheckIfDonePass fi acc0
-{-# INLINABLE unfoldConvStreamPT #-}
+{-# INLINE unfoldConvStreamPT #-}
 
 -- | A version of 'unfoldConvStreamCheck' that sends 'EOF's
 -- to the inner iteratee.
@@ -151,7 +151,7 @@ unfoldConvStreamCheckPT
   -> (acc -> Iteratee fromStr m (acc, toStr))
   -> acc
   -> Enumeratee fromStr toStr m a
-unfoldConvStreamCheckPT checkDone f acc0 = go acc0
+unfoldConvStreamCheckPT checkDone f acc0 = checkDone (check acc0)
   where
     go acc = checkDone (check acc)
     check acc k = isStreamFinished >>= maybe (step acc k) (hndl acc k)
@@ -162,7 +162,7 @@ unfoldConvStreamCheckPT checkDone f acc0 = go acc0
       (acc',s') <- f acc
       i' <- lift . doContIteratee k $ Chunk s'
       go acc' i'
-{-# INLINABLE unfoldConvStreamCheckPT #-}
+{-# INLINE unfoldConvStreamCheckPT #-}
 
 -- -------------------------------------
 -- ListLike variants
@@ -172,7 +172,7 @@ breakEPT
   :: (LL.ListLike s el, Monad m)
   => (el -> Bool)
   -> Enumeratee s s m a
-breakEPT cpred = go
+breakEPT cpred = eneeCheckIfDonePass (icont . step)
  where
   go = eneeCheckIfDonePass (icont . step)
   step k (Chunk s)
@@ -281,7 +281,7 @@ takeWhileEPT
  => (el -> Bool)
  -> Enumeratee s s m a
 takeWhileEPT = breakEPT . (not .)
-{-# INLINEABLE takeWhileEPT #-}
+{-# INLINE takeWhileEPT #-}
 
 -- | A variant of 'Data.Iteratee.ListLike.mapStream' that passes 'EOF's.
 mapStreamPT
@@ -292,7 +292,7 @@ mapStreamPT
   => (el -> el')
   -> Enumeratee (s el) (s el') m a
 mapStreamPT f = mapChunksPT (lMap f)
-{-# SPECIALIZE mapStreamPT :: Monad m => (el -> el') -> Enumeratee [el] [el'] m a #-}
+{-# INLINE mapStreamPT #-}
 
 -- | A variant of 'Data.Iteratee.ListLike.rigidMapStream' that passes 'EOF's.
 rigidMapStreamPT
@@ -300,8 +300,7 @@ rigidMapStreamPT
   => (el -> el)
   -> Enumeratee s s m a
 rigidMapStreamPT f = mapChunksPT (LL.rigidMap f)
-{-# SPECIALIZE rigidMapStreamPT :: Monad m => (el -> el) -> Enumeratee [el] [el] m a #-}
-{-# SPECIALIZE rigidMapStreamPT :: Monad m => (Word8 -> Word8) -> Enumeratee B.ByteString B.ByteString m a #-}
+{-# INLINE rigidMapStreamPT #-}
 
 -- | A variant of 'Data.Iteratee.ListLike.filter' that passes 'EOF's.
 filterPT

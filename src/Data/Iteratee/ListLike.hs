@@ -861,29 +861,6 @@ zip x0 y0 = runIter x0 (odx y0) (ocx y0) (oex y0)
   shorter _          _         = NoData
   
 {-# INLINE zip #-}
-  {-
-  odx yIter a      = (a,) `liftM` joinIM (enumEof yIter)
-  ocx yIter k      = runIter yIter (ody k) (ocy k) (oey k) (ory k)
-  oex yIter i' e   = throwRec e (enumWith i' yIter)
-  orx yIter ma doA = ireq ma $ (`enumWith` yIter) . doA
-
-  ody x_k b        = (,b) `liftM` icont x_k
-  ocy xK yK        = icont $ step xK yK
-  oey xK i' e      = ierr (ocx i' xK) e
-  ory :: forall x. Cont s m a -> m x -> (x -> Iteratee s m b) -> Iteratee s m (a,b)
-  ory xK mb doB    = ireq mb $ (\b -> ocx (doB b) xK)
-
-  step :: Cont s m a -> Cont s m b -> Cont s m (a,b)
-  step xK yK NoData = contMoreM (icont $ step xK yK)
-  step xK yK str = do
-    xret <- xK str
-    yret <- yK str
-    case xret of
-        -- TODO: use something better than 'run' here
-        ContDone a str' -> run (wrapCont yret) >>= \y -> contDoneM (a,y) str'
-        ContMore i      -> contMoreM (enumWith i $ wrapCont yret)
-        ContErr  i e    -> contErrM  (enumWith i $ wrapCont yret) e
-        -}
 
 zip3
   :: (Monad m, LL.ListLike s el)

@@ -332,7 +332,7 @@ breakE
   :: (LL.ListLike s el, Monad m)
   => (el -> Bool)
   -> Enumeratee s s m a
-breakE cpred = go
+breakE cpred = eneeCheckIfDonePass (icont . step)
  where
   go = eneeCheckIfDonePass (icont . step)
   step k (Chunk s)
@@ -475,7 +475,7 @@ takeWhileE
  => (el -> Bool)
  -> Enumeratee s s m a
 takeWhileE = breakE . (not .)
-{-# INLINEABLE takeWhileE #-}
+{-# INLINE takeWhileE #-}
 
 -- |Map the stream: another iteratee transformer
 -- Given the stream of elements of the type @el@ and the function @(el->el')@,
@@ -491,7 +491,7 @@ mapStream
   => (el -> el')
   -> Enumeratee (s el) (s el') m a
 mapStream f = mapChunks (lMap f)
-{-# SPECIALIZE mapStream :: Monad m => (el -> el') -> Enumeratee [el] [el'] m a #-}
+{-# INLINE mapStream #-}
 
 -- |Map the stream rigidly.
 -- 
@@ -503,8 +503,7 @@ rigidMapStream
   => (el -> el)
   -> Enumeratee s s m a
 rigidMapStream f = mapChunks (LL.rigidMap f)
-{-# SPECIALIZE rigidMapStream :: Monad m => (el -> el) -> Enumeratee [el] [el] m a #-}
-{-# SPECIALIZE rigidMapStream :: Monad m => (Word8 -> Word8) -> Enumeratee B.ByteString B.ByteString m a #-}
+{-# INLINE rigidMapStream #-}
 
 
 -- |Creates an 'enumeratee' with only elements from the stream that
@@ -995,6 +994,7 @@ sequence_ = check []
     shorter e@(EOF _) _         = e
     shorter _         e@(EOF _) = e
     shorter _         _         = NoData
+{-# INLINABLE sequence_ #-}
 
 -- |Transform an iteratee into one that keeps track of how much data it
 -- consumes.

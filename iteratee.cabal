@@ -1,5 +1,5 @@
 name:          iteratee
-version:       0.8.9.1
+version:       0.8.9.2
 synopsis:      Iteratee-based I/O
 description:
   The Iteratee monad provides strict, safe, and functional I/O. In addition
@@ -12,7 +12,7 @@ maintainer:    John W. Lato <jwlato@gmail.com>
 license:       BSD3
 license-file:  LICENSE
 homepage:      http://www.tiresiaspress.us/haskell/iteratee
-tested-with:   GHC == 7.2.1, GHC == 7.4.2
+tested-with:   GHC == 7.6.0, GHC == 7.4.2
 stability:     experimental
 
 cabal-version: >= 1.10
@@ -86,22 +86,25 @@ Test-Suite testIteratee
   type: exitcode-stdio-1.0
   main-is: testIteratee.hs
   hs-source-dirs: tests src
-  ghc-options:    -fhpc -hpcdir dist/hpc/mix/iteratee-0.8.9.1
+  ghc-options:    -fhpc -hpcdir dist/hpc/mix/iteratee-0.8.9.2
 
   if os(windows)
     cpp-options: -DUSE_WINDOWS
   else
     cpp-options: -DUSE_POSIX
     build-depends:
-      unix                    >= 2 && < 3,
-      unix-bytestring         >= 0.3.5 && < 0.4
+      unix                    >= 2 && < 3
 
   build-depends:
       base,
+      bytestring,
       iteratee,
+      MonadCatchIO-mtl,
+      monad-control,
       mtl,
       ListLike,
       transformers,
+      transformers-base,
       HUnit                      == 1.2.* ,
       QuickCheck                 >= 2   && < 3,
       test-framework             >= 0.3 && < 0.7,
@@ -119,10 +122,17 @@ benchmark bench-all
   else
     cpp-options: -DUSE_POSIX
     build-depends:
-      unix                    >= 2 && < 3,
-      unix-bytestring         >= 0.3.5 && < 0.4
+      unix                    >= 2 && < 3
 
   build-depends:
+      iteratee,
+      bytestring,
+      MonadCatchIO-mtl,
+      monad-control,
+      mtl,
+      ListLike,
+      transformers,
+      transformers-base,
       base       >= 3   && < 6,
       criterion  >= 0.6 && < 0.7,
       deepseq    >= 1.2 && < 2,

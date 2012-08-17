@@ -38,7 +38,7 @@ module Data.Iteratee.Base (
 )
 where
 
-import Prelude hiding (null, catch)
+import Prelude hiding (null)
 import Data.Iteratee.Exception
 import Data.Iteratee.Base.LooseMap as X
 import Data.Nullable               as X
@@ -51,7 +51,8 @@ import Control.Monad (liftM, join)
 import Control.Monad.Base
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
-import Control.Monad.CatchIO (MonadCatchIO (..), catch, block)
+import Control.Monad.CatchIO (MonadCatchIO (..), block)
+import qualified Control.Monad.CatchIO as EIO
 import Control.Monad.Trans.Control
 import Control.Applicative hiding (empty)
 import Control.Exception (SomeException)
@@ -178,7 +179,7 @@ instance (MonadIO m, Nullable s, NullPoint s) => MonadIO (Iteratee s m) where
 
 instance (MonadCatchIO m, Nullable s, NullPoint s) =>
   MonadCatchIO (Iteratee s m) where
-    m `catch` f = Iteratee $ \od oc -> runIter m od oc `catch` (\e -> runIter (f e) od oc)
+    m `catch` f = Iteratee $ \od oc -> runIter m od oc `EIO.catch` (\e -> runIter (f e) od oc)
     block       = ilift block
     unblock     = ilift unblock
 

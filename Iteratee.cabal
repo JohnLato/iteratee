@@ -84,7 +84,7 @@ Test-Suite testIteratee
   default-language: Haskell2010
   type: exitcode-stdio-1.0
   main-is: testIteratee.hs
-  hs-source-dirs: tests
+  hs-source-dirs: tests src
   ghc-options:    -fhpc -hpcdir dist/hpc/mix/iteratee-0.9.0.0
 
   if os(windows)
@@ -103,6 +103,10 @@ Test-Suite testIteratee
       mtl,
       ListLike,
       transformers,
+      monad-control,
+      transformers-base,
+      lifted-base,
+      parallel,
       HUnit                      == 1.2.* ,
       QuickCheck                 >= 2   && < 3,
       test-framework             >= 0.3 && < 0.7,

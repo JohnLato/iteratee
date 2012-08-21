@@ -125,6 +125,9 @@ prop_breakE f xs = runner1 (enumPure1Chunk xs (joinI $ Iter.breakE f stream2stre
 prop_breakE2 f xs = runner1 (enumPure1Chunk xs (joinI (Iter.breakE f stream2stream) >> stream2list)) == snd (break f xs)
   where types = xs :: [Int]
 
+prop_breakE3 f xs = runner1 (enumPure1Chunk xs (joinI (Iter.breakE f (return ())) >> stream2list)) == snd (break f xs)
+  where types = xs :: [Int]
+
 
 prop_head xs = P.length xs > 0 ==> runner1 (enumPure1Chunk xs Iter.head) == head xs
   where types = xs :: [Int]
@@ -576,6 +579,7 @@ tests = [
     ,testProperty "rigidMapStream" prop_rigidMapStream
     ,testProperty "breakE" prop_breakE
     ,testProperty "breakE remainder" prop_breakE2
+    ,testProperty "breakE remainder after completion" prop_breakE3
     ,testProperty "take" prop_take
     ,testProperty "take (finished iteratee)" prop_take2
     ,testProperty "takeUpTo" prop_takeUpTo

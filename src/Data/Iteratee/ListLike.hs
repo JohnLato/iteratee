@@ -330,7 +330,8 @@ breakE
   :: (LL.ListLike s el, Monad m)
   => (el -> Bool)
   -> Enumeratee s s m a
-breakE cpred = eneeCheckIfDonePass (icont . step)
+breakE cpred = eneeCheckIfDonePass (icont . step) CM.>=>
+                \i' -> dropWhile (not . cpred) >> return i'
  where
   go = eneeCheckIfDonePass (icont . step)
   step k (Chunk s)
@@ -338,7 +339,7 @@ breakE cpred = eneeCheckIfDonePass (icont . step)
     | otherwise = case LL.break cpred s of
         (str', tail')
           | LL.null tail' ->
-              doContEtee ((<** dropWhile (not . cpred)) . go) k str'
+              doContEtee go k str'
                                -- if the inner iteratee completes before
                                -- the predicate is met, elements still
                                -- need to be dropped.

@@ -62,7 +62,7 @@ module Data.Iteratee.Base (
 )
 where
 
-import Prelude hiding (null, catch)
+import Prelude hiding (null)
 import Data.Iteratee.Exception
 import Data.Iteratee.Base.LooseMap as X
 

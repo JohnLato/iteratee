@@ -65,6 +65,7 @@ module Data.Iteratee.Iteratee (
   ,FileOffset
   -- ** Debugging utils
   ,traceEteeExc
+  ,fuseEneeHandle
   -- * Classes
   ,module Data.Iteratee.Base
 )
@@ -77,7 +78,7 @@ import Data.Iteratee.Base
 import qualified Data.ListLike as LL
 
 import Control.Monad.Trans.Class
-import Control.Monad ((<=<))
+import Control.Monad ((<=<), liftM)
 import Data.Typeable
 
 import Debug.Trace
@@ -257,25 +258,64 @@ fuseEneeHandle
   -> Enumeratee s3 s1 m a
 fuseEneeHandle h1 k1 h2 k2 = eneeCheckIfDoneHandle hFuse kFuse
   where
+    go = eneeCheckIfDoneHandle hFuse kFuse
     hFuse fusedRec exc = do
         rec1 <- fusedRec
         let hD a = return a
-            hC k = oC k
+            hC k = innerC k
             hE i' e = do
                 i21 <- h2 (return i') e
-                runIter i21 return oC oE
+                runIter i21 return innerC innerE
         rec2 <- runIter (h1 (return rec1) exc) hD hC hE
-        eneeCheckIfDoneHandle hFuse kFuse rec2
-    kFuse k = runIter (k1 k) return oC oE
-    oC k'   = k2 k' >>= \i' -> runIter i' return oC oE
-    oE i' e = ierr (runIter i' return oC oE) e
+        go rec2
+    -- kFuse :: Cont s1 m a -> Iteratee s3 m (Iteratee s1 m a)
+    kFuse k = runIter (k1 k) return innerC innerE >>= go
+    -- innerC :: Cont s2 m (Iteratee s1 m a) -> Iteratee s3 m (Iteratee s1 m a)
+    innerC kS2 = push2 (k2 kS2)
+    -- innerE :: Iteratee s2 m (Iteratee s1 m a) -> IterException -> Iteratee s3 m (Iteratee s1 m a)
+    innerE i2rec exc = push2 . return $ h1 i2rec exc
+
+    -- push2 :: Iteratee s3 m (Iteratee s2 m (Iteratee s1 m a)) -> Iteratee s3 m (Iteratee s1 m a)
+    push2 i321 = do
+        i2 <- i321
+        runIter i2 return (icont . step) handleInner
+          where
+            -- handleInner :: Iteratee s2 m (Iteratee s1 m a) -> IterException -> Iteratee s3 m (Iteratee s1 m a)
+            handleInner rec2 exc = push2 $ h2 (return rec2) exc
+            -- step :: Cont s2 m (Iteratee s1 m a) -> Stream s3 -> m (ContReturn s3 m (Iteratee s1 m a))
+            step k NoData = continue (step k)
+            step k (Chunk xs_3) = do
+                (i321', rest) <- enumChunkRemaining xs_3 (k2 k)
+                runIter i321' (\i' -> runIter i'
+                                        (\i1  -> contDoneM i1 rest)
+                                        (\_   -> contMoreM (push2 i321))
+                                        (\_ _ -> contMoreM (push2 i321))
+                                        )
+                                 (\_   -> contMoreM (push2 i321))
+                                 (\_ _ -> contMoreM (push2 i321))
+            step k (EOF mExc) = do
+                error "got eof"
+                let exc0 = maybe (toIterException EofException) wrapEnumExc mExc
+                    enum = maybe enumEof enumErr mExc
+                i321' <- enum (k2 k)
+                runIter i321' (\i' -> enum i' >>= \i'2 -> runIter i'2
+                                  (\i1  -> contDoneM i1 (EOF Nothing))
+                                  (\k'  -> contMoreM (push2 (k2 k')))
+                                  (\rec exc -> contMoreM (push2 (return (h1 rec exc))))
+                                  )
+                               (\_       -> contMoreM (push2 i321'))
+                               (\rec exc -> contMoreM (push2 (h2 rec exc)))
+
+    ifHandled i = runIter i (const True) (const True) (\_ _ -> False)
+
 {-# INLINE fuseEneeHandle #-}
 
+{-
 {-# RULES
 "fuseEneeHandle" forall h1 k1 h2 k2 i. eneeCheckIfDoneHandle h2 k2 (eneeCheckIfDoneHandle h1 k1 i)
                       = return (fuseEneeHandle h1 k1 h2 k2 i)
   #-}
-
+-}
 
 -- | The same as eneeCheckIfDonePass, with one extra argument:
 -- a handler which is used

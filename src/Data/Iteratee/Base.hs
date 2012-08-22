@@ -448,6 +448,7 @@ tryRun iter = runIter iter onD onC onE
                                         (\_ e -> return $ maybeExc e)
     onE   _ e  = return $ maybeExc e
     maybeExc e = maybe (Left (E.throw e)) Left (fromException $ toException e)
+{-# INLINABLE tryRun #-}
 
 -- | Lift a computation in the inner monad of an iteratee.
 -- 

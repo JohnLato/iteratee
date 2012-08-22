@@ -78,7 +78,7 @@ import Data.Iteratee.Base
 import qualified Data.ListLike as LL
 
 import Control.Monad.Trans.Class
-import Control.Monad ((<=<), liftM)
+import Control.Monad ((<=<), (>=>), liftM)
 import Data.Typeable
 
 import Debug.Trace
@@ -392,21 +392,31 @@ mapChunks f i = eneeCheckIfDonePass (icont . step) i
           ContDone a _  -> contDoneM (return a) s
           ContMore i'   -> contMoreM $ go i'
           ContErr i' e' -> contErrM (go i') e'
-{-# INLINE[3] mapChunks #-}
+{-# INLINE[1] mapChunks #-}
 
 {-# RULES
-"mapChunks/mapChunks"    forall f g i. mapChunks  f (mapChunks  g i) = liftM return (mapChunks  (g . f) i)
-"mapChunks/mapChunksM"   forall f g i. mapChunks  f (mapChunksM g i) = liftM return (mapChunksM (g . f) i)
-"mapChunksM/mapChunks"   forall f g i. mapChunksM f (mapChunks  g i) = liftM return (mapChunksM (return g <=< f) i)
-"mapChunksM/mapChunksM"  forall f g i. mapChunksM f (mapChunksM g i) = liftM return (mapChunksM (g <=< f) i)
+"joinI-collapse"         forall i.     joinI (push i) = i
+
+"mapChunks/mapChunks"    forall f g i. mapChunks  f (mapChunks  g i) = push (mapChunks  (g . f) i)
+"mapChunks/mapChunksM"   forall f g i. mapChunks  f (mapChunksM g i) = push (mapChunksM (g . f) i)
+"mapChunksM/mapChunks"   forall f g i. mapChunksM f (mapChunks  g i) = push (mapChunksM (return g <=< f) i)
+"mapChunksM/mapChunksM"  forall f g i. mapChunksM f (mapChunksM g i) = push (mapChunksM (g <=< f) i)
   #-}
+
+-- This function exists to aid enumeratee fusion.  When fusing enumeratees,
+-- an artificial stream level must be created, which will then be terminated by
+-- joinI.  The 'joinI-collapse' rule removes the joinI/push pair, completely
+-- removing the nested layer.
+push :: Monad m => Iteratee s m a -> Iteratee s m (Iteratee s' m a)
+push = liftM return
+{-# INLINE[1] push #-}
 
 -- | Convert a stream of @s@ to a stream of @s'@ using the supplied function.
 mapChunksM
   :: forall m s s' a. (Monad m)
   => (s -> m s')
   -> Enumeratee s s' m a
-mapChunksM f = eneeCheckIfDonePass (icont . step)
+mapChunksM f i = eneeCheckIfDonePass (icont . step) i
  where
   go = eneeCheckIfDonePass (icont . step)
   step :: (Stream s' -> m (ContReturn s' m a))-> Stream s -> m (ContReturn s m (Iteratee s' m a))
@@ -417,7 +427,7 @@ mapChunksM f = eneeCheckIfDonePass (icont . step)
       ContDone x _  -> contDoneM (return x) NoData
       ContMore i'   -> contMoreM (go i')
       ContErr i' e' -> contErrM (go i') e'
-{-# INLINE[3] mapChunksM #-}
+{-# INLINE[1] mapChunksM #-}
 
 -- |Convert one stream into another, not necessarily in lockstep.
 -- 
@@ -496,7 +506,7 @@ joinI i = i >>= lift . tryRun >>= either (throwErr . wrapExc) idone
                   (_, Just b) -> wrapEnumExc b
                   _           -> error ("iteratee/joinI: internal exception error."
                                      ++ "\nPlease report this as a bug.")
-{-# INLINE joinI #-}
+{-# INLINE[0] joinI #-}
 
 -- | Lift an iteratee inside a monad to an iteratee.
 --

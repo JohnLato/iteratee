@@ -19,6 +19,7 @@ module Data.Iteratee.Iteratee (
   ,identity
   ,skipToEof
   ,isStreamFinished
+  ,isIterFinished
   -- ** Chunkwise Iteratees
   ,mapChunksM_
   ,foldChunksM
@@ -134,6 +135,11 @@ isStreamFinished = icontP check
     check s@(EOF _)  = ContDone (Just s) s
 {-# INLINE isStreamFinished #-}
 
+-- | Check if an iteratee is finished.  Returns True when the iteratee is
+-- complete, returns False if the iteratee is in an error condition or expects
+-- more data.
+isIterFinished :: Iteratee s m a -> Bool
+isIterFinished iter = runIter iter (const True) (const False) (\_ _ -> False)
 
 -- |Skip the rest of the stream
 skipToEof :: (Monad m) => Iteratee s m ()
@@ -590,6 +596,8 @@ enumPure1Chunk str iter = runIter iter idoneM onC ierrM
 -- the iteratee can be performed.
 --
 -- Like @enumPure1Chunk@, but any leftover stream data is also returned.
+-- If the returned leftover stream data is a Chunk, the iteratee will be in the
+-- ContDone state.
 enumChunkRemaining
   :: (Monad m)
   => s

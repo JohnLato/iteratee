@@ -333,7 +333,7 @@ eneeCheckIfDoneIgnore f = eneeCheckIfDoneHandle handler f
 -- > unpacker = mapChunks B.unpack
 -- 
 mapChunks :: (Monad m) => (s -> s') -> Enumeratee s s' m a
-mapChunks f = eneeCheckIfDonePass (icont . step)
+mapChunks f i = eneeCheckIfDonePass (icont . step) i
  where
   go = eneeCheckIfDonePass (icont . step)
 
@@ -352,13 +352,13 @@ mapChunks f = eneeCheckIfDonePass (icont . step)
           ContDone a _  -> contDoneM (return a) s
           ContMore i'   -> contMoreM $ go i'
           ContErr i' e' -> contErrM (go i') e'
-{-# INLINE mapChunks #-}
+{-# INLINE[3] mapChunks #-}
 
 {-# RULES
-"mapChunks/mapChunks"    forall f g i. mapChunks  f (mapChunks  g i) = return (mapChunks  (g . f) i)
-"mapChunks/mapChunksM"   forall f g i. mapChunks  f (mapChunksM g i) = return (mapChunksM (g . f) i)
-"mapChunksM/mapChunks"   forall f g i. mapChunksM f (mapChunks  g i) = return (mapChunksM (return g <=< f) i)
-"mapChunksM/mapChunksM"  forall f g i. mapChunksM f (mapChunksM g i) = return (mapChunksM (g <=< f) i)
+"mapChunks/mapChunks"    forall f g i. mapChunks  f (mapChunks  g i) = liftM return (mapChunks  (g . f) i)
+"mapChunks/mapChunksM"   forall f g i. mapChunks  f (mapChunksM g i) = liftM return (mapChunksM (g . f) i)
+"mapChunksM/mapChunks"   forall f g i. mapChunksM f (mapChunks  g i) = liftM return (mapChunksM (return g <=< f) i)
+"mapChunksM/mapChunksM"  forall f g i. mapChunksM f (mapChunksM g i) = liftM return (mapChunksM (g <=< f) i)
   #-}
 
 -- | Convert a stream of @s@ to a stream of @s'@ using the supplied function.
@@ -377,7 +377,7 @@ mapChunksM f = eneeCheckIfDonePass (icont . step)
       ContDone x _  -> contDoneM (return x) NoData
       ContMore i'   -> contMoreM (go i')
       ContErr i' e' -> contErrM (go i') e'
-{-# INLINE mapChunksM #-}
+{-# INLINE[3] mapChunksM #-}
 
 -- |Convert one stream into another, not necessarily in lockstep.
 -- 

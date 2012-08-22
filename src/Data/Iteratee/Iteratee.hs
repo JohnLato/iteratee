@@ -211,25 +211,26 @@ type Enumeratee sFrom sTo (m :: * -> *) a =
 -- by the @breakE@ definition.
 -- 
 -- > breakE
--- >   :: (Monad m, LL.ListLike s el)
+-- >   :: (LL.ListLike s el, Monad m)
 -- >   => (el -> Bool)
 -- >   -> Enumeratee s s m a
--- > breakE cpred = eneeCheckIfDone (icont . step)
+-- > breakE cpred = eneeCheckIfDonePass (icont . step) CM.>=>
+-- >                 \i' -> dropWhile (not . cpred) >> return i'
 -- >  where
--- >  step k (Chunk s)
--- >    | LL.null s = return (continue (step k))
--- >    | otherwise = case LL.break cpred s of
+-- >   go = eneeCheckIfDonePass (icont . step)
+-- >   step k (Chunk s)
+-- >     | LL.null s = continue (step k)
+-- >     | otherwise = case LL.break cpred s of
 -- >         (str', tail')
--- >           | LL.null tail' -> do
--- >               (i', _) <- k (Chunk str')
--- >               return (go i' <* dropWhile (not . cpred), Chunk tail')
+-- >           | LL.null tail' ->
+-- >               doContEtee go k str'
 -- >                                -- if the inner iteratee completes before
 -- >                                -- the predicate is met, elements still
 -- >                                -- need to be dropped.
--- >           | otherwise -> (idone *** const (Chunk tail')) `liftM` k (Chunk str')
--- >   step k NoData       =  return (continue (step k))
--- >   step k stream       =  return (idone (icont k), stream)
--- 
+-- >           | otherwise -> k (Chunk str') >>= \ret ->
+-- >                             contDoneM (wrapCont ret) (Chunk tail')
+-- >   step k NoData       =  continue (step k)
+-- >   step k stream@EOF{} =  contDoneM (icont k) stream
 eneeCheckIfDone ::
  (Monad m) =>
   (Cont eli m a -> Iteratee elo m (Iteratee eli m a))

@@ -250,7 +250,7 @@ type EnumerateeHandler eli elo m a =
   -> Iteratee elo m (Iteratee eli m a)
 
 fuseEneeHandle
-  :: Monad m
+  :: (Monad m)
   => EnumerateeHandler s1 s2 m a
   -> (Cont s1 m a -> Iteratee s2 m (Iteratee s1 m a))
   -> EnumerateeHandler s2 s3 m (Iteratee s1 m a)
@@ -269,10 +269,8 @@ fuseEneeHandle h1 k1 h2 k2 = eneeCheckIfDoneHandle hFuse kFuse
         rec2 <- runIter (h1 (return rec1) exc) hD hC hE
         go rec2
     -- kFuse :: Cont s1 m a -> Iteratee s3 m (Iteratee s1 m a)
-    kFuse k = runIter (k1 k) return innerC innerE >>= go
-    -- innerC :: Cont s2 m (Iteratee s1 m a) -> Iteratee s3 m (Iteratee s1 m a)
+    kFuse k = runIter (k1 k) return innerC innerE
     innerC kS2 = push2 (k2 kS2)
-    -- innerE :: Iteratee s2 m (Iteratee s1 m a) -> IterException -> Iteratee s3 m (Iteratee s1 m a)
     innerE i2rec exc = push2 . return $ h1 i2rec exc
 
     -- push2 :: Iteratee s3 m (Iteratee s2 m (Iteratee s1 m a)) -> Iteratee s3 m (Iteratee s1 m a)
@@ -280,21 +278,19 @@ fuseEneeHandle h1 k1 h2 k2 = eneeCheckIfDoneHandle hFuse kFuse
         i2 <- i321
         runIter i2 return (icont . step) handleInner
           where
-            -- handleInner :: Iteratee s2 m (Iteratee s1 m a) -> IterException -> Iteratee s3 m (Iteratee s1 m a)
             handleInner rec2 exc = push2 $ h2 (return rec2) exc
-            -- step :: Cont s2 m (Iteratee s1 m a) -> Stream s3 -> m (ContReturn s3 m (Iteratee s1 m a))
+
             step k NoData = continue (step k)
             step k (Chunk xs_3) = do
                 (i321', rest) <- enumChunkRemaining xs_3 (k2 k)
                 runIter i321' (\i' -> runIter i'
                                         (\i1  -> contDoneM i1 rest)
-                                        (\_   -> contMoreM (push2 i321))
-                                        (\_ _ -> contMoreM (push2 i321))
+                                        (\k'  -> contMoreM (push2 $ return $ icont k'))
+                                        (\_ _ -> contMoreM (push2 i321'))
                                         )
-                                 (\_   -> contMoreM (push2 i321))
-                                 (\_ _ -> contMoreM (push2 i321))
+                                 (\k'  -> contMoreM (push2 (icont k')))
+                                 (\_ _ -> contMoreM (push2 i321'))
             step k (EOF mExc) = do
-                error "got eof"
                 let exc0 = maybe (toIterException EofException) wrapEnumExc mExc
                     enum = maybe enumEof enumErr mExc
                 i321' <- enum (k2 k)
@@ -306,15 +302,16 @@ fuseEneeHandle h1 k1 h2 k2 = eneeCheckIfDoneHandle hFuse kFuse
                                (\_       -> contMoreM (push2 i321'))
                                (\rec exc -> contMoreM (push2 (h2 rec exc)))
 
-    ifHandled i = runIter i (const True) (const True) (\_ _ -> False)
+{-# INLINE[1] fuseEneeHandle #-}
 
-{-# INLINE fuseEneeHandle #-}
-
-{-
+-- the fusion workhorse.  Most enumeratees are defined in terms of
+-- eneeCheckIfDoneHandle at some level.
 {-# RULES
 "fuseEneeHandle" forall h1 k1 h2 k2 i. eneeCheckIfDoneHandle h2 k2 (eneeCheckIfDoneHandle h1 k1 i)
-                      = return (fuseEneeHandle h1 k1 h2 k2 i)
+                      = push (fuseEneeHandle h1 k1 h2 k2 i)
   #-}
+
+{-
 -}
 
 -- | The same as eneeCheckIfDonePass, with one extra argument:
@@ -409,7 +406,7 @@ mapChunks f i = eneeCheckIfDonePass (icont . step) i
 -- removing the nested layer.
 push :: Monad m => Iteratee s m a -> Iteratee s m (Iteratee s' m a)
 push = liftM return
-{-# INLINE[1] push #-}
+{-# INLINE[0] push #-}
 
 -- | Convert a stream of @s@ to a stream of @s'@ using the supplied function.
 mapChunksM

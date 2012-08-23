@@ -950,14 +950,14 @@ sequence_ = check []
     onCont ks iters k  = check (k:ks) iters
     onErr ks iters i e = throwRec e (check ks (i:iters))
 
-    step ks str = CM.foldM (accf str) ([], str,Nothing) ks >>= \ret -> case ret of
-        (iS, _, Just e)  -> contErrM (check [] iS) e
+    step ks str = CM.foldM (accf str) ([], str,Nothing) (reverse ks) >>= \ret -> case ret of
+        (iS, _, Just e)  -> contErrM (check [] (reverse iS)) e
         ([], str', _)    -> contDoneM () str'
-        (iS, EOF Nothing, _)  -> contErrM (throwRec EofException (check [] iS))
+        (iS, EOF Nothing, _)  -> contErrM (throwRec EofException (check [] (reverse iS)))
                                           (toIterException EofException)
         (iS, EOF (Just e), _) -> let e' = wrapEnumExc e
-                                 in contErrM (throwRec e' (check [] iS)) e'
-        (iS, _, _)            -> contMoreM (check [] iS)
+                                 in contErrM (throwRec e' (check [] (reverse iS))) e'
+        (iS, _, _)            -> contMoreM (check [] (reverse iS))
     accf str (iS, !strs, !mErr) k = k str >>= \ret -> case ret of
         ContDone _ str' -> return (iS, shorter str' strs, mErr)
         ContMore i      -> return (i:iS, strs, mErr)

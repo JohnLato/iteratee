@@ -495,6 +495,8 @@ joinI :: forall m s s' a.
  (Monad m) =>
   Iteratee s m (Iteratee s' m a)
   -> Iteratee s m a
+joinI i = i >>= lift . run
+{-
 joinI i = i >>= lift . tryRun >>= either (throwErr . wrapExc) idone
   where
   wrapExc e = let e' = toException e
@@ -503,6 +505,7 @@ joinI i = i >>= lift . tryRun >>= either (throwErr . wrapExc) idone
                   (_, Just b) -> wrapEnumExc b
                   _           -> error ("iteratee/joinI: internal exception error."
                                      ++ "\nPlease report this as a bug.")
+-}
 {-# INLINE[0] joinI #-}
 
 -- | Lift an iteratee inside a monad to an iteratee.

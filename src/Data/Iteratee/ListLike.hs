@@ -229,10 +229,8 @@ roll
 roll t d | t > d  = liftI step
   where
     step (Chunk vec)
-      | LL.length vec >= d =
-          idone (LL.singleton $ LL.take t vec) (Chunk $ LL.drop d vec)
       | LL.length vec >= t =
-          idone (LL.singleton $ LL.take t vec) mempty <* drop (d-LL.length vec)
+          idone (LL.singleton $ LL.take t vec) (Chunk $ LL.drop d vec)
       | LL.null vec        = liftI step
       | otherwise          = liftI (step' vec)
     step stream            = idone LL.empty stream

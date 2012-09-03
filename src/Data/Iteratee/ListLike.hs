@@ -231,10 +231,8 @@ roll
 roll t d | t > d  = icontP step
   where
     step (Chunk vec)
-      | LL.length vec >= d =
-          ContDone (LL.singleton $ LL.take t vec) $ Chunk $ LL.drop d vec
       | LL.length vec >= t =
-          ContMore (drop (d-LL.length vec) >> idone (LL.singleton $ LL.take t vec))
+          ContDone (LL.singleton $ LL.take t vec) $ Chunk $ LL.drop d vec
       | LL.null vec        = continueP step
       | otherwise          = continueP (step' vec)
     step NoData            = continueP step

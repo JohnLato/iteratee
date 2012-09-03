@@ -1,5 +1,5 @@
 name:          iteratee
-version:       0.8.9.2
+version:       0.8.9.3
 synopsis:      Iteratee-based I/O
 description:
   The Iteratee monad provides strict, safe, and functional I/O. In addition
@@ -86,7 +86,7 @@ Test-Suite testIteratee
   type: exitcode-stdio-1.0
   main-is: testIteratee.hs
   hs-source-dirs: tests src
-  ghc-options:    -fhpc -hpcdir dist/hpc/mix/iteratee-0.8.9.2
+  ghc-options:    -fhpc -hpcdir dist/hpc/mix/iteratee-0.8.9.3
 
   if os(windows)
     cpp-options: -DUSE_WINDOWS

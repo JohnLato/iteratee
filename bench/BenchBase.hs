@@ -1,4 +1,4 @@
-{-# LANGUAGE RankNTypes, KindSignatures, NoMonomorphismRestriction #-}
+{-# LANGUAGE CPP, RankNTypes, KindSignatures, NoMonomorphismRestriction #-}
 
 -- some basic benchmarking of iteratee
 
@@ -220,10 +220,12 @@ idChunk = I.icontP step
     step I.NoData       = ContMore idChunk
 convBenches = [conv1, conv2]
 
+#if __GLASGOW_HASKELL__ <=704
 instance NFData BS.ByteString where
 
 instance NFData a => NFData (Sum a) where
   rnf (Sum a) = rnf a
+#endif
 
 endianRead2_1 = id1 "endianRead2 single" (I.endianRead2 MSB)
 endianRead2_2 = idNx "endianRead2 chunked" 1 (I.endianRead2 MSB)

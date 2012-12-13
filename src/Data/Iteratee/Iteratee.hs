@@ -1,7 +1,9 @@
 {-# LANGUAGE KindSignatures
             ,RankNTypes
+            ,BangPatterns
             ,FlexibleContexts
             ,ScopedTypeVariables
+            ,TupleSections
             ,DeriveDataTypeable #-}
 
 -- |Monadic and General Iteratees:
@@ -28,6 +30,8 @@ module Data.Iteratee.Iteratee (
   -- ** Nested iteratee combinators
   ,mapChunks
   ,mapChunksM
+  ,mapAccumChunks
+  ,mapAccumChunksM
   ,convStream
   ,unfoldConvStream
   ,joinI
@@ -425,6 +429,32 @@ mapChunksM f i = eneeCheckIfDonePass (icont . step) i
       ContMore i'   -> contMoreM (go i')
       ContErr i' e' -> contErrM (go i') e'
 {-# INLINE[1] mapChunksM #-}
+
+mapAccumChunks
+  :: (Monad m)
+  => (acc -> s -> (acc, s'))
+  -> acc
+  -> Enumeratee s s' m a
+mapAccumChunks f = mapAccumChunksM (\acc -> return . f acc)
+{-# INLINE mapAccumChunks #-}
+
+mapAccumChunksM
+  :: (Monad m)
+  => (acc -> s -> m (acc, s'))
+  -> acc
+  -> Enumeratee s s' m a
+mapAccumChunksM f acc0 i = go acc0 i
+ where
+  go acc = eneeCheckIfDonePass (icont . step acc)
+  step !acc k (Chunk xs)   = f acc xs >>= \(acc',a') -> doContEtee (go acc') k a'
+  step !acc k NoData       = contMoreM (go acc (icont k))
+  step !acc k s@(EOF Nothing) = contDoneM (icont k) s
+  step !acc k (EOF (Just e))  = k (EOF (Just e)) >>= \iret -> case iret of
+      ContDone x _  -> contDoneM (return x) NoData
+      ContMore i'   -> contMoreM (go acc i')
+      ContErr i' e' -> contErrM (go acc i') e'
+{-# INLINE[1] mapAccumChunksM #-}
+
 
 -- |Convert one stream into another, not necessarily in lockstep.
 -- 

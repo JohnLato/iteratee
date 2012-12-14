@@ -284,10 +284,9 @@ dropWhile p = icontP step
 length :: (Monad m, Num a, LL.ListLike s el) => Iteratee s m a
 length = icontP (step 0)
   where
-    step !i (Chunk xs)   = let newL = i + fromIntegral (LL.length xs)
-                           in newL `seq` continueP (step newL)
-    step !i NoData       = continueP (step i)
-    step !i stream@EOF{} = ContDone i stream
+    step i (Chunk xs)   = continueP . step $! i + fromIntegral (LL.length xs)
+    step i NoData       = continueP (step i)
+    step i stream@EOF{} = ContDone i stream
 {-# INLINE length #-}
 
 -- | Get the length of the current chunk ('Just 0', or @Nothing@ if 'EOF'.

@@ -329,10 +329,27 @@ ierrM i e = return $ ierr i e
 
 instance forall s m. (Functor m) => Functor (Iteratee s m) where
   {-# INLINE fmap #-}
-  fmap f m = runIter m (idone . f) onCont onErr
+  fmap = fmapIter
+
+{-# INLINE fmapIter #-}
+fmapIter
+    :: Functor m
+    => (a -> b)
+    -> Iteratee s m a
+    -> Iteratee s m b
+fmapIter f = fmap'
     where
-      onCont k      = icont $ fmap (fmap f) . k
-      onErr i e     = ierr (fmap f i) e
+      fmap' m'  = runIter m' (idone . f) onCont onErr
+
+      -- this is equivalent to the Functor instance for ContReturn,
+      -- but by including it here we can avoid recursive calls to fmapIter,
+      -- which seems to be a codegen win.
+      fmapCr (ContDone a s) = ContDone (f a) s
+      fmapCr (ContErr i e)  = ContErr (fmap' i) e
+      fmapCr (ContMore i)   = ContMore (fmap' i)
+
+      onCont k  = icont $ fmap fmapCr . k
+      onErr i e = ierr (fmap' i) e
 
 instance (Functor m, Monad m) => Applicative (Iteratee s m) where
     pure x  = idone x

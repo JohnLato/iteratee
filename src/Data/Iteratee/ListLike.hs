@@ -249,12 +249,12 @@ roll t d = LL.singleton `liftM` joinI (take t stream2stream) <** drop (d-t)
 -- 
 -- The analogue of @List.drop@
 drop :: (Monad m, LL.ListLike s el) => Int -> Iteratee s m ()
-drop 0  = idone ()
-drop n' = icontP (step n')
+drop n'
+  | n' <= 0   = idone ()
+  | otherwise = icontP (step n')
   where
     step n (Chunk str)
-      | LL.null   str     = continueP (step n)
-      | LL.length str < n = continueP (step (n - LL.length str))
+      | LL.length str < n = continueP . step $! n - LL.length str
       | otherwise         = ContDone () $ Chunk (LL.drop n str)
     step n NoData         = continueP (step n)
     step _ stream@EOF{}   = ContDone () stream

@@ -143,7 +143,8 @@ break cpred = icontP (step mempty)
 -- |Attempt to read the next element of the stream and return it
 -- Raise a (recoverable) error if the stream is terminated.
 -- 
--- The analogue of @List.head@
+-- The analogue of @List.head@, with all the problems thereof.  Consider
+-- using 'tryHead'.
 head :: (Monad m, LL.ListLike s el) => Iteratee s m el
 head = icontP step
   where
@@ -734,7 +735,8 @@ mergeByChunks f f1 f2 = unfoldConvStream iter (0 :: Int)
 
 -- | Left-associative fold.
 -- 
--- The analogue of @List.foldl@
+-- This is almost never the right thing, consider using @foldl'@ instead.
+-- The analogue of @List.foldl@.
 foldl
   :: (Monad m, LL.ListLike s el, FLL.FoldableLL s el)
   => (a -> el -> a)

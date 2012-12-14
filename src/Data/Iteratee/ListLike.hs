@@ -410,23 +410,24 @@ take = go
 -- in each case, @I.head@ consumes only one element, returning the remaining
 -- 4 elements to the outer stream
 takeUpTo :: (Monad m, LL.ListLike s el) => Int -> Enumeratee s s m a
-takeUpTo count iter
- | count <= 0 = idone iter
- | otherwise  = runIter iter onDone onCont onErr
+takeUpTo = go
   where
-    onDone x = idone (idone x)
-    onCont k = if count == 0 then idone (icont k)
-                             else icont (step count k)
-    onErr i' = ierr (takeUpTo count i')
+    go count iter
+        | count <= 0 = idone iter
+        | otherwise  = runIter iter onDone (onCont count) (onErr count)
+
+    onDone x       = idone (idone x)
+    onCont count k = icont (step count k)
+    onErr count i' = ierr (go count i')
 
     step n k (Chunk str)
       | LL.null str       = continue (step n k)
       | LL.length str < n = k (Chunk str) >>= \ret -> case ret of
                               ContDone a str' -> contDoneM (idone a) str'
-                              ContMore i -> contMoreM (takeUpTo
+                              ContMore i -> contMoreM (go
                                                         (n - LL.length str)
                                                         i)
-                              ContErr i e -> contErrM (takeUpTo
+                              ContErr i e -> contErrM (go
                                                         (n - LL.length str)
                                                         i)
                                                       e

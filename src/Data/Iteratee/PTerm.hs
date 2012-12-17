@@ -72,9 +72,6 @@ import           Control.Monad
 import qualified Data.ByteString as B
 import           Data.Word (Word8)
 
-(<$>) :: Monad m => (a1 -> r) -> m a1 -> m r
-(<$>) = liftM
-
 -- ---------------------------------------------------
 -- The converters show a different way of composing two iteratees:
 -- `vertical' rather than `horizontal'
@@ -310,5 +307,5 @@ filterPT
   :: (Monad m, LL.ListLike s el)
   => (el -> Bool)
   -> Enumeratee s s m a
-filterPT p = convStreamPT (LL.filter p <$> getChunk)
+filterPT p = mapChunksPT (LL.filter p)
 {-# INLINE filterPT #-}

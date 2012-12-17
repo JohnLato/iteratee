@@ -62,7 +62,7 @@ where
 import Prelude hiding (head, drop, dropWhile, take, break, foldl, foldl1, length, filter, sum, product)
 
 import           Data.Iteratee.Iteratee
-import           Data.Iteratee.ListLike (drop)
+import           Data.Iteratee.ListLike (drop,dropWhile)
 
 import qualified Data.ListLike as LL
 
@@ -172,7 +172,8 @@ breakEPT
   :: (LL.ListLike s el, Monad m)
   => (el -> Bool)
   -> Enumeratee s s m a
-breakEPT cpred = eneeCheckIfDonePass (icont . step)
+breakEPT cpred = eneeCheckIfDonePass (icont . step) >=>
+                  \i' -> dropWhile (not . cpred) >> return i'
  where
   go = eneeCheckIfDonePass (icont . step)
   step k (Chunk s)

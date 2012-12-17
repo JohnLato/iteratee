@@ -81,8 +81,6 @@ import Control.Applicative ((<$>), (<*>))
 import Control.Monad (liftM, mplus)
 import qualified Control.Monad as CM
 import Control.Monad.Trans.Class
-import Data.Word (Word8)
-import qualified Data.ByteString as B
 
 -- Useful combinators for implementing iteratees and enumerators
 

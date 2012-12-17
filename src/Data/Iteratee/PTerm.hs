@@ -69,9 +69,6 @@ import qualified Data.ListLike as LL
 import           Control.Monad.Trans.Class
 import           Control.Monad
 
-import qualified Data.ByteString as B
-import           Data.Word (Word8)
-
 -- ---------------------------------------------------
 -- The converters show a different way of composing two iteratees:
 -- `vertical' rather than `horizontal'

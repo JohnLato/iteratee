@@ -334,9 +334,7 @@ breakE cpred = eneeCheckIfDonePass (icont . step) CM.>=>
                 \i' -> dropWhile (not . cpred) >> return i'
  where
   go = eneeCheckIfDonePass (icont . step)
-  step k (Chunk s)
-    | LL.null s = continue (step k)
-    | otherwise = case LL.break cpred s of
+  step k (Chunk s) = case LL.break cpred s of
         (str', tail')
           | LL.null tail' ->
               doContEtee go k str'

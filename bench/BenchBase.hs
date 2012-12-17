@@ -77,6 +77,7 @@ makeGroupBS n = bgroup n . map makeBenchBS
 listbench = makeGroup "stream2List" (slistBenches :: [BD [Int] () [Int] Identity])
 streambench = makeGroup "stream" (streamBenches :: [BD [Int] () [Int] Identity])
 breakbench = makeGroup "break" $ break0 : break0' : breakBenches
+breakEbench = makeGroup "breakE" $ breakEBenches
 headsbench = makeGroup "heads" headsBenches
 dropbench = makeGroup "drop" $ drop0 : dropBenches
 zipbench = makeGroup "zip" $ zipBenches
@@ -93,6 +94,7 @@ miscbench = makeGroup "other" miscBenches
 listbenchbs = makeGroupBS "stream2List" slistBenches
 streambenchbs = makeGroupBS "stream" streamBenches
 breakbenchbs = makeGroupBS "break" breakBenches
+breakEbenchbs = makeGroupBS "breakE" breakEBenches
 headsbenchbs = makeGroupBS "heads" headsBenches
 dropbenchbs = makeGroupBS "drop" dropBenches
 zipbenchbs = makeGroupBS "zip" zipBenches
@@ -113,9 +115,9 @@ endian8benchbs = makeGroupBS "8" endian8Benches
 endianbenchbs = bgroup "endian" [endian2benchbs, endian3benchbs, endian4benchbs, endian8benchbs]
 
 
-allListBenches = bgroup "list" [listbench, streambench, breakbench, headsbench, dropbench, zipbench, lengthbench, takebench, takeUpTobench, groupbench, mapbench, foldbench, convbench, miscbench, consbench]
+allListBenches = bgroup "list" [listbench, streambench, breakbench, breakEbench, headsbench, dropbench, zipbench, lengthbench, takebench, takeUpTobench, groupbench, mapbench, foldbench, convbench, miscbench, consbench]
 
-allByteStringBenches = bgroup "bytestring" [listbenchbs, streambenchbs, breakbenchbs, headsbenchbs, dropbenchbs, zipbenchbs, lengthbenchbs, takebenchbs, takeUpTobenchbs, groupbenchbs, mapbenchbs, foldbenchbs, convbenchbs, endianbenchbs, miscbenchbs, consbenchbs]
+allByteStringBenches = bgroup "bytestring" [listbenchbs, streambenchbs, breakbenchbs, breakEbenchbs, headsbenchbs, dropbenchbs, zipbenchbs, lengthbenchbs, takebenchbs, takeUpTobenchbs, groupbenchbs, mapbenchbs, foldbenchbs, convbenchbs, endianbenchbs, miscbenchbs, consbenchbs]
 
 list0 = makeList "list one go" deepseq
 list1 = BDIter1 "stream2list one go" (flip deepseq ()) stream2list
@@ -136,6 +138,14 @@ break3 = idN "break early chunked" (I.break (>500))
 break4 = idN "break never chunked" (I.break (<0)) -- not ever true
 break5 = idN "break late chunked" (I.break (>8000))
 breakBenches = [break1, break2, break3, break4, break5]
+
+breakE1 = id1 "break early one go" (I.breakE (>5) =$ return ())
+breakE2 = id1 "break never" (I.breakE (<0) =$ return ()) -- not ever true.
+breakE3 = idN "break early chunked" (I.breakE (>500) =$ return ())
+breakE4 = idN "break never chunked" (I.breakE (<0) =$ return ()) -- not ever true
+breakE5 = idN "break late chunked" (I.breakE (>8000) =$ return ())
+breakEBenches = [breakE1, breakE2, breakE3, breakE4, breakE5]
+
 
 heads1 = id1 "heads null" (I.heads $ LL.fromList [])
 heads2 = id1 "heads 1" (I.heads $ LL.fromList [1])

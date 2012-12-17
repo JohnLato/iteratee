@@ -223,29 +223,30 @@ takePT = go
   step n k NoData       = continue (step n k)
   step n k stream@EOF{} = k stream >>= \rk -> case rk of
          ContDone a _str' -> contDoneM (idone a) stream
-         ContMore inner   -> contMoreM (takePT n inner)
-         ContErr inner e  -> contErrM  (takePT n inner) e
+         ContMore inner   -> contMoreM (go n inner)
+         ContErr inner e  -> contErrM  (go n inner) e
 {-# INLINE takePT #-}
 
 -- | A variant of 'Data.Iteratee.ListLike.takeUpTo' that passes 'EOF's.
 takeUpToPT :: (Monad m, LL.ListLike s el) => Int -> Enumeratee s s m a
-takeUpToPT count iter
- | count <= 0 = idone iter
- | otherwise  = runIter iter onDone onCont onErr
+takeUpToPT = go
   where
-    onDone x = idone (idone x)
-    onCont k = if count == 0 then idone (icont k)
-                             else icont (step count k)
-    onErr i' = ierr (takeUpToPT count i')
+    go count iter
+      | count <= 0 = idone iter
+      | otherwise  = runIter iter onDone (onCont count) (onErr count)
+
+    onDone x       = idone (idone x)
+    onCont count k = icont (step count k)
+    onErr count i' = ierr (go count i')
 
     step n k (Chunk str)
       | LL.null str       = continue (step n k)
       | LL.length str < n = k (Chunk str) >>= \ret -> case ret of
                               ContDone a str' -> contDoneM (idone a) str'
-                              ContMore i -> contMoreM (takeUpToPT
+                              ContMore i -> contMoreM (go
                                                         (n - LL.length str)
                                                         i)
-                              ContErr i e -> contErrM (takeUpToPT
+                              ContErr i e -> contErrM (go
                                                         (n - LL.length str)
                                                         i)
                                                       e
@@ -273,8 +274,8 @@ takeUpToPT count iter
     step n k NoData         = continue (step n k)
     step n k stream@EOF{} = k stream >>= \rk -> case rk of
            ContDone a _str' -> contDoneM (idone a) stream
-           ContMore inner   -> contMoreM (takeUpToPT n inner)
-           ContErr inner e  -> contErrM (takeUpToPT n inner) e
+           ContMore inner   -> contMoreM (go n inner)
+           ContErr inner e  -> contErrM (go n inner) e
 {-# INLINE takeUpToPT #-}
 
 -- | A variant of 'Data.Iteratee.ListLike.takeWhileE' that passes 'EOF's.

@@ -197,22 +197,23 @@ takePT ::
   (Monad m, LL.ListLike s el)
   => Int   -- ^ number of elements to consume
   -> Enumeratee s s m a
-takePT n' iter
-  | n' <= 0   = return iter
-  | otherwise = runIter iter onDone onCont onErr
+takePT = go
  where
-  onDone x = drop n' >> idone (idone x)
-  onCont k = if n' == 0 then idone (icont k)
-                else icont (step n' k)
-  onErr i  = ierr (takePT n' i)
+  go n iter
+    | n <= 0 = return iter
+    | otherwise = runIter iter (onDone n) (onCont n) (onErr n)
+
+  onDone n x = drop n >> idone (idone x)
+  onCont n k = icont (step n k)
+  onErr n i  = ierr (go n i)
 
   step n k (Chunk str)
       | LL.null str        = continue (step n k)
       | LL.length str <= n = k (Chunk str) >>= \ret -> case ret of
-                              ContDone a _ -> contMoreM (takePT (n-LL.length str)
+                              ContDone a _ -> contMoreM (go (n-LL.length str)
                                                                 (idone a))
-                              ContMore i  -> contMoreM (takePT (n-LL.length str) i)
-                              ContErr i e -> contErrM (takePT (n-LL.length str) i)
+                              ContMore i  -> contMoreM (go (n-LL.length str) i)
+                              ContErr i e -> contErrM (go (n-LL.length str) i)
                                                       e
       | otherwise          = k (Chunk s1) >>= \ret -> case ret of
                               ContDone a _ -> contDoneM (idone a) (Chunk s2)

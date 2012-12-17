@@ -832,11 +832,13 @@ zip
   => Iteratee s m a
   -> Iteratee s m b
   -> Iteratee s m (a, b)
-zip x0 y0 = runIter x0 (odx y0) (ocx y0) (oex y0)
+zip = go
  where
+  go x0 y0 = runIter x0 (odx y0) (ocx y0) (oex y0)
+
   odx yIter a      = (a, ) `liftM` yIter
   ocx yIter k      = runIter yIter (ody k) (ocy k) (oey k)
-  oex yIter i' e   = throwRec e (zip i' yIter)
+  oex yIter i' e   = throwRec e (go i' yIter)
 
   ody x_k b        = (,b) `liftM` icont x_k
   ocy xK yK        = icont (step xK yK)
@@ -851,8 +853,8 @@ zip x0 y0 = runIter x0 (odx y0) (ocx y0) (oex y0)
       -- and special-case both in 'ContMore' because it's likely to be the most
       -- common case and this will cut a few indirections.
       (ContDone x strX, ContDone y strY) -> contDoneM (x,y) (shorter strX strY)
-      (ContMore x, ContMore y) -> contMoreM (zip x y)
-      (xRet', yRet') -> contMoreM (zip (wrapCont xRet') (wrapCont yRet'))
+      (ContMore x, ContMore y) -> contMoreM (go x y)
+      (xRet', yRet') -> contMoreM (go (wrapCont xRet') (wrapCont yRet'))
 
   shorter c1@(Chunk xs) c2@(Chunk ys)
     | LL.length xs < LL.length ys = c1

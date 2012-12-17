@@ -905,11 +905,12 @@ enumWith
   => Iteratee s m a
   -> Iteratee s m b
   -> Iteratee s m (a, b)
-enumWith x0 y0 = runIter x0 (odx y0) (ocx y0) (oex y0)
+enumWith = go
  where
+  go x0 y0         = runIter x0 (odx y0) (ocx y0) (oex y0)
   odx yIter a      = (a,) `liftM` joinIM (enumEof yIter)
   ocx yIter k      = runIter yIter (ody k) (ocy k) (oey k)
-  oex yIter i' e   = throwRec e (enumWith i' yIter)
+  oex yIter i' e   = throwRec e (go i' yIter)
 
   ody x_k b        = (,b) `liftM` icont x_k
   ocy xK yK        = icont $ step xK yK
@@ -923,8 +924,8 @@ enumWith x0 y0 = runIter x0 (odx y0) (ocx y0) (oex y0)
     case xret of
         -- TODO: use something better than 'run' here
         ContDone a str' -> run (wrapCont yret) >>= \y -> contDoneM (a,y) str'
-        ContMore i      -> contMoreM (enumWith i $ wrapCont yret)
-        ContErr  i e    -> contErrM  (enumWith i $ wrapCont yret) e
+        ContMore i      -> contMoreM (go i $ wrapCont yret)
+        ContErr  i e    -> contErrM  (go i $ wrapCont yret) e
 {-# INLINE enumWith #-}
 
 -- |Enumerate a list of iteratees over a single stream simultaneously

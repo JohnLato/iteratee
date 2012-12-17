@@ -22,6 +22,7 @@ import qualified Data.List as List (groupBy, unfoldr)
 import           Data.Monoid
 import qualified Data.ListLike as LL
 
+import           Control.Applicative
 import           Control.Monad as CM
 import           Control.Monad.Writer
 import           Control.Exception (SomeException)
@@ -508,6 +509,10 @@ prop_rigidMapStreamPT i =
   mk_prop_pt_id (Iter.rigidMapStream i) (rigidMapStreamPT i)
 prop_filterPT i = mk_prop_pt_id (Iter.filter i) (filterPT i)
 
+-- check that the tail is dropped properly
+prop_breakEPT3 f xs = runner1 (enumPure1Chunk xs (joinI (breakEPT f (return ())) >> stream2list)) == snd (break f xs)
+  where types = xs :: [Int]
+
 
 -- ---------------------------------------------
 -- Data.Iteratee.Char
@@ -620,6 +625,7 @@ tests = [
     ,testProperty "convStreamPT" prop_convStreamPT
     ,testProperty "unfoldConvStreamPT" prop_unfoldConvStreamPT
     ,testProperty "breakEPT" prop_breakEPT
+    ,testProperty "breakEPT remainder after completion" prop_breakEPT3
     ,testProperty "takePT" prop_takePT
     ,testProperty "takeUpToPT" prop_takeUpToPT
     ,testProperty "takeWhileEPT" prop_takeWhileEPT

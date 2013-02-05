@@ -66,7 +66,6 @@ import Prelude hiding (null)
 import Data.Iteratee.Exception
 import Data.Iteratee.Base.LooseMap as X
 
-import Data.Maybe
 import Data.Monoid
 
 import Control.Monad (liftM, join)
@@ -77,6 +76,7 @@ import Control.Monad.Trans.Control
 import Control.Applicative hiding (empty)
 import qualified Control.Exception as E
 import Data.Data
+import Unsafe.Coerce
 
 import Debug.Trace
 
@@ -394,24 +394,24 @@ instance (MonadBase b m) => MonadBase b (Iteratee s m) where
 instance (MonadIO m) => MonadIO (Iteratee s m) where
   liftIO = lift . liftIO
 
+data EQIter s a =
+    EQDone a
+  | forall m. EQMore (Iteratee s m a) (Maybe IterException)
 
 instance forall s. MonadTransControl (Iteratee s) where
-  newtype StT (Iteratee s) x =
-    StIter { unStIter :: Either x (Maybe IterException) }
+  newtype StT (Iteratee s) x = StIter { unStIter :: EQIter s x }
   liftWith f = lift $ f $ \t -> liftM StIter (runIter t
-                                 (return . Left)
-                                 (const . return $ Right Nothing)
-                                 (\_ e -> return $ Right (Just e)) )
+                                 (return . EQDone)
+                                 (\k -> return $ EQMore (icont k) Nothing)
+                                 (\i e -> return $ EQMore i (Just e)) )
   restoreT = join . lift . liftM
-               (either idone
-                       (te . fromMaybe (iterStrExc
-                          "iteratee: error in MonadTransControl instance"))
-                      . unStIter )
+              ((\eqi -> case eqi of
+                  EQDone x -> idone x
+                  EQMore i Nothing -> unsafeCoerce i
+                  EQMore i (Just e) -> ierr (unsafeCoerce i) e)
+              . unStIter )
   {-# INLINE liftWith #-}
   {-# INLINE restoreT #-}
-
-te :: IterException -> Iteratee s m a
-te e = ierr (te e) e
 
 instance (MonadBaseControl b m) => MonadBaseControl b (Iteratee s m) where
   newtype StM (Iteratee s m) a =

@@ -16,11 +16,14 @@ where
 import Prelude hiding (head, tail, dropWhile, length, splitAt )
 
 import Control.Applicative
+import Control.Arrow (first)
 import qualified Data.ByteString as B
+import qualified Data.ByteString.Internal as B
 import qualified Data.ByteString.Lazy as L
 import Data.Monoid
 import Data.Word
 import Foreign.C
+import Foreign.ForeignPtr  (withForeignPtr, mallocForeignPtrBytes)
 import Foreign.Ptr
 import Foreign.Storable
 import Foreign.Marshal.Array
@@ -58,6 +61,11 @@ instance ReadableChunk [Word] Word where
 
 instance ReadableChunk B.ByteString Word8 where
   readFromPtr buf l = B.packCStringLen (castPtr buf, l)
+  fillFromCallback sz cb = do
+      fp <- mallocForeignPtrBytes sz
+      numFill <- withForeignPtr fp $ \p -> cb p sz
+      return $ (B.PS fp 0 numFill, numFill)
 
 instance ReadableChunk L.ByteString Word8 where
   readFromPtr buf l = return . L.fromChunks . (:[]) =<< readFromPtr buf l
+  fillFromCallback sz cb = first (L.fromChunks . (:[])) <$> fillFromCallback sz cb

@@ -295,8 +295,7 @@ fuseEneeHandle h1 k1 h2 k2 = eneeCheckIfDoneHandle hFuse kFuse
                                  (\k'  -> contMoreM (push2 (icont k')))
                                  (\_ _ -> contMoreM (push2 i321'))
             step k (EOF mExc) = do
-                let exc0 = maybe (toIterException EofException) wrapEnumExc mExc
-                    enum = maybe enumEof enumErr mExc
+                let enum = maybe enumEof enumErr mExc
                 i321' <- enum (k2 k)
                 runIter i321' (\i' -> enum i' >>= \i'2 -> runIter i'2
                                   (\i1  -> contDoneM i1 (EOF Nothing))
@@ -383,8 +382,8 @@ mapChunks f i = eneeCheckIfDonePass (icont . step) i
   -- dropped here.  If the result isn't done, there shouldn't be any
   -- returned output, so again it can be dropped.
   step k (Chunk xs) = k (Chunk (f xs)) >>= \ret -> case ret of
-                        ContMore i       -> contMoreM (go i)
-                        ContErr  i e     -> contErrM (go i) e
+                        ContMore i'      -> contMoreM (go i')
+                        ContErr  i' e    -> contErrM (go i') e
                         ContDone a _str' -> contDoneM (idone a) NoData
   step k NoData     = continue (step k)
 
@@ -448,7 +447,7 @@ mapAccumChunksM f acc0 i = go acc0 i
   go acc = eneeCheckIfDonePass (icont . step acc)
   step !acc k (Chunk xs)   = f acc xs >>= \(acc',a') -> doContEtee (go acc') k a'
   step !acc k NoData       = contMoreM (go acc (icont k))
-  step !acc k s@(EOF Nothing) = contDoneM (icont k) s
+  step _acc k s@(EOF Nothing) = contDoneM (icont k) s
   step !acc k (EOF (Just e))  = k (EOF (Just e)) >>= \iret -> case iret of
       ContDone x _  -> contDoneM (return x) NoData
       ContMore i'   -> contMoreM (go acc i')

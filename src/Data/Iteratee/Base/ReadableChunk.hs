@@ -1,6 +1,7 @@
 {-# LANGUAGE MultiParamTypeClasses
             ,FlexibleInstances
-            ,FunctionalDependencies #-}
+            ,FunctionalDependencies
+            ,TupleSections #-}
 
 -- |Monadic Iteratees:
 -- incremental input parsers, processors and transformers
@@ -14,6 +15,7 @@ where
 
 import Prelude hiding (head, tail, dropWhile, length, splitAt )
 
+import Control.Applicative
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as L
 import Data.Monoid
@@ -22,18 +24,25 @@ import Foreign.C
 import Foreign.Ptr
 import Foreign.Storable
 import Foreign.Marshal.Array
+import Foreign.Marshal.Alloc
 
 -- |Class of streams which can be filled from a 'Ptr'.  Typically these
 -- are streams which can be read from a file, @Handle@, or similar resource.
 --
---
+-- instances must implement 'readFromPtr' and optionally 'fillFromCallback'.
+-- if available, 'fillFromCallback' results in less copying.
 class (Monoid s, Storable el) => ReadableChunk s el | s -> el where
-  readFromPtr ::
-      Ptr el
-      -> Int -- ^ The pointer must not be used after @readFromPtr@ completes.
-      -> IO s -- ^ The Int parameter is the length of the data in *bytes*.
+  readFromPtr :: Ptr el
+              -> Int -- ^ The pointer must not be used after @readFromPtr@ completes.
+              -> IO s -- ^ The Int parameter is the length of the data in *bytes*.
+  fillFromCallback :: Int -> (Ptr el -> Int -> IO Int) -> IO (s,Int)
+  fillFromCallback sz cb = allocaBytes sz $ \p -> do
+          nRead <- cb p sz
+          (,nRead) <$> readFromPtr p nRead
   empty :: s
   empty = mempty
+
+{-# DEPRECATED readFromPtr "use fillFromCallback" #-}
 
 instance ReadableChunk [Char] Char where
   readFromPtr buf l = peekCAStringLen (castPtr buf, l)

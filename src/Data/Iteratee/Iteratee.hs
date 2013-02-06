@@ -82,7 +82,7 @@ import Data.Iteratee.Base
 import qualified Data.ListLike as LL
 
 import Control.Monad.Trans.Class
-import Control.Monad ((<=<), (>=>), liftM)
+import Control.Monad ((<=<), liftM)
 import Data.Typeable
 
 import Debug.Trace

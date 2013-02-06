@@ -38,7 +38,6 @@ import Control.Exception.Lifted
 
 import Foreign.Ptr
 import Foreign.Storable
-import Foreign.Marshal.Alloc
 
 import System.IO (SeekMode(..))
 
@@ -48,53 +47,48 @@ import "unix-bytestring" System.Posix.IO.ByteString (tryFdSeek)
 -- Binary Random IO enumerators
 
 makefdCallback ::
-  (MonadBase IO m, ReadableChunk s el) =>
-  Ptr el
-  -> ByteCount
+  (MonadBase IO m, ReadableChunk s el)
+  => ByteCount
   -> Fd
   -> Callback st m s
-makefdCallback p bufsize fd st = do
-  n <- liftBase $ fdReadBuf fd (castPtr p) bufsize
-  case n of
-    0   -> liftBase yield >> return ((Finished, st), empty)
-    n'  -> liftM (\s -> ((HasMore, st), s)) .
-                   liftBase $ readFromPtr p (fromIntegral n')
+makefdCallback bufsize fd st = do
+  let fillFn p = fmap fromIntegral . fdReadBuf fd (castPtr p) . fromIntegral
+  (s,numCopied) <- liftBase $ fillFromCallback (fromIntegral bufsize) fillFn
+  case numCopied of
+    0   -> liftBase yield >> return ((Finished, st), s)
+    n'  -> return ((HasMore, st), s)
 {-# INLINABLE makefdCallback #-}
 
 -- |The enumerator of a POSIX File Descriptor.  This version enumerates
 -- over the entire contents of a file, in order, unless stopped by
 -- the iteratee.  In particular, seeking is not supported.
 enumFd
-  :: forall s el m a.(ReadableChunk s el, MonadBaseControl IO m) =>
+  :: forall s el m a.(ReadableChunk s el, MonadBase IO m) =>
      Int
      -> Fd
      -> Enumerator s m a
-enumFd bs fd iter =
+enumFd bs fd =
   let bufsize = bs * (sizeOf (undefined :: el))
-  in bracket (liftBase $ mallocBytes bufsize)
-             (liftBase . free)
-             (\p -> enumFromCallback (makefdCallback p (fromIntegral bufsize) fd) () iter)
+  in enumFromCallback (makefdCallback (fromIntegral bufsize) fd) ()
 {-# INLINABLE enumFd #-}
 
 -- |A variant of enumFd that catches exceptions raised by the @Iteratee@.
 enumFdCatch
- :: forall e s el m a.(IException e, ReadableChunk s el, MonadBaseControl IO m)
+ :: forall e s el m a.(IException e, ReadableChunk s el, MonadBase IO m)
     => Int
     -> Fd
     -> (e -> m (Maybe EnumException))
     -> Enumerator s m a
 enumFdCatch bs fd handler iter =
   let bufsize = bs * (sizeOf (undefined :: el))
-  in bracket (liftBase $ mallocBytes bufsize)
-             (liftBase . free)
-             (\p -> enumFromCallbackCatch (makefdCallback p (fromIntegral bufsize) fd) handler () iter)
+  in enumFromCallbackCatch (makefdCallback (fromIntegral bufsize) fd) handler () iter
 {-# INLINABLE enumFdCatch #-}
 
 
 -- |The enumerator of a POSIX File Descriptor: a variation of @enumFd@ that
 -- supports RandomIO (seek requests).
 enumFdRandom
- :: forall s el m a.(ReadableChunk s el, MonadBaseControl IO m) =>
+ :: forall s el m a.(ReadableChunk s el, MonadBase IO m) =>
     Int
     -> Fd
     -> Enumerator s m a

@@ -23,7 +23,6 @@ import Data.Iteratee.Base.ReadableChunk
 import Data.Iteratee.Iteratee
 import Data.Iteratee.Binary()
 
-import Control.Applicative ((<$>))
 import Control.Monad
 import Control.Monad.Base
 import Control.Monad.Trans.Control
@@ -41,17 +40,15 @@ import System.IO
 
 makeHandleCallback :: forall st m s el.
   (MonadBaseControl IO m, ReadableChunk s el) =>
-  Ptr el
-  -> Int
+  Int
   -> Handle
   -> Callback st m s
-makeHandleCallback p bsize h st = do
-  n' <- (liftBase $ hGetBuf h p bsize)
-  case n' of
-    0 -> return $ ((Finished, st), empty)
-    n -> liftBase $ (\s -> ((HasMore, st), s)) <$>
-                 readFromPtr p (fromIntegral n)
-
+makeHandleCallback bsize h st = do
+  let fillFn p = fmap fromIntegral . hGetBuf h (castPtr p) . fromIntegral
+  (s,numCopied) <- liftBase $ fillFromCallback (fromIntegral bsize) fillFn
+  case numCopied of
+    0   -> return ((Finished, st), s)
+    n'  -> return ((HasMore, st), s)
 
 -- |The (monadic) enumerator of a file Handle.  This version enumerates
 -- over the entire contents of a file, in order, unless stopped by
@@ -65,9 +62,7 @@ enumHandle
   -> Enumerator s m a
 enumHandle bs h i =
   let bufsize = bs * sizeOf (undefined :: el)
-  in bracket (liftBase $ mallocBytes bufsize)
-                 (liftBase . free)
-                 (\p -> enumFromCallback (makeHandleCallback p bufsize h) () i)
+  in enumFromCallback (makeHandleCallback bufsize h) () i
 
 -- |An enumerator of a file handle that catches exceptions raised by
 -- the Iteratee.
@@ -81,9 +76,7 @@ enumHandleCatch
   -> Enumerator s m a
 enumHandleCatch bs h handler i =
   let bufsize = bs * sizeOf (undefined :: el)
-  in bracket (liftBase $ mallocBytes bufsize)
-                 (liftBase . free)
-                 (\p -> enumFromCallbackCatch (makeHandleCallback p bufsize h) handler () i)
+  in enumFromCallbackCatch (makeHandleCallback bufsize h) handler () i
 
 
 -- |The enumerator of a Handle: a variation of enumHandle that

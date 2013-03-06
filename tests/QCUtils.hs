@@ -47,7 +47,9 @@ instance Arbitrary IterException where
   arbitrary = do
     str <- arbitrary
     off <- fromInteger <$> (arbitrary :: Gen Integer)
-    elements [tI (SeekException off), tI EofException, iterStrExc str]
+    elements [ tI (SeekException off)
+             , tI (EofException "someEofException")
+             , iterStrExc str]
 
 
 instance (Num a, Ord a, Arbitrary a, Monad m) => Arbitrary (Iteratee [a] m [a]) where

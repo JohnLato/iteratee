@@ -208,7 +208,7 @@ instance Exception SeekException where
 instance IException SeekException where
 
 -- |The @Iteratee@ needs more data but received @EOF@.
-data EofException = EofException
+data EofException = EofException String
   deriving (Typeable, Show)
 
 instance Exception EofException where

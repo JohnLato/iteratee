@@ -194,7 +194,7 @@ getChunk = icontP step
  where
   step (Chunk xs)     = ContDone xs NoData
   step NoData         = continueP step
-  step (EOF Nothing)  = continueErrP EofException step
+  step (EOF Nothing)  = continueErrP (EofException "getChunk") step
   step (EOF (Just e)) = continueErrP (wrapEnumExc e) step
 {-# INLINE getChunk #-}
 

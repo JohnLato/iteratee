@@ -150,7 +150,8 @@ head = icontP step
     | LL.null vec  = continueP step
     | otherwise    = ContDone (LL.head vec) $ Chunk $ LL.tail vec
   step NoData      = continueP step
-  step EOF{}   = ContErr (icontP step) (toIterException EofException)
+  step EOF{}   = ContErr (icontP step) (toIterException exc)
+  exc = EofException "Iteratee.head"
 {-# INLINE head #-}
 
 -- | Similar to @head@, except it returns @Nothing@ if the stream
@@ -177,8 +178,9 @@ last = icontP (step Nothing)
     | otherwise    = continueP $ step (Just $ LL.last xs)
   step l NoData    = continueP (step l)
   step l s@(EOF _) = case l of
-    Nothing -> ContErr (icontP (step l)) (toIterException EofException)
+    Nothing -> ContErr (icontP (step l)) (toIterException exc)
     Just x  -> ContDone x s
+  exc = EofException "Iteratee.last"
 {-# INLINE last #-}
 
 
@@ -778,8 +780,9 @@ foldl1 f = icontP step
       | otherwise  = ContMore $ foldl f $ FLL.foldl1 f xs
     -- After the first chunk, just use regular foldl.
     step NoData     = continueP step
-    step (EOF Nothing)  = ContErr (icontP step) $ toIterException EofException
+    step (EOF Nothing)  = ContErr (icontP step) $ toIterException exc
     step (EOF (Just e)) = ContErr (icontP step) $ wrapEnumExc e
+    exc = EofException "Iteratee.foldl1"
 {-# INLINE foldl1 #-}
 
 
@@ -796,8 +799,9 @@ foldl1' f = icontP step
       | otherwise  = ContMore $ foldl' f $ FLL.foldl1 f xs
     -- After the first chunk, just use regular foldl'.
     step NoData     = continueP step
-    step (EOF Nothing)  = ContErr (icontP step) $ toIterException EofException
+    step (EOF Nothing)  = ContErr (icontP step) $ toIterException exc
     step (EOF (Just e)) = ContErr (icontP step) $ wrapEnumExc e
+    exc = EofException "Iteratee.foldl1'"
 {-# INLINE foldl1' #-}
 
 
@@ -954,8 +958,8 @@ sequence_ = check []
     step ks str = CM.foldM (accf str) ([], str,Nothing) (reverse ks) >>= \ret -> case ret of
         (iS, _, Just e)  -> contErrM (check [] (reverse iS)) e
         ([], str', _)    -> contDoneM () str'
-        (iS, EOF Nothing, _)  -> contErrM (throwRec EofException (check [] (reverse iS)))
-                                          (toIterException EofException)
+        (iS, EOF Nothing, _)  -> contErrM (throwRec sExc (check [] (reverse iS)))
+                                          (toIterException sExc)
         (iS, EOF (Just e), _) -> let e' = wrapEnumExc e
                                  in contErrM (throwRec e' (check [] (reverse iS))) e'
         (iS, _, _)            -> contMoreM (check [] (reverse iS))
@@ -973,6 +977,7 @@ sequence_ = check []
     shorter e@(EOF _) _         = e
     shorter _         e@(EOF _) = e
     shorter _         _         = NoData
+    sExc = EofException "Iteratee.sequence_"
 {-# INLINABLE sequence_ #-}
 
 -- |Transform an iteratee into one that keeps track of how much data it

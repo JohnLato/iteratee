@@ -433,7 +433,7 @@ run iter = runIter iter onDone onCont onErr
    onDone  x     = return x
    onCont  k     = k (EOF Nothing) >>= \res -> case res of
                       ContDone a _ -> return a
-                      ContMore _   -> E.throw EofException
+                      ContMore _   -> E.throw (EofException "Iteratee.run")
                       ContErr  _ e -> E.throw e
    onErr _ e     = E.throw e
 {-# INLINE run #-}
@@ -451,7 +451,8 @@ tryRun iter = runIter iter onD onC onE
   where
     onD        = return . Right
     onC  k     = doCont k (EOF Nothing) (\a _ -> return $ Right a)
-                                        (const . return $ maybeExc EofException)
+                                        (const . return $ maybeExc
+                                                  (EofException "Iteratee.tryRun"))
                                         (\_ e -> return $ maybeExc e)
     onE   _ e  = return $ maybeExc e
     maybeExc e = maybe (Left (E.throw e)) Left (fromException $ toException e)

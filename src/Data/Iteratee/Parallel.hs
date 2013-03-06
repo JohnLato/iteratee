@@ -69,7 +69,7 @@ parI  iter0 = do
         (innervar,res) <- takeMVar var
         case res of
             ContDone a s -> contDoneM a s
-            ContMore _   -> contErrM (icont (reader var)) EofException
+            ContMore _   -> contErrM (icont (reader var)) (EofException "parI")
             ContErr _ e  -> continueErr e $ \c' -> putMVar innervar c'
                                                    >> final var
     consumer var iter = runIter iter onDone onCont onErr

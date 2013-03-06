@@ -101,9 +101,9 @@ endianReadN MSB n0 cnct = icontP (step n0 [])
                          in ContDone result $ Chunk next
     | otherwise        = continueP (step (n - LL.length c) (acc ++ LL.toList c))
   step !n acc NoData   = continueP (step n acc)
-  step !n acc (EOF Nothing  )  = ContErr (icontP (step n acc))
-                                         (toIterException EofException)
+  step !n acc (EOF Nothing  )  = ContErr (icontP (step n acc)) exc
   step !n acc (EOF (Just e)) = ContErr (icontP (step n acc)) (wrapEnumExc e)
+  exc = toIterException $ EofException "endianReadN"
 endianReadN LSB n0 cnct = icontP (step n0 [])
  where
   step !n acc NoData   = continueP (step n acc)
@@ -114,9 +114,9 @@ endianReadN LSB n0 cnct = icontP (step n0 [])
                          in ContDone result $ Chunk next
     | otherwise        = continueP (step (n - LL.length c)
                                        (reverse (LL.toList c) ++ acc))
-  step !n acc (EOF Nothing) = ContErr (icontP (step n acc))
-                                 (toIterException EofException)
+  step !n acc (EOF Nothing) = ContErr (icontP (step n acc)) exc
   step !n acc (EOF (Just e)) = ContErr (icontP (step n acc)) (wrapEnumExc e)
+  exc = toIterException $ EofException "endianReadN"
 {-# INLINE endianReadN #-}
 
 -- As of now, the polymorphic code is as fast as the best specializations

@@ -646,6 +646,8 @@ tests = [
   ,testGroup "Seeking" [
     testCase "seek" testSeek1
    ,testCase "nested seek" testSeek2
+   ,testCase "seek (handle)" testSeek1h
+   ,testCase "nested seek (handle)" testSeek2h
    ]
   ]
 

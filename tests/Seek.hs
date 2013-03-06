@@ -2,9 +2,16 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 
-module Seek (testSeek1, testSeek2) where
+module Seek (
+  testSeek1
+, testSeek2
+, testSeek1h
+, testSeek2h
+
+) where
 
 import Data.Iteratee as I
+import qualified Data.Iteratee.IO.Handle as H
 import Data.Data
 import Data.ByteString.Char8 (ByteString)
 import Data.ByteString.Char8 as B
@@ -63,6 +70,21 @@ testSeek2 :: Assertion
 testSeek2 = withTestData $ \fp -> do
     result <- fileDriverRandomVBuf 3 (joinI $ rewindEtee iSeek2) fp
     assertEqual "seek through enumeratees" result testData
+
+----------------------------------------------------
+-- run tests again with handles
+
+testSeek1h :: Assertion
+testSeek1h = withTestData $ \fp -> do
+    result <- H.fileDriverRandomHandle 2 iSeek1 fp
+    assertEqual "standard seek" result testData
+
+testSeek2h :: Assertion
+testSeek2h = withTestData $ \fp -> do
+    result <- H.fileDriverRandomHandle 3 (joinI $ rewindEtee iSeek2) fp
+    assertEqual "seek through enumeratees" result testData
+
+----------------------------------------------------
 
 testData1 = pack "Text in a flat file\nread"
 testData2 = B.take 12 testData1

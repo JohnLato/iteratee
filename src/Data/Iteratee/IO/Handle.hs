@@ -30,7 +30,6 @@ import Control.Exception.Lifted
 
 import Foreign.Ptr
 import Foreign.Storable
-import Foreign.Marshal.Alloc
 
 import System.IO
 
@@ -48,7 +47,7 @@ makeHandleCallback bsize h st = do
   (s,numCopied) <- liftBase $ fillFromCallback (fromIntegral bsize) fillFn
   case numCopied of
     0   -> return ((Finished, st), s)
-    n'  -> return ((HasMore, st), s)
+    _n  -> return ((HasMore, st), s)
 
 -- |The (monadic) enumerator of a file Handle.  This version enumerates
 -- over the entire contents of a file, in order, unless stopped by

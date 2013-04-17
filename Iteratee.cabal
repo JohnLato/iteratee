@@ -20,7 +20,7 @@ build-type:    Simple
 
 extra-source-files:
   CONTRIBUTORS
-  README
+  README.md
   Examples/*.hs
   Examples/*.lhs
   Examples/*.txt

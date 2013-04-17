@@ -1,7 +1,7 @@
-{-# LANGUAGE MultiParamTypeClasses
-            ,FlexibleInstances
-            ,FunctionalDependencies
-            ,TupleSections #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TupleSections #-}
 
 -- |Monadic Iteratees:
 -- incremental input parsers, processors and transformers

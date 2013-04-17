@@ -1,7 +1,7 @@
-{-# LANGUAGE  CPP
-            , PackageImports
-            , ScopedTypeVariables
-            , FlexibleContexts #-}
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE PackageImports #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 -- |Random and Binary IO with generic Iteratees, using File Descriptors for IO.
 -- when available, these are the preferred functions for performing IO as they

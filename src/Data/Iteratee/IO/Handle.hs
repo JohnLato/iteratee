@@ -1,4 +1,5 @@
-{-# LANGUAGE ScopedTypeVariables, FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- |Random and Binary IO with generic Iteratees.  These functions use Handles
 -- for IO operations, and are provided for compatibility.  When available,

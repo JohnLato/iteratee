@@ -34,6 +34,7 @@ module Data.Iteratee.Iteratee (
   ,mapAccumChunksM
   ,convStream
   ,unfoldConvStream
+  ,unfoldConvStreamCheck
   ,joinI
   ,joinIM
   -- * Enumerators

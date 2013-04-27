@@ -6,6 +6,8 @@
             ,RankNTypes
             ,DeriveDataTypeable
             ,DeriveFunctor
+            ,DeriveFoldable
+            ,DeriveTraversable
             ,ScopedTypeVariables
             ,ExistentialQuantification #-}
 
@@ -52,6 +54,7 @@ module Data.Iteratee.Base (
   ,mapContRet
   ,doContIteratee
   ,doContEtee
+  ,doContEteeBi
   ,doCont
   -- ** Stream Functions
   -- * Classes
@@ -76,6 +79,8 @@ import Control.Monad.Trans.Control
 import Control.Applicative hiding (empty)
 import qualified Control.Exception as E
 import Data.Data
+import Data.Foldable
+import Data.Traversable
 import Unsafe.Coerce
 
 import Debug.Trace
@@ -94,7 +99,7 @@ data Stream c =
   EOF (Maybe EnumException)
   | NoData
   | Chunk c
-  deriving (Show, Typeable)
+  deriving (Show, Typeable, Functor, Foldable, Traversable)
 
 instance (Eq c) => Eq (Stream c) where
   (Chunk c1) == (Chunk c2)           = c1 == c2
@@ -110,13 +115,6 @@ instance Monoid c => Monoid (Stream c) where
   mappend NoData     b = b
   mappend a     NoData = a
   mappend (Chunk s1) (Chunk s2) = Chunk (s1 `mappend` s2)
-
--- |Map a function over a stream.
-instance Functor Stream where
-  fmap f (Chunk xs) = Chunk $ f xs
-  fmap _ NoData     = NoData
-  fmap _ (EOF mErr) = EOF mErr
-
 
 -- | The continuation type of an incomplete iteratee.
 type Cont s m a = Stream s -> m (ContReturn s m a)
@@ -213,6 +211,28 @@ doContEtee go k s = k (Chunk s) >>= \ret -> case ret of
     ContMore i   -> contMoreM (go i)
     ContErr  i e -> contErrM (go i) e
 {-# INLINE doContEtee #-}
+
+-- | Create a @ContReturn@ from a stepping function, a continuation, and
+-- an input stream.  Useful when writing enumeratees.
+doContEteeBi
+  :: Monad m
+  => (Iteratee sInner m a -> Iteratee sOuter m (Iteratee sInner m a))
+  -> (Stream sInner -> m (ContReturn sInner m a))
+  -> (sInner -> m sOuter)
+  -> sInner
+  -> m (ContReturn sOuter m (Iteratee sInner m a))
+doContEteeBi go k pushback s = k (Chunk s) >>= \ret -> case ret of
+    ContDone a NoData        -> contDoneM (idone a) NoData
+    ContDone a (Chunk s')    -> pushback s' >>= contDoneM (idone a) . Chunk
+    -- termination of the inner stream shouldn't affect the outer stream
+    ContDone a (EOF Nothing) -> contDoneM (idone a) NoData
+    -- we know the continuation was provided with a valid chunk, so if it
+    -- returns EOF (Just exception) it should have done so via ContErr
+    ContDone _ (EOF (Just exc)) -> error $ "doContEteeBi: a continuation returned an error in ContDone: " ++ show exc
+    ContMore i   -> contMoreM (go i)
+    ContErr  i e -> contErrM (go i) e
+{-# INLINE doContEteeBi #-}
+
 
 -- | A generic @ContReturn@ handler, if you don't want to write a bunch of
 -- case statements.

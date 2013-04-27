@@ -490,7 +490,11 @@ mapStream
      ,LooseMap s el el')
   => (el -> el')
   -> Enumeratee (s el) (s el') m a
-mapStream f = mapChunks (lMap f)
+mapStream elF = bimapChunks (lMap elF) unF
+ where
+  unF origXs newXs = let useL = LL.length newXs
+                         fullL = LL.length origXs
+                     in LL.drop (fullL - useL) origXs
 {-# INLINE mapStream #-}
 
 -- |Map the stream rigidly.
@@ -502,7 +506,11 @@ rigidMapStream
   :: (Monad m, LL.ListLike s el)
   => (el -> el)
   -> Enumeratee s s m a
-rigidMapStream f = mapChunks (LL.rigidMap f)
+rigidMapStream elF = bimapChunks (LL.rigidMap elF) unF
+ where
+  unF origXs newXs = let useL = LL.length newXs
+                         fullL = LL.length origXs
+                     in LL.drop (fullL - useL) origXs
 {-# INLINE rigidMapStream #-}
 
 

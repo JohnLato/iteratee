@@ -2,6 +2,7 @@
             ,RankNTypes
             ,BangPatterns
             ,FlexibleContexts
+            ,NoMonomorphismRestriction
             ,ScopedTypeVariables
             ,TupleSections
             ,DeriveDataTypeable #-}
@@ -37,6 +38,11 @@ module Data.Iteratee.Iteratee (
   ,unfoldConvStreamCheck
   ,joinI
   ,joinIM
+  -- ** Nested iteratee combinators with leftover handling
+  ,bimapChunks
+  ,bimapChunksM
+  ,bimapAccumChunks
+  ,bimapAccumChunksM
   -- * Enumerators
   ,Enumerator
   ,Enumeratee
@@ -84,6 +90,8 @@ import qualified Data.ListLike as LL
 
 import Control.Monad.Trans.Class
 import Control.Monad ((<=<), liftM)
+import Data.Monoid
+import Data.Traversable as Tr
 import Data.Typeable
 
 import Debug.Trace
@@ -455,6 +463,65 @@ mapAccumChunksM f acc0 i = go acc0 i
       ContErr i' e' -> contErrM (go acc i') e'
 {-# INLINE[1] mapAccumChunksM #-}
 
+bimapChunks
+  :: forall m s s' a. (Monad m, Monoid s)
+  => (s  -> s')
+  -> (s -> s' -> s)
+  -> Enumeratee s s' m a
+bimapChunks f unF = bimapChunksM (return . f) ((return .) . unF)
+{-# INLINE bimapChunks #-}
+
+bimapChunksM
+  :: forall m s s' a. (Monad m, Monoid s)
+  => (s  -> m s')
+  -> (s -> s' -> m s)
+  -> Enumeratee s s' m a
+bimapChunksM f unF i = go i
+ where
+  go = eneeCheckIfDonePass (icont . step)
+  step :: (Stream s' -> m (ContReturn s' m a))-> Stream s -> m (ContReturn s m (Iteratee s' m a))
+  step k (Chunk xs)   = f xs >>= doContEteeBi go k (unF xs)
+  step k NoData       = continue (step k)
+  step k s@(EOF Nothing) = contDoneM (icont k) s
+  step k (EOF (Just e))  = k (EOF (Just e)) >>= \iret -> case iret of
+      ContDone x (EOF exc) -> trace ("bimapChunksM: inner continuation returned EOF in contDone: " ++ show exc)
+                            $ contDoneM (return x) NoData
+      ContDone x c  -> Tr.mapM (unF mempty) c >>= contDoneM (return x)
+      ContMore i'   -> contMoreM (go i')
+      ContErr i' e' -> contErrM (go i') e'
+{-# INLINE bimapChunksM #-}
+
+bimapAccumChunks
+  :: (Monad m)
+  => (acc -> s -> (acc, s'))
+  -> (acc -> s' -> s)
+  -> acc
+  -> Enumeratee s s' m a
+bimapAccumChunks f unF =
+  bimapAccumChunksM (\a s -> return $! f a s) (\a s' -> return $! unF a s')
+{-# INLINE bimapAccumChunks #-}
+
+bimapAccumChunksM
+  :: (Monad m)
+  => (acc -> s -> m (acc, s'))
+  -> (acc -> s' -> m s)
+  -> acc
+  -> Enumeratee s s' m a
+bimapAccumChunksM f unF acc0 i = go acc0 i
+ where
+  go acc = eneeCheckIfDonePass (icont . step acc)
+  step !acc k (Chunk xs)   = f acc xs >>= \(acc',a') -> doContEteeBi (go acc') k (unF acc') a'
+  step !acc k NoData       = contMoreM (go acc (icont k))
+  step _acc k s@(EOF Nothing) = contDoneM (icont k) s
+  step !acc k (EOF (Just e))  = k (EOF (Just e)) >>= \iret -> case iret of
+      -- what if iret is EOF?  This is probably an error in the iteratee.  But
+      -- we have a value, so we can continue working at least.
+      ContDone x (EOF exc) -> trace ("bimapAccumChunksM: inner continuation returned EOF in contDone: " ++ show exc)
+                            $ contDoneM (return x) NoData
+      ContDone x c  -> Tr.mapM (unF acc) c >>= contDoneM (return x)
+      ContMore i'   -> contMoreM (go acc i')
+      ContErr i' e' -> contErrM (go acc i') e'
+{-# INLINE[1] bimapAccumChunksM #-}
 
 -- |Convert one stream into another, not necessarily in lockstep.
 -- 

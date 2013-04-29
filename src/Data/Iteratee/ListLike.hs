@@ -244,6 +244,9 @@ roll t d = LL.singleton `liftM` joinI (take t stream2stream) <** drop (d-t)
   -- d is >= t, so this version works
 {-# INLINE roll #-}
 
+-- defining this locally so we don't need Functor constraints on 'm'
+(<**) :: Monad m => m a -> m b -> m a
+l <** r = l >>= \a -> r >> return a
 
 -- |Drop n elements of the stream, if there are that many.
 -- 
@@ -345,10 +348,6 @@ breakE cpred = eneeCheckIfDonePass (icont . step) CM.>=>
   step k NoData       =  continue (step k)
   step k stream@EOF{} =  contDoneM (icont k) stream
 {-# INLINE breakE #-}
-
--- defining this local so we don't need Functor constraints on 'm'
-(<**) :: Monad m => m a -> m b -> m a
-l <** r = l >>= \a -> r >> return a
 
 -- |Read n elements from a stream and apply the given iteratee to the
 -- stream of the read elements. Unless the stream is terminated early, we

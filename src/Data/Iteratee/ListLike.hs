@@ -82,6 +82,8 @@ import Control.Monad (liftM, mplus)
 import qualified Control.Monad as CM
 import Control.Monad.Trans.Class
 
+import Text.Printf
+
 -- Useful combinators for implementing iteratees and enumerators
 
 -- | Check if a stream has received 'EOF'.
@@ -228,7 +230,7 @@ roll
   => Int  -- ^ length of chunk (t)
   -> Int  -- ^ amount to consume (d)
   -> Iteratee s m s'
-roll t d | t > d  = icontP step
+roll t d | t > d && d > 0 {- implies t>0 -} = icontP step
   where
     step (Chunk vec)
       | LL.length vec >= t =
@@ -240,8 +242,9 @@ roll t d | t > d  = icontP step
     step' v1 (Chunk vec)   = step . Chunk $ v1 `mappend` vec
     step' v1 NoData        = continueP (step' v1)
     step' v1 stream@EOF{}  = ContDone (LL.singleton v1) stream
-roll t d = LL.singleton `liftM` joinI (take t stream2stream) <** drop (d-t)
+roll t d | d >= t && t > 0 = LL.singleton `liftM` joinI (take t stream2stream) <** drop (d-t)
   -- d is >= t, so this version works
+roll t d = error $ printf "Data.Iteratee.roll: called with non-positive arguments %d %d" t d
 {-# INLINE roll #-}
 
 -- defining this locally so we don't need Functor constraints on 'm'

@@ -399,7 +399,7 @@ mapChunks f i = eneeCheckIfDonePass (icont . step) i
   step k s@(EOF Nothing) = contDoneM (icont k) s
   step k s@(EOF (Just e)) = k (EOF (Just e)) >>= \ret -> case ret of
           ContDone a _  -> contDoneM (return a) s
-          ContMore i'   -> contMoreM $ go i'
+          ContMore i'   -> contMoreM (go i')
           ContErr i' e' -> contErrM (go i') e'
 {-# INLINE[1] mapChunks #-}
 
@@ -430,7 +430,7 @@ mapChunksM f i = eneeCheckIfDonePass (icont . step) i
   go = eneeCheckIfDonePass (icont . step)
   step :: (Stream s' -> m (ContReturn s' m a))-> Stream s -> m (ContReturn s m (Iteratee s' m a))
   step k (Chunk xs)   = f xs >>= doContEtee go k
-  step k NoData       = contMoreM (go (icont k))
+  step k NoData       = continue (step k)
   step k s@(EOF Nothing) = contDoneM (icont k) s
   step k (EOF (Just e))  = k (EOF (Just e)) >>= \iret -> case iret of
       ContDone x _  -> contDoneM (return x) NoData

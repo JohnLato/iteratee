@@ -1,4 +1,6 @@
-{-# LANGUAGE DeriveDataTypeable, ExistentialQuantification #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE GADTs #-}
 
 -- |Monadic and General Iteratees:
 -- Messaging and exception handling.
@@ -63,6 +65,9 @@ module Data.Iteratee.Exception (
   ,iterExceptionToException
   ,iterExceptionFromException
   ,ifExcToIterExc
+  -- * Exception handling helpers
+  , IHandler (..)
+  , eofHandler
 )
 where
 
@@ -254,3 +259,12 @@ ifExcToIterExc ife = let e = ifExceptionToException ife
                         (Just i, _)  -> i
                         (_, Just e') -> wrapEnumExc e'
                         (_, _)       -> error "iteratee: couldn't convert an 'IFException' to either 'IterException' or 'EnumException'.  How'd that happen?"
+
+-- | Wrap an exception handler in an existentially-quantified type.  This
+-- exists so that multiple handlers can be passed to 'enumFromCallbackCatches'
+data IHandler m where
+  IHandler :: IException e => (e -> m (Maybe EnumException)) -> IHandler m
+
+-- nearly every enumerator should be able to handle EofException
+eofHandler :: Monad m => EofException -> m (Maybe EnumException)
+eofHandler _ = return Nothing

@@ -56,6 +56,7 @@ module Data.Iteratee.Iteratee (
   ,enumCheckIfDone
   ,enumFromCallback
   ,enumFromCallbackCatch
+  ,enumFromCallbackCatches
   -- ** Enumerator Combinators
   ,(>>>)
   ,eneeCheckIfDone
@@ -92,7 +93,6 @@ import Control.Monad.Trans.Class
 import Control.Monad ((<=<), liftM)
 import Data.Monoid
 import Data.Traversable as Tr
-import Data.Typeable
 
 import Debug.Trace
 
@@ -793,17 +793,8 @@ enumFromCallback ::
   -> st
   -> Enumerator s m a
 enumFromCallback c =
-  enumFromCallbackCatch c (\NotAnException -> return Nothing)
+  enumFromCallbackCatch c eofHandler
 {-# INLINE enumFromCallback #-}
-
--- Dummy exception to catch in enumFromCallback
--- This never gets thrown, but it lets us
--- share plumbing
-data NotAnException = NotAnException
- deriving (Show, Typeable)
-
-instance Exception NotAnException where
-instance IException NotAnException where
 
 -- | Indicate if a callback should be called again to produce more data.
 --
@@ -848,6 +839,39 @@ enumFromCallbackCatch c handler = loop
                                ContErr  i' e' -> doNext cbstate (ierr i' e')
 {-# INLINE enumFromCallbackCatch #-}
 
+-- |Create an enumerator from a callback function with an exception handler.
+-- The exception handler is called if an iteratee reports an exception.
+--
+-- If the callback may fail, those failures should be handled in the 'm' monad,
+-- using e.g. 'ErrorT SomeException Identity', 'Control.Exception' functions
+-- for 'IO', etc.
+enumFromCallbackCatches
+  :: forall m s st a. (Monad m)
+  => Callback st m s
+  -> [IHandler m]
+  -> st
+  -> Enumerator s m a
+enumFromCallbackCatches c handlers = loop
+  where
+    loop st iter = runIter iter idoneM (onCont st) (onErr handlers st)
+    onCont st k  = c st >>= check k
+    onErr [] _ i e = return (ierr i e)
+    onErr (IHandler handler:remHandlers) st i e = case fromIterException e of
+      Just e' -> handler e' >>=
+                   maybe (loop st i)
+                         (return . ierr i) . fmap wrapEnumExc
+      Nothing -> onErr remHandlers st i e
+
+    doNext (HasMore, st') = loop st'
+    doNext (Finished,_)   = return
+    check :: Cont s m a
+             -> ((CBState, st), s)
+             -> m (Iteratee s m a)
+    check k (cbstate, s) = k (Chunk s) >>= \res -> case res of
+                               ContDone a _   -> return (idone a)
+                               ContMore i'    -> doNext cbstate i'
+                               ContErr  i' e' -> doNext cbstate (ierr i' e')
+{-# INLINE enumFromCallbackCatches #-}
 
 -- | trace exceptions through enumeratees
 traceEteeExc :: String -> Enumeratee s1 s2 m a -> Enumeratee s1 s2 m a

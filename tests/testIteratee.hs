@@ -1,5 +1,9 @@
 {-# OPTIONS_GHC -O #-}
-{-# LANGUAGE NoMonomorphismRestriction, ViewPatterns, TupleSections #-}
+
+{-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE ViewPatterns #-}
 
 import Prelude as P
 
@@ -12,6 +16,7 @@ import Test.Framework.Providers.HUnit (testCase)
 
 import Test.HUnit
 import Test.QuickCheck
+import qualified Test.QuickCheck.Monadic as QC
 
 import           Data.Iteratee hiding (head, break)
 import           Data.Iteratee.Parallel
@@ -111,7 +116,7 @@ prop_iterMonad3 m f g xs = runner1 (enumSpecial xs 1 ((m >>= f) >>= g))
 prop_list xs = runner1 (enumPure1Chunk xs stream2list) == xs
   where types = xs :: [Int]
 
-prop_clist xs n = n > 0 ==> runner1 (enumSpecial xs n stream2list) == xs
+prop_clist xs (Positive n) = runner1 (enumSpecial xs n stream2list) == xs
   where types = xs :: [Int]
 
 prop_break f xs = runner1 (enumPure1Chunk xs (Iter.break f)) == fst (break f xs)
@@ -130,18 +135,24 @@ prop_breakE3 f xs = runner1 (enumPure1Chunk xs (joinI (Iter.breakE f (return ())
   where types = xs :: [Int]
 
 
-prop_head xs = P.length xs > 0 ==> runner1 (enumPure1Chunk xs Iter.head) == head xs
+prop_head (NonEmpty xs) = runner1 (enumPure1Chunk xs Iter.head) == head xs
   where types = xs :: [Int]
 
-prop_head2 xs = P.length xs > 0 ==> runner1 (enumPure1Chunk xs (Iter.head >> stream2list)) == tail xs
+prop_head2 (NonEmpty xs) = runner1 (enumPure1Chunk xs (Iter.head >> stream2list)) == tail xs
+  where types = xs :: [Int]
+
+-- resumption after an exception
+prop_head3 (NonEmpty xs) =
+ runner1 ((enumEof >=> enumPure1Chunk xs) Iter.head) == P.head xs
   where types = xs :: [Int]
 
 prop_tryhead xs = case xs of
   [] -> runner1 (enumPure1Chunk xs tryHead) == Nothing
-  _  -> runner1 (enumPure1Chunk xs tryHead) == Just (P.head xs)
+  _  -> runner1 ((enumNoData >=> enumPure1Chunk xs) ((,) <$> tryHead <*> stream2list))
+        == (Just $ P.head xs, P.drop 1 xs)
   where types = xs :: [Int]
 
-prop_heads xs n = n > 0 ==>
+prop_heads xs (Positive n) =
  runner1 (enumSpecial xs n $ heads xs) == P.length xs
   where types = xs :: [Int]
 
@@ -150,7 +161,7 @@ prop_heads2 xs = runner1 (enumPure1Chunk xs $ heads [] >>= \c ->
                  == (0, xs)
   where types = xs :: [Int]
 
-prop_peek xs = runner1 (enumPure1Chunk xs peek) == sHead xs
+prop_peek xs = runner1 ((enumNoData >=> enumPure1Chunk xs) peek) == sHead xs
   where
   types = xs :: [Int]
   sHead [] = Nothing
@@ -162,15 +173,41 @@ prop_peek2 xs = runner1 (enumPure1Chunk xs (peek >> stream2list)) == xs
 prop_skip xs = runner1 (enumPure1Chunk xs (skipToEof >> stream2list)) == []
   where types = xs :: [Int]
 
-prop_last1 xs = P.length xs > 0 ==>
- runner1 (enumPure1Chunk xs (Iter.last)) == P.last xs
+prop_last1 (NonEmpty xs) =
+ runner1 (enumSpecial xs 2 (Iter.last)) == P.last xs
   where types = xs :: [Int]
 
-prop_last2 xs = P.length xs > 0 ==>
- runner1 (enumPure1Chunk xs (Iter.last >> Iter.peek)) == Nothing
+prop_last2 (NonEmpty xs) =
+ runner1 (enumSpecial xs 2 (Iter.last >> Iter.peek)) == Nothing
   where types = xs :: [Int]
 
-prop_drop xs n k = (n > 0 && k >= 0) ==>
+-- resumption after an exception
+prop_last3 (NonEmpty xs) =
+ runner1 ((enumEof >=> enumPure1Chunk xs) Iter.last) == P.last xs
+  where types = xs :: [Int]
+
+test_lastExc = testGot (runIdentity $ tryRun =<< enumNoData (Iter.last :: Iteratee [Int] Identity Int))
+  where
+    testGot (Left (fromException . toException -> Just (EofException "Iteratee.last"))) = return ()
+    testGot _ = assertFailure "Iter.last exception: didn't produce the correct exception"
+
+prop_roll xs (Positive t) (Positive d) (Positive n) = if t > d
+    then runner1 (enumNoData >=> enumSpecial xs n $ (,) <$> Iter.roll t d <*> stream2list)
+          == if | null xs    -> ([],[])
+                | t > len -> ([xs],[])
+                | otherwise  -> ([P.take t xs],P.drop d xs)
+    else runner1 (enumSpecial xs n $ (,) <$> roll t d <*> stream2list)
+         == ([P.take t xs], P.drop d xs)
+  where
+    len = P.length xs
+    types = xs :: [Int]
+
+-- quickcheck tends to miss the very simple case where everything can be
+-- calculated within a single chunk.
+test_roll = runner1 (enumPure1Chunk [1..10::Int] $ (,) <$> roll 4 2 <*> stream2list)
+            @?= ([[1..4]],[3..10])
+
+prop_drop xs (Positive n) (NonNegative k) =
  runner1 (enumSpecial xs n (Iter.drop k >> stream2list)) == P.drop k xs
   where types = xs :: [Int]
 
@@ -179,38 +216,43 @@ prop_dropWhile f xs =
  == P.dropWhile f xs
   where types = (xs :: [Int], f :: Int -> Bool)
 
-prop_length xs = runner1 (enumPure1Chunk xs Iter.length) == P.length xs
+prop_length xs = runner1 ((enumNoData >=> enumPure1Chunk xs) Iter.length) == P.length xs
   where types = xs :: [Int]
 
 -- length 0 is an odd case.  enumPureNChunk skips null inputs, returning
 -- the original iteratee, which is then given to `enumEof` by `run`.
--- This is different from enumPure1Chunk, which will provide a null chunk
--- to the iteratee.
--- 
--- not certain ATM which should be correct...
-prop_chunkLength xs n = n > 0 ==>
-  runner1 (enumPureNChunk xs n (liftM2 (,) chunkLength stream2list))
+--
+-- so instead we use enumNoData to test null inputs.  Eof isn't tested here,
+-- so we need to catch it in the following property.
+prop_chunkLength xs (Positive n) =
+  runner1 (enum (liftM2 (,) chunkLength stream2list))
   == case P.length xs of
-       0              -> (Nothing, xs)
        xl | xl >= n   -> (Just n, xs)
           | otherwise -> (Just (P.length xs), xs)
- where types = xs :: [Int]
+ where
+   types = xs :: [Int]
+   enum = if null xs then enumNoData else enumPureNChunk xs n
 
 prop_chunkLength2 xs =
   runner1 ((enumEof >=> enumPure1Chunk xs) chunkLength) == Nothing
  where types = xs :: [Int]
 
-prop_takeFromChunk xs n k = n > 0 ==>
-  runner1 (enumPureNChunk xs n (liftM2 (,) (takeFromChunk k) stream2list))
+prop_takeFromChunk xs b (Positive n) k =
+  runner1 (enum (liftM2 (,) (takeFromChunk k) stream2list))
   == if k > n then splitAt n xs else splitAt k xs
- where types = xs :: [Int]
+ where
+   types = xs :: [Int]
+   -- b is boolean flag to determine if we check enumNoData or enumEof.
+   -- either way the result should be the same (empty), but we want to check
+   -- both paths
+   enum = if null xs && b then enumNoData else enumPureNChunk xs n
 
 -- ---------------------------------------------
 -- Simple enumerator tests
 
 type I = Iteratee [Int] Identity [Int]
 
-prop_enumChunks n xs i = n > 0  ==>
+prop_enumChunks (Positive n) xs i =
   runner1 (enumPure1Chunk xs i) == runner1 (enumSpecial xs n i)
   where types = (n :: Int, xs :: [Int], i :: I)
 
@@ -231,7 +273,9 @@ prop_eof xs ys i = runner1 (enumPure1Chunk ys $ runIdentity $
                  == runner1 (enumPure1Chunk xs i)
   where types = (xs :: [Int], ys :: [Int], i :: I)
 
-prop_isFinished = runner1 (enumEof (isFinished :: Iteratee [Int] Identity Bool)) == True
+prop_isFinished xs = runner1 ((enumNoData >=> enumPure1Chunk xs >=> enumEof) (isFinished :: Iteratee [Int] Identity Bool))
+                     == null xs
+  where types = xs :: [Int]
 
 prop_isFinished2 = runner1 (enumErr (enumStrExc "Error") (isFinished :: Iteratee [Int] Identity Bool)) == True
 
@@ -239,13 +283,17 @@ prop_null xs i = runner1 (enumPure1Chunk xs =<< enumPure1Chunk [] i)
                  == runner1 (enumPure1Chunk xs i)
   where types = (xs :: [Int], i :: I)
 
-prop_nullH xs = P.length xs > 0 ==>
-                runner1 (enumPure1Chunk xs =<< enumPure1Chunk [] Iter.head)
+prop_nullH (NonEmpty xs) =
+                runner1 ((enumNoData >=> enumPure1Chunk [] >=> enumPure1Chunk xs) Iter.head)
                 == runner1 (enumPure1Chunk xs Iter.head)
   where types = xs :: [Int]
 
-prop_enumList xs i =
-  not (P.null xs) ==>
+test_headExc = testGot (runIdentity $ tryRun =<< enumNoData (Iter.head :: Iteratee [Int] Identity Int))
+  where
+    testGot (Left (fromException . toException -> Just (EofException "Iteratee.head"))) = return ()
+    testGot _ = assertFailure "Iter.head exception: didn't produce the correct exception"
+
+prop_enumList (NonEmpty xs) i =
   runner1 (enumList (replicate 100 xs) i)
   == runner1 (enumPure1Chunk (concat $ replicate 100 xs) i)
  where types = (xs :: [Int], i :: I)
@@ -258,17 +306,16 @@ prop_enumCheckIfDone xs i =
 -- ---------------------------------------------
 -- Enumerator Combinators
 
-prop_enumWith xs f n = n > 0 ==> runner1 (enumSpecial xs n $ fmap fst $ enumWith (Iter.dropWhile f) (stream2list))
+prop_enumWith xs f (Positive n) = runner1 (enumSpecial xs n $ fmap fst $ enumWith (Iter.dropWhile f) (stream2list))
    == runner1 (enumSpecial xs n $ Iter.dropWhile f)
  where types = (xs :: [Int])
 
-prop_enumWith2 xs f n = n > 0 ==> runner1 (enumSpecial xs n $ enumWith (Iter.dropWhile f) (stream2list) >> stream2list)
+prop_enumWith2 xs f (Positive n) = runner1 (enumSpecial xs n $ enumWith (Iter.dropWhile f) (stream2list) >> stream2list)
    == runner1 (enumSpecial xs n $ Iter.dropWhile f >> stream2list)
  where types = (xs :: [Int])
 
-prop_enumWith3 xs i n =
-   n > 0
-   ==> runner1 (enumSpecial xs n $ enumWith i stream2list >> stream2list)
+prop_enumWith3 xs i (Positive n) =
+   runner1 (enumSpecial xs n $ enumWith i stream2list >> stream2list)
    ==  runner1 (enumSpecial xs n (i >> stream2list))
  where types = (xs :: [Int], i :: I)
 
@@ -288,9 +335,9 @@ prop_mapStream xs i = runner2 (enumPure1Chunk xs $ mapStream id i)
                       == runner1 (enumPure1Chunk xs i)
   where types = (i :: I, xs :: [Int])
 
-prop_mapStream2 xs n i = n > 0 ==>
-                         runner2 (enumSpecial xs n $ mapStream id i)
-                         == runner1 (enumPure1Chunk xs i)
+prop_mapStream2 xs (Positive n) i =
+    runner2 (enumSpecial xs n $ mapStream id i)
+    == runner1 (enumPure1Chunk xs i)
   where types = (i :: I, xs :: [Int])
 
 prop_mapStreamPushback xs = runner1 (enumPureNChunk xs 4 $ joinI (mapStream id (Iter.drop 2)) >> stream2list)
@@ -303,30 +350,30 @@ prop_mapjoin xs i =
   == runner1 (enumPure1Chunk xs i)
   where types = (i :: I, xs :: [Int])
 
-prop_rigidMapStream xs n f = n > 0 ==>
+prop_rigidMapStream xs (Positive n) f =
  runner2 (enumSpecial xs n $ rigidMapStream f stream2list) == map f xs
   where types = (xs :: [Int])
 
-prop_foldl xs n f x0 = n > 0 ==>
+prop_foldl xs (Positive n) f x0 =
  runner1 (enumSpecial xs n (Iter.foldl f x0)) == P.foldl f x0 xs
   where types = (xs :: [Int], x0 :: Int)
 
-prop_foldl' xs n f x0 = n > 0 ==>
+prop_foldl' xs (Positive n) f x0 =
  runner1 (enumSpecial xs n (Iter.foldl' f x0)) == LL.foldl' f x0 xs
   where types = (xs :: [Int], x0 :: Int)
 
-prop_foldl1 xs n f = (n > 0 && not (null xs)) ==>
+prop_foldl1 (NonEmpty xs) (Positive n) f =
  runner1 (enumSpecial xs n (Iter.foldl1 f)) == P.foldl1 f xs
   where types = (xs :: [Int])
 
-prop_foldl1' xs n f = (n > 0 && not (null xs)) ==>
+prop_foldl1' f (NonEmpty xs) (Positive n) =
  runner1 (enumSpecial xs n (Iter.foldl1' f)) == P.foldl1 f xs
   where types = (xs :: [Int])
 
-prop_sum xs n = n > 0 ==> runner1 (enumSpecial xs n Iter.sum) == P.sum xs
+prop_sum xs (Positive n) = runner1 (enumSpecial xs n Iter.sum) == P.sum xs
   where types = (xs :: [Int])
 
-prop_product xs n = n > 0 ==>
+prop_product xs (Positive n) =
  runner1 (enumSpecial xs n Iter.product) == P.product xs
   where types = (xs :: [Int])
 
@@ -340,56 +387,71 @@ convId = icontP (\str -> case str of
 prop_convId xs = runner1 (enumPure1Chunk xs convId) == xs
   where types = xs :: [Int]
 
-prop_convstream xs i = P.length xs > 0 ==>
+prop_convstream i (NonEmpty xs) =
                        runner2 (enumPure1Chunk xs $ convStream convId i)
                        == runner1 (enumPure1Chunk xs i)
   where types = (xs :: [Int], i :: I)
 
-prop_convstream2 xs = P.length xs > 0 ==>
+prop_convstream2 (NonEmpty xs) =
                       runner2 (enumPure1Chunk xs $ convStream convId Iter.head)
                       == runner1 (enumPure1Chunk xs Iter.head)
   where types = xs :: [Int]
 
-prop_convstream3 xs = P.length xs > 0 ==>
+prop_convstream3 (NonEmpty xs) =
                       runner2 (enumPure1Chunk xs $ convStream convId stream2list)
                       == runner1 (enumPure1Chunk xs stream2list)
   where types = xs :: [Int]
 
-prop_take xs n = n >= 0 ==>
-                 runner2 (enumPure1Chunk xs $ Iter.take n stream2list)
-                 == runner1 (enumPure1Chunk (P.take n xs) stream2list)
-  where types = xs :: [Int]
+prop_take xs i (NonNegative n) =
+    runner2 (enumPure1Chunk xs $ Iter.take n i)
+    == runner1 (enumPure1Chunk (P.take n xs) i)
+  where types = i :: Iteratee [Int] Identity [Int]
 
-prop_take2 xs n = n > 0 ==>
+prop_take2 xs (Positive n) =
                   runner2 (enumPure1Chunk xs $ Iter.take n peek)
                   == runner1 (enumPure1Chunk (P.take n xs) peek)
   where types = xs :: [Int]
 
-prop_takeUpTo xs n = n >= 0 ==>
+prop_takeResume xs' h (Positive n) =
+                 runner2 (enumPure1Chunk xs $ do
+                    i' <- lift (enumEof Iter.head)
+                    Iter.take n i')
+                 == runner1 (enumPure1Chunk (P.take n xs) Iter.head)
+  where xs = h:xs' :: [Int]
+
+-- if the inner iteratee throws an exception, we should pass it up the chain.
+prop_take3 (NonEmpty xs) (Positive n) =
+    testGot (runIdentity $ tryRun =<< (enumPure1Chunk xs $ Iter.take n (Iter.drop 1 >> Iter.seek 20) >> stream2list))
+  where
+    testGot (Left (fromException . toException -> Just (SeekException 20))) = True
+    testGot _ = False
+    types = xs :: [Int]
+
+prop_takeUpTo xs (NonNegative n) =
                   runner2 (enumPure1Chunk xs $ Iter.take n stream2list)
                   == runner2 (enumPure1Chunk xs $ takeUpTo n stream2list)
   where types = xs :: [Int]
 
-prop_takeUpTo2 xs n = n >= 0 ==>
+prop_takeUpTo2 xs (NonNegative n) =
  runner2 (enumPure1Chunk xs (takeUpTo n identity)) == ()
   where types = xs :: [Int]
 
 -- check for final stream state
-prop_takeUpTo3 xs n d t = n > 0 ==>
+prop_takeUpTo3 xs d t (Positive n) =
  runner1 (enumPureNChunk xs n (joinI (takeUpTo t (Iter.drop d)) >> stream2list))
  == P.drop (min t d) xs
   where types = xs :: [Int]
 
-prop_takeWhile xs n f = n > 0 ==>
+prop_takeWhile xs f (Positive n) =
   runner1 (enumSpecial xs n (liftM2 (,) (Iter.takeWhile f) stream2list))
   == (P.takeWhile f xs, P.dropWhile f xs)
  where types = xs :: [Int]
 
-prop_filter xs n f = n > 0 ==>
+prop_filter xs f (Positive n) =
  runner2 (enumSpecial xs n (Iter.filter f stream2list)) == P.filter f xs
   where types = xs :: [Int]
 
-prop_group xs n = n > 0 ==>
+prop_group xs (Positive n) =
                   runner2 (enumPure1Chunk xs $ Iter.group n stream2list)
                   == runner1 (enumPure1Chunk groups stream2list)
   where types = xs :: [Int]
@@ -404,7 +466,7 @@ prop_groupBy xs = forAll (choose (2,5)) $ \m ->
        == runner1 (enumPure1Chunk (List.groupBy pred xs) stream2list)
   where types = xs :: [Int]
 
-prop_mapChunksM xs n = n > 0 ==>
+prop_mapChunksM xs (Positive n) =
  runWriter ((enumSpecial xs n (joinI $ Iter.mapChunksM f stream2list)) >>= run)
  == (xs, Sum (P.length xs))
   where f ck = tell (Sum $ P.length ck) >> return ck
@@ -416,26 +478,26 @@ prop_mapjoin xs i =
   where types = (i :: I, xs :: [Int])
 -}
 
-prop_mapChunksM_ xs n = n > 0 ==>
+prop_mapChunksM_ xs (Positive n) =
  snd (runWriter ((enumSpecial xs n (Iter.mapChunksM_ f)) >>= run))
  == Sum (P.length xs)
   where f ck = tell (Sum $ P.length ck)
         types = xs :: [Int]
 
-prop_mapM_ xs n = n > 0 ==>
+prop_mapM_ xs (Positive n) =
  runWriter ((enumSpecial xs n (Iter.mapM_ f)) >>= run)
  == runWriter (CM.mapM_ f xs)
   where f = const $ tell (Sum 1)
         types = xs :: [Int]
 
-prop_foldChunksM xs x0 n = n > 0 ==>
+prop_foldChunksM xs x0 (Positive n) =
  runWriter ((enumSpecial xs n (Iter.foldChunksM f x0)) >>= run)
  == runWriter (f x0 xs)
   where f acc ck = CM.foldM f' acc ck
         f' acc el = tell (Sum 1) >> return (acc+el)
         types = xs :: [Int]
 
-prop_foldM xs x0 n = n > 0 ==>
+prop_foldM xs x0 (Positive n) =
  runWriter ((enumSpecial xs n (Iter.foldM f x0)) >>= run)
  == runWriter (CM.foldM f x0 xs)
   where f acc el = tell (Sum 1) >> return (acc - el)
@@ -443,7 +505,7 @@ prop_foldM xs x0 n = n > 0 ==>
 -- ---------------------------------------------
 -- Zips
 
-prop_zip xs i1 i2 n = n > 0 ==>
+prop_zip xs i1 i2 (Positive n) =
   runner1 (enumPureNChunk xs n $ liftM2 (,) (Iter.zip i1 i2) stream2list)
   == let (r1, t1) = runner1 $ enumPure1Chunk xs $ liftM2 (,) i1 stream2list
          (r2, t2) = runner1 $ enumPure1Chunk xs $ liftM2 (,) i2 stream2list
@@ -468,15 +530,16 @@ test_sequence_ =
 -- ---------------------------------------------
 -- Data.Iteratee.Parallel
 
-prop_parI :: [Int] -> Int -> Iteratee [Int] IO [Int] -> Property
-prop_parI xs n i = n > 0 ==>
-  unsafePerformIO    (runnerIO (enumSpecial xs n i))
-  == unsafePerformIO (runnerIO (enumSpecial xs n (parI i)))
+prop_parI :: [Int] -> Positive Int -> Iteratee [Int] IO [Int] -> Property
+prop_parI xs (Positive n) i = QC.monadicIO $ do
+  v1 <- QC.run $ runnerIO (enumSpecial xs n i)
+  v2 <- QC.run $ runnerIO (enumSpecial xs n (parI i))
+  QC.assert (v1==v2)
 
 -- ---------------------------------------------
 -- Data.Iteratee.PTerm
 
-mk_prop_pt_id etee p_etee i xs n = n > 0 ==>
+mk_prop_pt_id etee p_etee i xs(Positive n) =
   runner1 (enumSpecial xs n $ joinI (p_etee i))
   == runner1 (enumSpecial xs n $ joinI (etee i))
  where types = (etee, p_etee, i, xs) :: (Etee, Etee, Itee, [Int])
@@ -543,43 +606,49 @@ tests = [
     ,testProperty "mappend associates" prop_mappend2
     ,testProperty "eq" prop_eq
   ]
-  ,testGroup "Simple Iteratees" [
-     testProperty "break" prop_break
-    ,testProperty "break remainder" prop_break2
-    ,testProperty "head" prop_head
-    ,testProperty "head remainder" prop_head2
-    ,testProperty "tryhead" prop_tryhead
-    ,testProperty "heads" prop_heads
-    ,testProperty "null heads" prop_heads2
-    ,testProperty "peek" prop_peek
-    ,testProperty "peek2" prop_peek2
-    ,testProperty "last" prop_last1
-    ,testProperty "last ends properly" prop_last2
-    ,testProperty "length" prop_length
-    ,testProperty "chunkLength" prop_chunkLength
-    ,testProperty "chunkLength of EoF" prop_chunkLength2
-    ,testProperty "takeFromChunk" prop_takeFromChunk
-    ,testProperty "drop" prop_drop
-    ,testProperty "dropWhile" prop_dropWhile
-    ,testProperty "skipToEof" prop_skip
-    ,testProperty "iteratee Functor 1" prop_iterFmap
-    ,testProperty "iteratee Functor 2" prop_iterFmap2
-    ,testProperty "iteratee Monad LI" prop_iterMonad1
-    ,testProperty "iteratee Monad RI" prop_iterMonad2
-    ,testProperty "iteratee Monad Assc" prop_iterMonad3
+  ,testGroup "Simple Iteratees"
+    [ testProperty "break" prop_break
+    , testProperty "break remainder" prop_break2
+    , testProperty "head" prop_head
+    , testProperty "head remainder" prop_head2
+    , testProperty "head resumption" prop_head3
+    , testCase     "head exception" test_headExc
+    , testProperty "tryhead" prop_tryhead
+    , testProperty "heads" prop_heads
+    , testProperty "null heads" prop_heads2
+    , testProperty "peek" prop_peek
+    , testProperty "peek2" prop_peek2
+    , testProperty "last" prop_last1
+    , testProperty "last ends properly" prop_last2
+    , testProperty "last resumption" prop_last3
+    , testCase     "last exceptions" test_lastExc
+    , testProperty "length" prop_length
+    , testProperty "chunkLength" prop_chunkLength
+    , testProperty "chunkLength of EoF" prop_chunkLength2
+    , testProperty "takeFromChunk" prop_takeFromChunk
+    , testProperty "drop" prop_drop
+    , testProperty "dropWhile" prop_dropWhile
+    , testProperty "skipToEof" prop_skip
+    , testProperty "iteratee Functor 1" prop_iterFmap
+    , testProperty "iteratee Functor 2" prop_iterFmap2
+    , testProperty "iteratee Monad LI" prop_iterMonad1
+    , testProperty "iteratee Monad RI" prop_iterMonad2
+    , testProperty "iteratee Monad Assc" prop_iterMonad3
+    , testProperty "roll" prop_roll
+    , testCase     "roll simple" test_roll
     ]
-  ,testGroup "Simple Enumerators/Combinators" [
-    testProperty "enumPureNChunk" prop_enumChunks
-    ,testProperty "enum append 1" prop_app1
-    ,testProperty "enum sequencing" prop_app2
-    ,testProperty "enum sequencing 2" prop_app3
-    ,testProperty "enumEof" prop_eof
-    ,testProperty "isFinished" prop_isFinished
-    ,testProperty "isFinished error" prop_isFinished2
-    ,testProperty "null data idempotence" prop_null
-    ,testProperty "null data head idempotence" prop_nullH
-    ,testProperty "enumList" prop_enumList
-    ,testProperty "enumCheckIfDone" prop_enumCheckIfDone
+  ,testGroup "Simple Enumerators/Combinators"
+    [ testProperty "enumPureNChunk" prop_enumChunks
+    , testProperty "enum append 1" prop_app1
+    , testProperty "enum sequencing" prop_app2
+    , testProperty "enum sequencing 2" prop_app3
+    , testProperty "enumEof" prop_eof
+    , testProperty "isFinished" prop_isFinished
+    , testProperty "isFinished error" prop_isFinished2
+    , testProperty "null data idempotence" prop_null
+    , testProperty "null data head idempotence" prop_nullH
+    , testProperty "enumList" prop_enumList
+    , testProperty "enumCheckIfDone" prop_enumCheckIfDone
     ]
   ,testGroup "Nested iteratees" [
     testGroup "mapStream"
@@ -597,6 +666,8 @@ tests = [
     , testGroup "take"
       [ testProperty "take" prop_take
       , testProperty "take (finished iteratee)" prop_take2
+      , testProperty "take (exception output)" prop_takeResume
+      , testProperty "take (exception handling)" prop_take3
       , testProperty "takeUpTo" prop_takeUpTo
       , testProperty "takeUpTo (finished iteratee)" prop_takeUpTo2
       , testProperty "takeUpTo (remaining stream)" prop_takeUpTo3

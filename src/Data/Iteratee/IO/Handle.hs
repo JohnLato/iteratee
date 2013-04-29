@@ -76,7 +76,8 @@ enumHandleCatch
   -> Enumerator s m a
 enumHandleCatch bs h handler i =
   let bufsize = bs * sizeOf (undefined :: el)
-  in enumFromCallbackCatch (makeHandleCallback bufsize h) handler () i
+      handlers = [IHandler handler, IHandler eofHandler]
+  in enumFromCallbackCatches (makeHandleCallback bufsize h) handlers () i
 
 
 -- |The enumerator of a Handle: a variation of enumHandle that

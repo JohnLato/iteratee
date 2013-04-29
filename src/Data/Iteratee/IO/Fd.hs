@@ -81,7 +81,8 @@ enumFdCatch
     -> Enumerator s m a
 enumFdCatch bs fd handler iter =
   let bufsize = bs * (sizeOf (undefined :: el))
-  in enumFromCallbackCatch (makefdCallback (fromIntegral bufsize) fd) handler () iter
+      handlers = [IHandler handler, IHandler eofHandler]
+  in enumFromCallbackCatches (makefdCallback (fromIntegral bufsize) fd) handlers () iter
 {-# INLINABLE enumFdCatch #-}
 
 

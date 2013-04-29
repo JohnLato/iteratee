@@ -56,7 +56,7 @@ makefdCallback bufsize fd st = do
   (s,numCopied) <- liftBase $ fillFromCallback (fromIntegral bufsize) fillFn
   case numCopied of
     0   -> liftBase yield >> return ((Finished, st), s)
-    n'  -> return ((HasMore, st), s)
+    _n' -> return ((HasMore, st), s)
 {-# INLINABLE makefdCallback #-}
 
 -- |The enumerator of a POSIX File Descriptor.  This version enumerates

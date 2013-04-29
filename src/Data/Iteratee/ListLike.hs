@@ -198,7 +198,6 @@ heads st = icontP (step 0 st)
   step !cnt str ck           | LL.null str = ContDone cnt ck
   step !cnt str (Chunk xs)   | LL.null xs  = continueP (step cnt str)
   step !cnt str NoData                     = continueP (step cnt str)
-  step !cnt str stream@EOF{} | LL.null str = ContDone cnt stream
   step !cnt str s@(Chunk xs) =
     if LL.head str == LL.head xs
        then step (succ cnt) (LL.tail str) (Chunk $ LL.tail xs)

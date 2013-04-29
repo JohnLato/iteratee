@@ -356,6 +356,14 @@ breakE cpred = eneeCheckIfDonePass (icont . step) CM.>=>
 -- stream of the read elements. Unless the stream is terminated early, we
 -- read exactly n elements, even if the iteratee has accepted fewer.
 -- 
+-- 'take' will abort processing if the iteratee throws an exception, and will
+-- not be added to the resumption stack.  This means that e.g.
+--
+-- > take 10 (seek 20 >> stream2list)
+--
+-- will generate a 'SeekException' which, if handled, will resume as
+-- 'stream2list' outside the bounds of the 'take'.
+--
 -- The analogue of @List.take@
 take ::
   (Monad m, LL.ListLike s el)
@@ -374,12 +382,13 @@ take = go
 
   step n k (Chunk str)
       | LL.null str        = continue (step n k)
-      | LL.length str <= n = k (Chunk str) >>= \ret ->
-                                contMoreM (go (n - LL.length str) (wrapCont ret))
+      | LL.length str <= n = k (Chunk str) >>= \ret -> case ret of
+          ContErr  i e -> contErrM (return $ ierr i e) e
+          _            -> contMoreM (go (n - LL.length str) (wrapCont ret))
       | otherwise          = k (Chunk s1) >>= \ret -> case ret of
           ContDone a _ -> contDoneM (idone a) (Chunk s2)
           ContMore i   -> contDoneM i (Chunk s2)
-          ContErr  i e -> contDoneM (ierr i e) (Chunk s2)
+          ContErr  i e -> contErrM (return $ ierr i e) e
       where (s1, s2) = LL.splitAt n str
   step n k NoData          = continue (step n k)
   step _n k stream         = contDoneM (icont k) stream

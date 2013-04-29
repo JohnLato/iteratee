@@ -728,9 +728,12 @@ mergeEnums e1 e2 etee i = e1 $ e2 (joinI . etee $ ilift lift i) >>= run
 -- The enumerator performs no monadic action, but monadic effects embedded in
 -- the iteratee can be performed.
 enumPure1Chunk :: (Monad m) => s -> Enumerator s m a
-enumPure1Chunk str iter = runIter iter idoneM onC ierrM
+enumPure1Chunk str = runIt
   where
+    runIt i = runIter i idoneM onC onE
     onC k      = doContIteratee k (Chunk str)
+    onE i e | isEofException e = runIt i
+            | otherwise = ierrM i e
 {-# INLINE enumPure1Chunk #-}
 
 -- | A 1-chunk enumerator
@@ -747,14 +750,16 @@ enumChunkRemaining
   => s
   -> Iteratee s m a
   -> m (Iteratee s m a, Stream s)
-enumChunkRemaining str iter = runIter iter onD onC onE
+enumChunkRemaining str iter = runIt iter
   where
+    runIt i = runIter i onD onC onE
     onD a      = return (idone a, Chunk str)
     onC k      = k (Chunk str) >>= \res -> case res of
                     ContDone a str' -> return (idone a, str')
                     ContMore i'     -> return (i', NoData)
                     ContErr  i' e   -> return (ierr i' e, NoData)
-    onE i err  = return (ierr i err, Chunk str)
+    onE i err | isEofException err = runIt i
+              | otherwise = return (ierr i err, Chunk str)
 {-# INLINE enumChunkRemaining #-}
 
 -- | Enumerate chunks from a list
@@ -770,7 +775,8 @@ enumList chunks = go chunks
                         ContDone a _ -> return (idone a)
                         ContErr i' e -> ierrM i' e
     onCont []     k = return $ icont k
-    onErr iRes e    = return $ throwRec e iRes
+    onErr iRes e | isEofException e = go xs' iRes
+                 | otherwise = return $ throwRec e iRes
 {-# INLINABLE enumList #-}
 
 -- | Checks if an iteratee has finished.

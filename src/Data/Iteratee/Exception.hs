@@ -65,6 +65,7 @@ module Data.Iteratee.Exception (
   ,iterExceptionToException
   ,iterExceptionFromException
   ,ifExcToIterExc
+  ,isEofException
   -- * Exception handling helpers
   , IHandler (..)
   , eofHandler
@@ -221,6 +222,11 @@ instance Exception EofException where
   fromException = iterExceptionFromException
 
 instance IException EofException where
+
+isEofException :: Exception e => e -> Bool
+isEofException e = case fromException $ toException e of
+    Just (EofException _) -> True
+    _                     -> False
 
 -- |The iteratee received an 'EnumException' it could not handle.
 data IterUnhandledEnumException = IterUnhandledEnumException EnumException

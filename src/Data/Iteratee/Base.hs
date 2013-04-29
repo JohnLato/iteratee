@@ -391,10 +391,13 @@ bindIter m f = go m f
   where
     go l r = runIter l r onCont onErr
     push :: Iteratee s m b -> Stream s -> m (ContReturn s m b)
-    push i str = runIter i
-                         (\a         -> return $ ContDone a str)
-                         (\k         -> k str)
-                         (\iResume e -> return $ ContErr (ierr iResume e) e)
+    push i str = runIter i (flip contDoneM str) ($ str) (pushOnE str)
+    -- this feels dirty.  bind is sort-of an enumerator, so it's going to have
+    -- to do some exception handling.  But making it extensible seems really
+    -- difficult.
+    pushOnE str iResume e
+        | isEofException e = push iResume str
+        | otherwise        = contErrM (ierr iResume e) e
     onCont :: (Stream s -> m (ContReturn s m a)) -> Iteratee s m b
     onCont k  = icont $ \str -> do
                   res <- k str

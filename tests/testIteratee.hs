@@ -293,6 +293,11 @@ prop_mapStream2 xs n i = n > 0 ==>
                          == runner1 (enumPure1Chunk xs i)
   where types = (i :: I, xs :: [Int])
 
+prop_mapStreamPushback xs = runner1 (enumPureNChunk xs 4 $ joinI (mapStream id (Iter.drop 2)) >> stream2list)
+                            == runner1 (enumPureNChunk xs 4 $ Iter.drop 2 >> stream2list)
+  where types = xs :: [Int]
+
+
 prop_mapjoin xs i =
   runIdentity (run (joinI . runIdentity $ enumPure1Chunk xs $ mapStream id i))
   == runner1 (enumPure1Chunk xs i)
@@ -513,7 +518,6 @@ prop_filterPT i = mk_prop_pt_id (Iter.filter i) (filterPT i)
 prop_breakEPT3 f xs = runner1 (enumPure1Chunk xs (joinI (breakEPT f (return ())) >> stream2list)) == snd (break f xs)
   where types = xs :: [Int]
 
-
 -- ---------------------------------------------
 -- Data.Iteratee.Char
 
@@ -578,19 +582,26 @@ tests = [
     ,testProperty "enumCheckIfDone" prop_enumCheckIfDone
     ]
   ,testGroup "Nested iteratees" [
-    testProperty "mapStream identity" prop_mapStream
-    ,testProperty "mapStream identity 2" prop_mapStream2
-    ,testProperty "mapStream identity joinI" prop_mapjoin
-    ,testProperty "rigidMapStream" prop_rigidMapStream
-    ,testProperty "breakE" prop_breakE
-    ,testProperty "breakE remainder" prop_breakE2
-    ,testProperty "breakE remainder after completion" prop_breakE3
-    ,testProperty "take" prop_take
-    ,testProperty "take (finished iteratee)" prop_take2
-    ,testProperty "takeUpTo" prop_takeUpTo
-    ,testProperty "takeUpTo (finished iteratee)" prop_takeUpTo2
-    ,testProperty "takeUpTo (remaining stream)" prop_takeUpTo3
-    ,testProperty "takeWhile" prop_takeWhile
+    testGroup "mapStream"
+      [ testProperty "mapStream identity" prop_mapStream
+      , testProperty "mapStream identity 2" prop_mapStream2
+      , testProperty "mapStream identity joinI" prop_mapjoin
+      , testProperty "mapStream leftovers" prop_mapStreamPushback
+      , testProperty "rigidMapStream" prop_rigidMapStream
+      ]
+    , testGroup "breakE"
+      [ testProperty "breakE" prop_breakE
+      , testProperty "breakE remainder" prop_breakE2
+      , testProperty "breakE remainder after completion" prop_breakE3
+      ]
+    , testGroup "take"
+      [ testProperty "take" prop_take
+      , testProperty "take (finished iteratee)" prop_take2
+      , testProperty "takeUpTo" prop_takeUpTo
+      , testProperty "takeUpTo (finished iteratee)" prop_takeUpTo2
+      , testProperty "takeUpTo (remaining stream)" prop_takeUpTo3
+      , testProperty "takeWhile" prop_takeWhile
+      ]
     ,testProperty "filter" prop_filter
     ,testProperty "group" prop_group
     ,testProperty "groupBy" prop_groupBy

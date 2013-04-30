@@ -323,9 +323,6 @@ fuseEneeHandle h1 k1 h2 k2 = eneeCheckIfDoneHandle hFuse kFuse
                       = push (fuseEneeHandle h1 k1 h2 k2 i)
   #-}
 
-{-
--}
-
 -- | The same as eneeCheckIfDonePass, with one extra argument:
 -- a handler which is used
 -- to process any exceptions in a separate method.

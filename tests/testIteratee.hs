@@ -506,12 +506,42 @@ prop_foldM xs x0 (Positive n) =
 -- Zips
 
 prop_zip xs i1 i2 (Positive n) =
-  runner1 (enumPureNChunk xs n $ liftM2 (,) (Iter.zip i1 i2) stream2list)
+  runner1 (enumSpecial xs n $ liftM2 (,) (Iter.zip i1 i2) stream2list)
   == let (r1, t1) = runner1 $ enumPure1Chunk xs $ liftM2 (,) i1 stream2list
          (r2, t2) = runner1 $ enumPure1Chunk xs $ liftM2 (,) i2 stream2list
          shorter = if P.length t1 > P.length t2 then t2 else t1
      in ((r1,r2), shorter)
  where types = (i1 :: I, i2 :: I, xs :: [Int])
+
+prop_zip_assoc xs (Positive n) i1 i2 i3 =
+    runner1 (enumSpecial xs n (Iter.zip i1 i2 `Iter.zip` i3))
+    == rearrange (runner1 (enumSpecial xs n (i1 `Iter.zip` Iter.zip i2 i3)))
+  where
+    types = (i1 :: I, i2 :: I, i3 :: I, xs :: [Int])
+    rearrange (a,(b,c)) = ((a,b),c)
+
+prop_zip3 xs (Positive n) i1 i2 i3 =
+    runner1 (enumSpecial xs n (Iter.zip3 i1 i2 i3))
+    == rearrange (runner1 (enumSpecial xs n (i1 `Iter.zip` Iter.zip i2 i3)))
+  where
+    types = (i1 :: I, i2 :: I, i3 :: I, xs :: [Int])
+    rearrange (a,(b,c)) = (a,b,c)
+
+prop_zip4 xs (Positive n) i1 i2 i3 i4 =
+    runner1 (enumSpecial xs n (Iter.zip4 i1 i2 i3 i4))
+    == rearrange (runner1 (enumSpecial xs n (i1 `Iter.zip` (i2 `Iter.zip` (i3 `Iter.zip` i4)))))
+  where
+    types = (i1 :: I, i2 :: I, i3 :: I, i4 :: I, xs :: [Int])
+    rearrange (a,(b,(c,d))) = (a,b,c,d)
+
+prop_zip5 xs (Positive n) i1 i2 i3 i4 i5 =
+    runner1 (enumSpecial xs n (Iter.zip5 i1 i2 i3 i4 i5))
+    == rearrange (runner1 (enumSpecial xs n (i1 `Iter.zip` (i2 `Iter.zip` (i3 `Iter.zip` (i4 `Iter.zip` i5))))))
+  where
+    types = (i1 :: I, i2 :: I, i3 :: I, i4 :: I, i5 :: I, xs :: [Int])
+    rearrange (a,(b,(c,(d,e)))) = (a,b,c,d,e)
+
+
 
 -- ---------------------------------------------
 -- Sequences
@@ -694,10 +724,14 @@ tests = [
    ,testProperty "sum" prop_sum
    ,testProperty "product" prop_product
    ]
-  ,testGroup "Zips" [
-    testProperty "zip" prop_zip
-   ,testCase     "sequence_" test_sequence_
-   ]
+  ,testGroup "Zips"
+    [ testProperty "zip" prop_zip
+    , testProperty "zip associates" prop_zip_assoc
+    , testProperty "zip3" prop_zip3
+    , testProperty "zip4" prop_zip4
+    , testProperty "zip5" prop_zip5
+    , testCase     "sequence_" test_sequence_
+    ]
   ,testGroup "Data.Iteratee.Char" [
     --testProperty "line" prop_line
     ]

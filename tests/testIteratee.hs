@@ -1,6 +1,5 @@
 {-# OPTIONS_GHC -O #-}
 
-{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -193,9 +192,10 @@ test_lastExc = testGot (runIdentity $ tryRun =<< enumNoData (Iter.last :: Iterat
 
 prop_roll xs (Positive t) (Positive d) (Positive n) = if t > d
     then runner1 (enumNoData >=> enumSpecial xs n $ (,) <$> Iter.roll t d <*> stream2list)
-          == if | null xs    -> ([],[])
-                | t > len -> ([xs],[])
-                | otherwise  -> ([P.take t xs],P.drop d xs)
+          == case () of
+              _ | null xs   -> ([],[])
+                | t > len   -> ([xs],[])
+                | otherwise -> ([P.take t xs],P.drop d xs)
     else runner1 (enumSpecial xs n $ (,) <$> roll t d <*> stream2list)
          == ([P.take t xs], P.drop d xs)
   where

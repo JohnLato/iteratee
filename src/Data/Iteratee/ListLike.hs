@@ -23,6 +23,7 @@ module Data.Iteratee.ListLike (
   ,head
   ,tryHead
   ,last
+  ,tryLast
   ,heads
   ,peek
   ,roll
@@ -185,6 +186,16 @@ last = icontP (step Nothing)
   exc = EofException "Iteratee.last"
 {-# INLINE last #-}
 
+-- |Attempt to read the last element of the stream and return it
+tryLast :: (Monad m, LL.ListLike s el) => Iteratee s m (Maybe el)
+tryLast = icontP (step Nothing)
+  where
+  step l (Chunk xs)
+    | LL.null xs     = continueP (step l)
+    | otherwise    = continueP $ step (Just $ LL.last xs)
+  step l NoData    = continueP (step l)
+  step l s@(EOF _) = ContDone l s
+{-# INLINE tryLast #-}
 
 -- |Given a sequence of characters, attempt to match them against
 -- the characters on the stream.  Return the count of how many

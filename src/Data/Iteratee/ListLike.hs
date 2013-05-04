@@ -19,6 +19,7 @@ module Data.Iteratee.ListLike (
   -- ** Basic Iteratees
   ,break
   ,dropWhile
+  ,dropWhileB
   ,drop
   ,head
   ,tryHead
@@ -292,6 +293,19 @@ dropWhile p = icontP step
     step stream@EOF{} = ContDone () stream
 {-# INLINE dropWhile #-}
 
+-- |Skip all elements while the predicate is true except the last one.
+--
+-- the name is derived from `dropWhile boundary`, as this is generally useful
+-- when checking boundary conditions.
+dropWhileB :: (Monad m, LL.ListLike s el) => (el -> Bool) -> Iteratee s m ()
+dropWhileB p = do
+    l'm <- breakE (not . p) =$ tryLast
+    maybe (return ()) (icontP . step) l'm
+  where
+    step l NoData = continueP (step l)
+    step l (Chunk str) = ContDone () (Chunk $ LL.cons l str)
+    step _ s@EOF{}     = ContDone () s
+{-# INLINE dropWhileB #-}
 
 -- | Return the total length of the remaining part of the stream.
 -- 

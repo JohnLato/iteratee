@@ -216,6 +216,16 @@ prop_dropWhile f xs =
  == P.dropWhile f xs
   where types = (xs :: [Int], f :: Int -> Bool)
 
+prop_dropWhileB f xs (Positive n) =
+ runner1 (enumSpecial xs n (Iter.dropWhileB f >> stream2list))
+ == case P.span f xs of
+      (_,[]) -> []
+      ([],t) -> t
+      (h,t)  -> P.last h : t
+  where
+    types = (xs :: [Int], f :: Int -> Bool)
+
+
 prop_length xs = runner1 ((enumNoData >=> enumPure1Chunk xs) Iter.length) == P.length xs
   where types = xs :: [Int]
 
@@ -658,6 +668,7 @@ tests = [
     , testProperty "takeFromChunk" prop_takeFromChunk
     , testProperty "drop" prop_drop
     , testProperty "dropWhile" prop_dropWhile
+    , testProperty "dropWhileB" prop_dropWhileB
     , testProperty "skipToEof" prop_skip
     , testProperty "iteratee Functor 1" prop_iterFmap
     , testProperty "iteratee Functor 2" prop_iterFmap2

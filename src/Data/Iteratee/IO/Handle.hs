@@ -47,8 +47,8 @@ makeHandleCallback bsize h st = do
   let fillFn p = fmap fromIntegral . hGetBuf h (castPtr p) . fromIntegral
   (s,numCopied) <- liftBase $ fillFromCallback (fromIntegral bsize) fillFn
   case numCopied of
-    0   -> return ((Finished, st), s)
-    _n  -> return ((HasMore, st), s)
+    0   -> return (Finished st s)
+    _n  -> return (HasMore  st s)
 
 -- |The (monadic) enumerator of a file Handle.  This version enumerates
 -- over the entire contents of a file, in order, unless stopped by

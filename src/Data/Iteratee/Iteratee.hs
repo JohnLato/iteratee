@@ -5,6 +5,7 @@
             ,NoMonomorphismRestriction
             ,ScopedTypeVariables
             ,TupleSections
+            ,DeriveFunctor
             ,DeriveDataTypeable #-}
 
 -- |Monadic and General Iteratees:
@@ -807,10 +808,15 @@ enumFromCallback c =
 -- In iteratee < 0.9, callbacks used Bool equivalent to
 -- HasMore : True
 -- Finished : False
-data CBState = HasMore | Finished deriving (Eq, Show, Ord, Enum)
+data CBState st s = HasMore st s | Finished st s
+    deriving (Eq, Show, Functor)
 
 -- | The type of callback functions to create enumerators.
-type Callback st m s = st -> m ((CBState, st), s)
+type Callback st m s = st -> m (CBState st s)
+
+cbChunk :: CBState st s -> s
+cbChunk (HasMore _ s)  = s
+cbChunk (Finished _ s) = s
 
 -- |Create an enumerator from a callback function with an exception handler.
 -- The exception handler is called if an iteratee reports an exception.
@@ -834,12 +840,12 @@ enumFromCallbackCatch c handler = loop
                          (return . ierr i) . fmap wrapEnumExc
       Nothing -> return (ierr i e)
       
-    doNext (HasMore, st') = loop st'
-    doNext (Finished,_)   = return
+    doNext (HasMore st' _) = loop st'
+    doNext (Finished _  _) = return
     check :: Cont s m a
-             -> ((CBState, st), s)
+             -> CBState st s
              -> m (Iteratee s m a)
-    check k (cbstate, s) = k (Chunk s) >>= \res -> case res of
+    check k cbstate = k (Chunk $! cbChunk cbstate) >>= \res -> case res of
                                ContDone a _   -> return (idone a)
                                ContMore i'    -> doNext cbstate i'
                                ContErr  i' e' -> doNext cbstate (ierr i' e')
@@ -868,12 +874,12 @@ enumFromCallbackCatches c handlers = loop
                          (return . ierr i) . fmap wrapEnumExc
       Nothing -> onErr remHandlers st i e
 
-    doNext (HasMore, st') = loop st'
-    doNext (Finished,_)   = return
+    doNext (HasMore st' _) = loop st'
+    doNext (Finished _  _) = return
     check :: Cont s m a
-             -> ((CBState, st), s)
+             -> CBState st s
              -> m (Iteratee s m a)
-    check k (cbstate, s) = k (Chunk s) >>= \res -> case res of
+    check k cbstate = k (Chunk $! cbChunk cbstate) >>= \res -> case res of
                                ContDone a _   -> return (idone a)
                                ContMore i'    -> doNext cbstate i'
                                ContErr  i' e' -> doNext cbstate (ierr i' e')

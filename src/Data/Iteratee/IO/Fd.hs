@@ -55,8 +55,8 @@ makefdCallback bufsize fd st = do
   let fillFn p = fmap fromIntegral . fdReadBuf fd (castPtr p) . fromIntegral
   (s,numCopied) <- liftBase $ fillFromCallback (fromIntegral bufsize) fillFn
   case numCopied of
-    0   -> liftBase yield >> return ((Finished, st), s)
-    _n' -> return ((HasMore, st), s)
+    0   -> liftBase yield >> return (Finished st s)
+    _n' -> return (HasMore st s)
 {-# INLINABLE makefdCallback #-}
 
 -- |The enumerator of a POSIX File Descriptor.  This version enumerates

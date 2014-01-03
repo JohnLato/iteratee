@@ -81,5 +81,5 @@ library
     ghc-options: -fwarn-tabs
 
 source-repository head
-  type:     darcs
+  type:     git
   location: http://www.tiresiaspress.us/haskell/iteratee

@@ -1,5 +1,5 @@
 name:          iteratee
-version:       0.8.9.4
+version:       0.8.9.5
 synopsis:      Iteratee-based I/O
 description:
   The Iteratee monad provides strict, safe, and functional I/O. In addition
@@ -79,7 +79,6 @@ library
   ghc-options:   -Wall -O2
   if impl(ghc >= 6.8)
     ghc-options: -fwarn-tabs
-
 
 source-repository head
   type:     darcs

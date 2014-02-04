@@ -1,13 +1,11 @@
-{-# LANGUAGE CPP, RankNTypes, KindSignatures, NoMonomorphismRestriction #-}
+{-# LANGUAGE RankNTypes, KindSignatures, NoMonomorphismRestriction #-}
 
 -- some basic benchmarking of iteratee
 
-module BenchBase where
+module Main where
 
 import Data.Iteratee
 import qualified Data.Iteratee.ListLike as I
-import qualified Data.Iteratee.Parallel as I
-import qualified Data.Iteratee.Binary as I
 import Data.Iteratee.ListLike (enumPureNChunk, stream2list, stream2stream)
 import Data.Word
 import Data.Monoid
@@ -36,7 +34,6 @@ data BD a b s (m :: * -> *) = BDIter1 String (a -> b) (Iteratee s m a)
 
 id1  name i = BDIter1 name id i
 idN  name i = BDIterN name 5 id i
-idNx name sz i = BDIterN name sz id i
 idNl name i = BDIterN name 1000 id i
 
 defTotalSize = 10000
@@ -77,15 +74,11 @@ makeGroupBS n = bgroup n . map makeBenchBS
 listbench = makeGroup "stream2List" (slistBenches :: [BD [Int] () [Int] Identity])
 streambench = makeGroup "stream" (streamBenches :: [BD [Int] () [Int] Identity])
 breakbench = makeGroup "break" $ break0 : break0' : breakBenches
-breakEbench = makeGroup "breakE" $ breakEBenches
 headsbench = makeGroup "heads" headsBenches
 dropbench = makeGroup "drop" $ drop0 : dropBenches
-zipbench = makeGroup "zip" $ zipBenches
-consbench = makeGroup "consumed" consBenches
 lengthbench = makeGroup "length" listBenches
 takebench = makeGroup "take" $ take0 : takeBenches
 takeUpTobench = makeGroup "takeUpTo" takeUpToBenches
-groupbench = makeGroup "group" groupBenches
 mapbench = makeGroup "map" $ mapBenches
 foldbench = makeGroup "fold" $ foldBenches
 convbench = makeGroup "convStream" convBenches
@@ -94,30 +87,20 @@ miscbench = makeGroup "other" miscBenches
 listbenchbs = makeGroupBS "stream2List" slistBenches
 streambenchbs = makeGroupBS "stream" streamBenches
 breakbenchbs = makeGroupBS "break" breakBenches
-breakEbenchbs = makeGroupBS "breakE" breakEBenches
 headsbenchbs = makeGroupBS "heads" headsBenches
 dropbenchbs = makeGroupBS "drop" dropBenches
-zipbenchbs = makeGroupBS "zip" zipBenches
-consbenchbs = makeGroupBS "consumed" consBenches
 lengthbenchbs = makeGroupBS "length" listBenches
 takebenchbs = makeGroupBS "take" takeBenches
 takeUpTobenchbs = makeGroupBS "takeUpTo" takeUpToBenches
-groupbenchbs = makeGroupBS "group" groupBenches
 mapbenchbs = makeGroupBS "map" mapBenches
 foldbenchbs = makeGroupBS "fold" $ foldBenches
 convbenchbs = makeGroupBS "convStream" convBenches
 miscbenchbs = makeGroupBS "other" miscBenches
 
-endian2benchbs = makeGroupBS "2" endian2Benches
-endian3benchbs = makeGroupBS "3" endian3Benches
-endian4benchbs = makeGroupBS "4" endian4Benches
-endian8benchbs = makeGroupBS "8" endian8Benches
-endianbenchbs = bgroup "endian" [endian2benchbs, endian3benchbs, endian4benchbs, endian8benchbs]
 
+allListBenches = bgroup "list" [listbench, streambench, breakbench, headsbench, dropbench, lengthbench, takebench, takeUpTobench, mapbench, foldbench, convbench, miscbench]
 
-allListBenches = bgroup "list" [listbench, streambench, breakbench, breakEbench, headsbench, dropbench, zipbench, lengthbench, takebench, takeUpTobench, groupbench, mapbench, foldbench, convbench, miscbench, consbench]
-
-allByteStringBenches = bgroup "bytestring" [listbenchbs, streambenchbs, breakbenchbs, breakEbenchbs, headsbenchbs, dropbenchbs, zipbenchbs, lengthbenchbs, takebenchbs, takeUpTobenchbs, groupbenchbs, mapbenchbs, foldbenchbs, convbenchbs, endianbenchbs, miscbenchbs, consbenchbs]
+allByteStringBenches = bgroup "bytestring" [listbenchbs, streambenchbs, breakbenchbs, headsbenchbs, dropbenchbs, lengthbenchbs, takebenchbs, takeUpTobenchbs, mapbenchbs, foldbenchbs, convbenchbs, miscbenchbs]
 
 list0 = makeList "list one go" deepseq
 list1 = BDIter1 "stream2list one go" (flip deepseq ()) stream2list
@@ -138,14 +121,6 @@ break3 = idN "break early chunked" (I.break (>500))
 break4 = idN "break never chunked" (I.break (<0)) -- not ever true
 break5 = idN "break late chunked" (I.break (>8000))
 breakBenches = [break1, break2, break3, break4, break5]
-
-breakE1 = id1 "break early one go" (I.breakE (>5) =$ return ())
-breakE2 = id1 "break never" (I.breakE (<0) =$ return ()) -- not ever true.
-breakE3 = idN "break early chunked" (I.breakE (>500) =$ return ())
-breakE4 = idN "break never chunked" (I.breakE (<0) =$ return ()) -- not ever true
-breakE5 = idN "break late chunked" (I.breakE (>8000) =$ return ())
-breakEBenches = [breakE1, breakE2, breakE3, breakE4, breakE5]
-
 
 heads1 = id1 "heads null" (I.heads $ LL.fromList [])
 heads2 = id1 "heads 1" (I.heads $ LL.fromList [1])
@@ -170,18 +145,6 @@ dropw3 = id1 "dropWhile small" (I.dropWhile ( < 100))
 dropw4 = id1 "dropWhile large" (I.dropWhile ( < 6000))
 dropBenches = [drop1, drop2, drop3, dropw1, dropw2, dropw3, dropw4]
 
-b_zip0 = idN "zip balanced" (I.zip (I.dropWhile (<100)) (I.dropWhile (<200))
-   >> identity)
-b_zip1 = idN "zip unbalanced" (I.zip (I.dropWhile (<8000)) (I.head) >> identity)
-b_zip2 = idN "zip unbalanced 2" (I.zip identity I.length >> identity)
-b_zip3 = idN "zip complete" (I.zip identity identity >> identity)
-b_zip4 = idN "zip nonterminating" (I.zip I.length I.stream2stream >> identity)
-zipBenches = [b_zip0, b_zip1, b_zip2, b_zip3, b_zip4 ]
-
-consumed0 = idN "countConsumed" (I.countConsumed (I.foldl' (+) 0))
-consumed1 = idN "countConsumed baseline (`I.enumWith` I.length)" (I.foldl' (+) 0 `I.enumWith` I.length)
-consBenches = [consumed0, consumed1]
-
 
 l1 = makeList "length of list" Prelude.length
 l2 = id1 "length single iteratee" I.length
@@ -205,10 +168,6 @@ takeUpTo5 = id1 "takeUpTo length long one go" (I.joinI $ I.takeUpTo 1000 I.lengt
 takeUpTo6 = idN "takeUpTo length long chunked" (I.joinI $ I.takeUpTo 1000 I.length)
 takeUpToBenches = [takeUpTo1, takeUpTo2, takeUpTo3, takeUpTo4, takeUpTo5, takeUpTo6]
 
-group1 = id1 "group split" (I.joinI $ (I.group 24 ><> I.mapStream LL.length) I.length)
-group2 = idN "group coalesce" (I.joinI $ (I.group 512 ><> I.mapStream LL.length) I.length)
-groupBenches = [group1,group2]
-
 map1 = id1 "map length one go" (I.joinI $ I.rigidMapStream id I.length)
 map2 = idN "map length chunked" (I.joinI $ I.rigidMapStream id I.length)
 map3 = id1 "map head one go" (I.joinI $ I.rigidMapStream id I.head)
@@ -222,31 +181,14 @@ foldBenches = [foldB1, foldB2, foldB3]
 
 conv1 = idN "convStream id head chunked" (I.joinI . I.convStream idChunk $ I.head)
 conv2 = idN "convStream id length chunked" (I.joinI . I.convStream idChunk $ I.length)
-idChunk = I.icontP step
+idChunk = I.liftI step
   where
     step (I.Chunk xs)
-      | LL.null xs      = ContMore idChunk
-      | True            = ContDone xs mempty
-    step I.NoData       = ContMore idChunk
+      | LL.null xs      = idChunk
+      | True            = idone xs (I.Chunk mempty)
 convBenches = [conv1, conv2]
 
-#if __GLASGOW_HASKELL__ <=704
 instance NFData BS.ByteString where
 
 instance NFData a => NFData (Sum a) where
   rnf (Sum a) = rnf a
-#endif
-
-endianRead2_1 = id1 "endianRead2 single" (I.endianRead2 MSB)
-endianRead2_2 = idNx "endianRead2 chunked" 1 (I.endianRead2 MSB)
-endianRead3_1 = id1 "endianRead3 single" (I.endianRead3 MSB)
-endianRead3_2 = idNx "endianRead3 chunked" 2 (I.endianRead3 MSB)
-endianRead4_1 = id1 "endianRead4 single" (I.endianRead4 MSB)
-endianRead4_2 = idNx "endianRead4 chunked" 2 (I.endianRead4 MSB)
-endianRead8_1 = id1 "endianRead8 single" (I.endianRead8 MSB)
-endianRead8_2 = idN "endianRead8 chunked" (I.endianRead8 MSB)
-endianRead8_3 = idNx "endianRead8 multiple chunked" 2 (I.endianRead8 MSB)
-endian2Benches = [endianRead2_1, endianRead2_2]
-endian3Benches = [endianRead3_1, endianRead3_2]
-endian4Benches = [endianRead4_1, endianRead4_2]
-endian8Benches = [endianRead8_1, endianRead8_2, endianRead8_3]

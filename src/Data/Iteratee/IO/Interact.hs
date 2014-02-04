@@ -20,7 +20,7 @@ import Data.Iteratee
 -- -- the value of type 'a' is used like a fold accumulator.
 -- -- The value of type 'b' is typically some form of control code
 -- -- that the application uses to signal the reason for termination.
-ioIter :: (MonadIO m)
+ioIter :: (MonadIO m, Nullable s)
        => (a -> IO (Either b (Iteratee s m a)))
        -> a
        -> Iteratee s m b

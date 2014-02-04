@@ -5,7 +5,7 @@ module Data.Iteratee.IO.Base (
   module Data.Iteratee.IO.Windows,
 #endif
 #if defined(USE_POSIX)
-  module System.Posix,
+  module Data.Iteratee.IO.Posix,
 #else
   FileOffset
 #endif
@@ -19,7 +19,7 @@ import Data.Iteratee.IO.Windows
 -- Provide the FileOffset type, which is available in Posix modules
 -- and maybe Windows
 #if defined(USE_POSIX)
-import System.Posix
+import Data.Iteratee.IO.Posix
 #else
 type FileOffset = Integer
 #endif

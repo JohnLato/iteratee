@@ -12,7 +12,7 @@ import qualified Data.ByteString.Char8 as BC
 import Data.Word
 import Data.Char
 import Data.ListLike as LL
-import System.Environment
+import System
 
 
 -- | An iteratee to calculate the number of characters in a stream.
@@ -44,7 +44,7 @@ numLines2 = I.foldl' step 0
 -- The iteratees combined with enumPair are run in parallel.
 -- Any number of iteratees can be joined with multiple enumPair's.
 twoIter :: Monad m => I.Iteratee BC.ByteString m (Int, Int)
-twoIter = numLines2 `I.zip` numChars
+twoIter = numLines2 `I.enumPair` numChars
 
 main = do
   f:_ <- getArgs

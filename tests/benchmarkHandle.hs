@@ -1,6 +1,6 @@
 {-# LANGUAGE BangPatterns #-}
 
-module BenchIO where
+module Main where
 
 import Prelude hiding (null, length)
 import Data.ByteString (ByteString)
@@ -9,7 +9,6 @@ import Criterion.Main
 import Data.Monoid
 import Data.Word
 import Data.Iteratee
-import Data.Iteratee.Parallel
 import Data.Iteratee.Base.ReadableChunk
 import Data.Iteratee.IO.Fd (fileDriverFd)
 import Data.Iteratee.IO.Handle (fileDriverHandle)
@@ -56,21 +55,16 @@ testFdFold = fileDriverFd bufSize sum file >> return ()
   sum :: Iteratee ByteString IO Word8
   sum = foldl' (+) 0
 
-main = defaultMain (stringIO ++ ioBenches)
-
-stringIO =
-  [ bgroup "String"
-    [bench "Fd" testFdString
+main = defaultMain
+  [
+   bgroup "String" [
+     bench "Fd" testFdString
     ,bench "Hd with String" testHdString
-    ]
-  ]
-
-ioBenches =
-  [bgroup "ByteString" [
+   ]
+  ,bgroup "ByteString" [
      bench "Fd" testFdByte
     ,bench "Hd" testHdByte
    ]
-
   ,bgroup "folds" [
      bench "Fd/fold" testFdFold
     ,bench "Fd/mapReduce 2" $ testFdMapReduce 2

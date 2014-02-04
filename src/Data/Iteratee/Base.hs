@@ -42,8 +42,6 @@ import Data.Monoid
 
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
-import Control.Monad.CatchIO (MonadCatchIO (..), Exception (..),
-  block, toException, fromException)
 import Control.Monad.CatchIO as CIO
 import Control.Applicative hiding (empty)
 import Control.Exception (SomeException)

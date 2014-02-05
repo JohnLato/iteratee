@@ -40,11 +40,10 @@ import Data.Nullable
 import Data.NullPoint
 import Data.Monoid
 
+import Control.Monad.Catch as CIO
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
-import Control.Monad.CatchIO as CIO
 import Control.Applicative hiding (empty)
-import Control.Exception (SomeException)
 import qualified Control.Exception as E
 import Data.Data
 
@@ -162,11 +161,12 @@ instance NullPoint s => MonadTrans (Iteratee s) where
 instance (MonadIO m, Nullable s, NullPoint s) => MonadIO (Iteratee s m) where
   liftIO = lift . liftIO
 
-instance (MonadCatchIO m, Nullable s, NullPoint s) =>
-  MonadCatchIO (Iteratee s m) where
+instance (MonadCatch m, Nullable s, NullPoint s) =>
+  MonadCatch (Iteratee s m) where
     m `catch` f = Iteratee $ \od oc -> runIter m od oc `CIO.catch` (\e -> runIter (f e) od oc)
-    block       = ilift block
-    unblock     = ilift unblock
+    throwM e    = lift $ CIO.throwM e
+    mask q      = Iteratee $ \od oc -> CIO.mask $ \u -> runIter (q $ ilift u) od oc
+    uninterruptibleMask q = Iteratee $ \od oc -> CIO.uninterruptibleMask $ \u -> runIter (q $ ilift u) od oc
 
 -- |Send 'EOF' to the @Iteratee@ and disregard the unconsumed part of the
 -- stream.  If the iteratee is in an exception state, that exception is

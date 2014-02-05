@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE TypeFamilies, FlexibleContexts, FlexibleInstances, Rank2Types,
     DeriveDataTypeable, ExistentialQuantification #-}
 
@@ -168,6 +169,12 @@ instance (MonadThrow m, Nullable s, NullPoint s) =>
 instance (MonadCatch m, Nullable s, NullPoint s) =>
   MonadCatch (Iteratee s m) where
     m `catch` f = Iteratee $ \od oc -> runIter m od oc `CIO.catch` (\e -> runIter (f e) od oc)
+
+-- prior to exceptions-0.6, these were part of MonadCatch
+#if MIN_VERSION_exceptions(0,6,0)
+instance (MonadMask m, Nullable s, NullPoint s) =>
+  MonadMask (Iteratee s m) where
+#endif
     mask q      = Iteratee $ \od oc -> CIO.mask $ \u -> runIter (q $ ilift u) od oc
     uninterruptibleMask q = Iteratee $ \od oc -> CIO.uninterruptibleMask $ \u -> runIter (q $ ilift u) od oc
 

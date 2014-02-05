@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE ConstraintKinds #-}
 
 -- |Random and Binary IO with generic Iteratees.
 
@@ -40,6 +41,11 @@ import qualified Data.Iteratee.IO.Fd as FD
 import Control.Monad.Catch
 import Control.Monad.IO.Class
 
+#if MIN_VERSION_exceptions(0,6,0)
+#else
+type MonadMask = MonadCatch
+#endif
+
 -- | The default buffer size.
 defaultBufSize :: Int
 defaultBufSize = 1024
@@ -48,14 +54,14 @@ defaultBufSize = 1024
 #if defined(USE_POSIX)
 
 enumFile
-  :: (MonadIO m, MonadCatch m, NullPoint s, ReadableChunk s el) =>
+  :: (MonadIO m, MonadMask m, NullPoint s, ReadableChunk s el) =>
      Int
      -> FilePath
      -> Enumerator s m a
 enumFile = FD.enumFile
 
 enumFileRandom
-  :: (MonadIO m, MonadCatch m, NullPoint s, ReadableChunk s el) =>
+  :: (MonadIO m, MonadMask m, NullPoint s, ReadableChunk s el) =>
      Int
      -> FilePath
      -> Enumerator s m a
@@ -64,7 +70,7 @@ enumFileRandom = FD.enumFileRandom
 -- |Process a file using the given Iteratee.  This function wraps
 -- enumFd as a convenience.
 fileDriver
-  :: (MonadIO m, MonadCatch m, NullPoint s, ReadableChunk s el) =>
+  :: (MonadIO m, MonadMask m, NullPoint s, ReadableChunk s el) =>
      Iteratee s m a
      -> FilePath
      -> m a
@@ -72,7 +78,7 @@ fileDriver = FD.fileDriverFd defaultBufSize
 
 -- |A version of fileDriver with a user-specified buffer size (in elements).
 fileDriverVBuf
-  :: (MonadIO m, MonadCatch m, NullPoint s, ReadableChunk s el) =>
+  :: (MonadIO m, MonadMask m, NullPoint s, ReadableChunk s el) =>
      Int
      -> Iteratee s m a
      -> FilePath
@@ -82,14 +88,14 @@ fileDriverVBuf = FD.fileDriverFd
 -- |Process a file using the given Iteratee.  This function wraps
 -- enumFdRandom as a convenience.
 fileDriverRandom
-  :: (MonadIO m, MonadCatch m, NullPoint s, ReadableChunk s el) =>
+  :: (MonadIO m, MonadMask m, NullPoint s, ReadableChunk s el) =>
      Iteratee s m a
      -> FilePath
      -> m a
 fileDriverRandom = FD.fileDriverRandomFd defaultBufSize
 
 fileDriverRandomVBuf
-  :: (MonadIO m, MonadCatch m, NullPoint s, ReadableChunk s el) =>
+  :: (MonadIO m, MonadMask m, NullPoint s, ReadableChunk s el) =>
      Int
      -> Iteratee s m a
      -> FilePath
@@ -104,7 +110,7 @@ fileDriverRandomVBuf = FD.fileDriverRandomFd
 -- |Process a file using the given Iteratee.  This function wraps
 -- @enumHandle@ as a convenience.
 fileDriver ::
- (MonadIO m, MonadCatch m, NullPoint s, ReadableChunk s el) =>
+ (MonadIO m, MonadMask m, NullPoint s, ReadableChunk s el) =>
   Iteratee s m a
   -> FilePath
   -> m a
@@ -112,7 +118,7 @@ fileDriver = H.fileDriverHandle defaultBufSize
 
 -- |A version of fileDriver with a user-specified buffer size (in elements).
 fileDriverVBuf ::
- (MonadIO m, MonadCatch m, NullPoint s, ReadableChunk s el) =>
+ (MonadIO m, MonadMask m, NullPoint s, ReadableChunk s el) =>
   Int
   -> Iteratee s m a
   -> FilePath
@@ -122,14 +128,14 @@ fileDriverVBuf = H.fileDriverHandle
 -- |Process a file using the given Iteratee.  This function wraps
 -- @enumRandomHandle@ as a convenience.
 fileDriverRandom
-  :: (MonadIO m, MonadCatch m, NullPoint s, ReadableChunk s el) =>
+  :: (MonadIO m, MonadMask m, NullPoint s, ReadableChunk s el) =>
      Iteratee s m a
      -> FilePath
      -> m a
 fileDriverRandom = H.fileDriverRandomHandle defaultBufSize
 
 fileDriverRandomVBuf
-  :: (MonadIO m, MonadCatch m, NullPoint s, ReadableChunk s el) =>
+  :: (MonadIO m, MonadMask m, NullPoint s, ReadableChunk s el) =>
      Int
      -> Iteratee s m a
      -> FilePath
@@ -137,14 +143,14 @@ fileDriverRandomVBuf
 fileDriverRandomVBuf = H.fileDriverRandomHandle
 
 enumFile
-  :: (MonadIO m, MonadCatch m, NullPoint s, ReadableChunk s el) =>
+  :: (MonadIO m, MonadMask m, NullPoint s, ReadableChunk s el) =>
      Int
      -> FilePath
      -> Enumerator s m a
 enumFile = H.enumFile
 
 enumFileRandom
-  :: (MonadIO m, MonadCatch m, NullPoint s, ReadableChunk s el) =>
+  :: (MonadIO m, MonadMask m, NullPoint s, ReadableChunk s el) =>
      Int
      -> FilePath
      -> Enumerator s m a

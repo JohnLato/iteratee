@@ -161,10 +161,13 @@ instance NullPoint s => MonadTrans (Iteratee s) where
 instance (MonadIO m, Nullable s, NullPoint s) => MonadIO (Iteratee s m) where
   liftIO = lift . liftIO
 
+instance (MonadThrow m, Nullable s, NullPoint s) =>
+  MonadThrow (Iteratee s m) where
+    throwM e    = lift $ CIO.throwM e
+
 instance (MonadCatch m, Nullable s, NullPoint s) =>
   MonadCatch (Iteratee s m) where
     m `catch` f = Iteratee $ \od oc -> runIter m od oc `CIO.catch` (\e -> runIter (f e) od oc)
-    throwM e    = lift $ CIO.throwM e
     mask q      = Iteratee $ \od oc -> CIO.mask $ \u -> runIter (q $ ilift u) od oc
     uninterruptibleMask q = Iteratee $ \od oc -> CIO.uninterruptibleMask $ \u -> runIter (q $ ilift u) od oc
 

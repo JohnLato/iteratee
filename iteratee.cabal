@@ -98,6 +98,7 @@ Test-Suite testIteratee
       base,
       bytestring,
       iteratee,
+      exceptions,
       monad-control,
       mtl,
       ListLike,
@@ -126,14 +127,15 @@ benchmark bench-all
       iteratee,
       bytestring,
       monad-control,
+      exceptions,
       mtl,
       ListLike,
       transformers,
       transformers-base,
       base       >= 3   && < 6,
-      criterion  >= 0.6 && < 0.7,
+      criterion  >= 0.6 && < 0.9,
       deepseq    >= 1.2 && < 2,
-      mtl        >= 2   && < 3
+      mtl
   ghc-options: -O2
 
 source-repository head

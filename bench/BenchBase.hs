@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE RankNTypes, KindSignatures, NoMonomorphismRestriction #-}
 
 -- some basic benchmarking of iteratee
@@ -219,7 +220,10 @@ idChunk = I.liftI step
       | True            = idone xs (I.Chunk mempty)
 convBenches = [conv1, conv2]
 
+#if MIN_VERSION_bytestring(0,10,0)
+#else
 instance NFData BS.ByteString where
+#endif
 
 instance NFData a => NFData (Sum a) where
   rnf (Sum a) = rnf a

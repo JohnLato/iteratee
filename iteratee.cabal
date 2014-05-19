@@ -85,7 +85,6 @@ Test-Suite testIteratee
   type: exitcode-stdio-1.0
   main-is: testIteratee.hs
   hs-source-dirs: tests src
-  ghc-options:    -fhpc
 
   if os(windows)
     cpp-options: -DUSE_WINDOWS
